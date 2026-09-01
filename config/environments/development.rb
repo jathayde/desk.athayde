@@ -40,6 +40,10 @@ Rails.application.configure do
   # Set localhost to be used by links generated in mailer templates.
   config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
 
+  # Solid Queue in development too, so bin/jobs runs the recurring tick against the fake client.
+  config.active_job.queue_adapter = :solid_queue
+  config.solid_queue.connects_to = { database: { writing: :queue } }
+
   # Mail is written to tmp/mails so sign-in links can be read without a mail server.
   config.action_mailer.delivery_method = :file
   config.action_mailer.file_settings = { location: Rails.root.join("tmp/mails") }

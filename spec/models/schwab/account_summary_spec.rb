@@ -21,6 +21,7 @@ RSpec.describe Schwab::AccountSummary do
     expect(b.cash_available_for_withdrawal).to eq(BigDecimal("2110"))
     expect(b.settled_cash).to eq(BigDecimal("2110"))
     expect(b.buying_power).to be_nil
+    expect(b.long_market_value).to eq(BigDecimal("3418.55"))
   end
 
   it "prefers the smaller settled-cash reading and survives a missing field" do

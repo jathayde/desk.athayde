@@ -20,10 +20,11 @@ module Schwab
   # The three-legged flow and the refresh grant authenticate with the app key, not a bearer token.
   def self.oauth_client(wait: true) = fake? ? FakeClient.instance : Client.new(wait: wait)
 
+  # Refreshes ahead of expiry, so a 401 mid-sync is the safety net rather than the routine path.
   def self.usable_token!
     SchwabToken.current.tap do |token|
       raise NoUsableToken, "no usable Schwab token; re-authenticate" unless token&.usable?
-    end
+    end.ensure_fresh!
   end
 
   def self.app_key = Rails.application.credentials.dig(:schwab, :app_key)

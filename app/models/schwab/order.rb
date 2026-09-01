@@ -7,7 +7,11 @@ module Schwab
     # SCHWAB_SHAPE_UNVERIFIED: see docs/schwab-api-contract.md for the status and type vocabularies.
     WORKING_STATUSES = %w[ WORKING ACCEPTED QUEUED PENDING_ACTIVATION AWAITING_PARENT_ORDER AWAITING_STOP_CONDITION
                            AWAITING_CONDITION NEW AWAITING_RELEASE_TIME ].freeze
+    LIVE_STATUSES = %w[ WORKING ACCEPTED QUEUED PENDING_ACTIVATION ].freeze # in the market, not awaiting a parent or condition
     STOP_TYPES = %w[ STOP STOP_LIMIT TRAILING_STOP TRAILING_STOP_LIMIT ].freeze
+    WORKING = "WORKING"
+    SELL = "SELL"
+    GONE = "UNKNOWN_TO_SCHWAB" # local sentinel: Schwab no longer returns this order by id
 
     def self.from(raw, parent_order_id: nil, replaces_order_id: nil)
       leg = Array(raw["orderLegCollection"]).first || {}

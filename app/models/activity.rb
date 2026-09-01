@@ -6,11 +6,12 @@ class Activity < ApplicationRecord
   has_one :trade_leg, dependent: :restrict_with_exception
 
   enum :kind, {
-    fill: "fill", dividend: "dividend", interest: "interest", fee: "fee", deposit: "deposit",
-    withdrawal: "withdrawal", corporate_action: "corporate_action", other: "other"
+    fill: "fill", sweep: "sweep", dividend: "dividend", interest: "interest", fee: "fee", deposit: "deposit",
+    withdrawal: "withdrawal", transfer: "transfer", corporate_action: "corporate_action", other: "other"
   }
 
   scope :unjournaled, -> { where(journaled_at: nil) }
+  scope :valid_for_journal, -> { where(status: Schwab::Activity::VALID) }
   scope :chronological, -> { order(:executed_at, :id) }
   scope :flows, -> { where(kind: [ :deposit, :withdrawal ]) }
 

@@ -52,4 +52,5 @@ module Schwab
   class TransportError < Error; end        # timeout or connection failure on an idempotent call
   class UnknownOutcome < Error; end        # the same on a non-idempotent call; Phase 2 depends on this being distinct
   class MappingError < Error; end          # required field missing or malformed; rescued per record by sync
+  class NotConfigured < Error; end         # app credentials missing; raised before any request is built
 end

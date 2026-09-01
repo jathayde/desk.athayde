@@ -1,7 +1,7 @@
 module Schwab
   # currentBalances for a cash account. settled_cash is derived, not a Schwab field; see the contract.
   Balances = Data.define(:equity, :cash_available_for_trading, :cash_available_for_withdrawal, :unsettled_cash,
-                         :total_cash, :cash_balance, :buying_power, :raw) do
+                         :total_cash, :cash_balance, :buying_power, :long_market_value, :raw) do
     def self.from(raw)
       raw ||= {}
       new(equity: Decimal.parse(raw["liquidationValue"]),
@@ -11,6 +11,7 @@ module Schwab
           total_cash: Decimal.parse(raw["totalCash"]),
           cash_balance: Decimal.parse(raw["cashBalance"]),
           buying_power: Decimal.parse(raw["buyingPower"]),
+          long_market_value: Decimal.parse(raw["longMarketValue"]),
           raw: raw)
     end
 

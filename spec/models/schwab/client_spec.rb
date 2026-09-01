@@ -9,6 +9,10 @@ RSpec.describe Schwab::Client do
   let(:market) { "https://api.schwabapi.com/marketdata/v1" }
   let(:token_url) { "https://api.schwabapi.com/v1/oauth/token" }
 
+  it "refuses to build without app credentials rather than sending empty Basic auth" do
+    expect { described_class.new(token: token, app_key: nil, app_secret: "s", callback_url: "https://x/cb") }.to raise_error(Schwab::NotConfigured)
+  end
+
   describe "OAuth" do
     it "builds the authorize URL" do
       expect(client.authorize_url(state: "s1")).to eq("https://api.schwabapi.com/v1/oauth/authorize?response_type=code&client_id=key&redirect_uri=https%3A%2F%2Fdesk.example.com%2Fschwab%2Fcallback&state=s1")

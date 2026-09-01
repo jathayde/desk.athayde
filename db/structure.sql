@@ -88,7 +88,8 @@ CREATE TABLE public.activities (
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
     journaled_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    status character varying
 );
 
 
@@ -379,7 +380,7 @@ ALTER SEQUENCE public.order_proposals_id_seq OWNED BY public.order_proposals.id;
 CREATE TABLE public.orders (
     id bigint NOT NULL,
     account_id bigint NOT NULL,
-    instrument_id bigint NOT NULL,
+    instrument_id bigint,
     broker_order_id character varying NOT NULL,
     status character varying NOT NULL,
     side character varying,
@@ -399,7 +400,9 @@ CREATE TABLE public.orders (
     closed_at timestamp(6) with time zone,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    remaining_quantity numeric(18,6),
+    strategy_type character varying
 );
 
 
@@ -710,7 +713,9 @@ CREATE TABLE public.sync_runs (
     window_from timestamp(6) with time zone,
     window_to timestamp(6) with time zone,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    account_id bigint,
+    gap_from timestamp(6) with time zone
 );
 
 
@@ -1409,6 +1414,13 @@ CREATE INDEX index_instruments_on_symbol ON public.instruments USING btree (symb
 
 
 --
+-- Name: index_instruments_provisional; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_instruments_provisional ON public.instruments USING btree (symbol, asset_type) WHERE ((cusip IS NULL) AND (schwab_instrument_id IS NULL));
+
+
+--
 -- Name: index_market_days_on_date; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1469,6 +1481,13 @@ CREATE INDEX index_orders_on_account_id ON public.orders USING btree (account_id
 --
 
 CREATE UNIQUE INDEX index_orders_on_account_id_and_broker_order_id ON public.orders USING btree (account_id, broker_order_id);
+
+
+--
+-- Name: index_orders_on_account_id_and_instrument_id_and_entered_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_account_id_and_instrument_id_and_entered_at ON public.orders USING btree (account_id, instrument_id, entered_at);
 
 
 --
@@ -1602,6 +1621,13 @@ CREATE INDEX index_submission_attempts_on_order_proposal_id ON public.submission
 --
 
 CREATE INDEX index_submission_attempts_on_reconciled_order_id ON public.submission_attempts USING btree (reconciled_order_id);
+
+
+--
+-- Name: index_sync_runs_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sync_runs_on_account_id ON public.sync_runs USING btree (account_id);
 
 
 --
@@ -1878,6 +1904,14 @@ ALTER TABLE ONLY public.risk_rules
 
 
 --
+-- Name: sync_runs fk_rails_bd20a3f65b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_runs
+    ADD CONSTRAINT fk_rails_bd20a3f65b FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: trades fk_rails_c19f3a5dfc; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1972,6 +2006,8 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260901240002'),
+('20260901240001'),
 ('20260901230001'),
 ('20260901220020'),
 ('20260901220019'),

@@ -8,5 +8,7 @@ RSpec.configure do |config|
   config.before do
     Rails.cache.clear
     Schwab::FakeClient.instance.reset!
+    # Real app credentials live only in the production file; the suite never needs real ones.
+    allow(Schwab).to receive_messages(app_key: "test-app-key", app_secret: "test-app-secret")
   end
 end

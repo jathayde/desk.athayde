@@ -8,6 +8,12 @@ shared: &shared
   schwab_token_health:
     class: Schwab::TokenHealthJob
     schedule: "0 8,20 * * * America/New_York"
+  sync_tick:
+    class: Sync::TickJob
+    schedule: "*/5 * * * * America/New_York"
+  sync_accounts:
+    class: Sync::AccountsJob
+    schedule: "5 6 * * * America/New_York"
 
 development:
   <<: *shared

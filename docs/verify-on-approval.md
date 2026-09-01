@@ -1,5 +1,7 @@
 # Verify on approval
 
+**Live probe 2026-09-01** against the approved app and a real (quiet) cash account. Items marked RESOLVED below carry the finding; the adapter was adjusted where it mattered.
+
 Everything the app assumes about Schwab that has not been checked against the portal. Each item maps to a `# SCHWAB_SHAPE_UNVERIFIED` marker in the adapter or a note in `docs/schwab-api-contract.md`. Work through this list the day the app is Ready For Use, then record real cassettes.
 
 ## From PRD §9
@@ -9,37 +11,37 @@ Everything the app assumes about Schwab that has not been checked against the po
 ## OAuth
 3. Whether `state` is echoed on the callback. The app sends it and treats a missing echo as failure.
 4. Which token-endpoint `error` value and HTTP status Schwab sends for a 7-day-expired refresh token.
-5. Whether the refresh grant returns a new `refresh_token` string or the same one.
+5. RESOLVED: the refresh grant returns the same `refresh_token` string (two consecutive refreshes, live 2026-09-01). Store whatever comes back regardless.
 6. That refreshing never extends the 7-day refresh-token window.
 7. Whether a `scope` parameter is required on authorize, and accepted values.
 
 ## Accounts and balances
 8. Exact wrapper nesting of `/accounts/{hash}` (`securitiesAccount`, `aggregatedBalance`) and that `hashValue` is absent from `/accounts`.
-9. `instrumentId` presence per asset type; which positions arrive without a CUSIP (cash equivalents, options, sweeps).
+9. RESOLVED (partly): `instrumentId` was absent on every position (EQUITY and COLLECTIVE_INVESTMENT); positions carry `uniformSymbol` instead. All three real positions had a CUSIP, including a delisted security whose `symbol` is its CUSIP. Cash equivalents and options still unverified.
 10. `settled_cash` derivation: `cashAvailableForTrading - unsettledCash` (A) versus `cashAvailableForWithdrawal` (B), checked against the Schwab website on a day with unsettled proceeds. The app uses `min(A, B)`.
 11. Whether `fields=positions` includes closed-out zero-quantity positions from the current day.
 12. Fractional quantities in positions, orders, and transactions.
 13. Whether `/trader/v1/userPreference` returns a per-account nickname (it also carries plaintext numbers; scrub).
 
 ## Orders
-14. Orders lookback: 60 days (schwab-py) or one year (Schwabdev). Probe 61+ days.
+14. RESOLVED: `fromEnteredTime` 61 and 364 days back both returned 200. Lookback is at least a year; the adapter's LOOKBACK is now 364 days.
 15. Whether `status` accepts a comma list (assumed not).
 16. `orderId` presence and status on an unactivated bracket child (assumed AWAITING_PARENT_ORDER).
 17. Cancel/replace: new `orderId` with the old marked REPLACED, and `replacingOrderCollection` nesting.
 18. Working-status set for stop detection (WORKING, ACCEPTED, QUEUED, PENDING_ACTIVATION, AWAITING_PARENT_ORDER, AWAITING_STOP_CONDITION, AWAITING_CONDITION, NEW, AWAITING_RELEASE_TIME).
 
 ## Transactions
-19. Transactions lookback (60 days versus one year and 3000 rows) and whether `startDate` beyond it returns 400.
-20. Whether omitting `types` returns all types, and whether `types` accepts a comma list or must be repeated.
+19. RESOLVED: `startDate` 364 days back returned 200. The 3000-row cap is still unverified.
+20. PARTLY: omitting `types` is accepted (200). Whether it returns every type could not be checked on an account with no activity; the sync keeps one request per type.
 21. `activityId` uniqueness (assumed global) and `orderId` presence on TRADE executions.
 22. Sign conventions of `amount`, `cost`, and `netAmount` on buys, sells, fees, dividends, deposits, withdrawals.
 23. Shapes for cash dividend, dividend reinvestment, split, reverse split, return of capital, merger, spin-off, and symbol change; whether old and new CUSIPs share one `activityId`.
 24. Timestamp offsets per field: `+0000` versus `Z` versus `-04:00`.
 
 ## Market data
-25. Market-hours closed-day shape (`equity.equity`, no `sessionHours`) and behavior for past dates.
-26. Quotes: placement of the `errors`/`invalidSymbols` key, whether a partially invalid batch still returns 200, and the symbol maximum per call (assumed 100).
-27. Price history: response for an unknown symbol (400 or 404), and `datetime` timezone for daily candles (assumed midnight Eastern).
+25. RESOLVED: closed days (Saturday, Labor Day) return `{"equity":{"equity":{"date","marketType","product":"equity","isOpen":false}}}` with no `sessionHours`, exactly as modeled. Past dates: 400 "Date cannot be more than 7 days in the past".
+26. RESOLVED (placement): a batch with an unknown symbol returns 200 with top-level `errors: {invalidSymbols: [...]}` and the valid quotes; the mapper handles it. Symbol maximum still unverified. Note the asset-type vocabulary differs per endpoint: SLV is COLLECTIVE_INVESTMENT on positions, EQUITY on quotes, ETF on instruments.
+27. RESOLVED: an unknown symbol returns 200 `{"symbol","empty":true,"candles":[]}`. Daily candle dates read correctly in New York (last candle 2026-08-31 on a 2026-09-01 probe).
 
 ## Platform
 28. Whether `Retry-After` is sent on 429, and the 429 body (community: `errors[].status="429"`, codes 429-001 and 429-005).
@@ -47,7 +49,7 @@ Everything the app assumes about Schwab that has not been checked against the po
 30. Claude app custom connector: static bearer header availability for this org (plan decision 0.8).
 
 ## Added by the step 4 review
-31. Refresh-token rotation under a dropped connection: refresh, kill the connection mid-response, refresh again. If the second call returns `invalid_grant`, the refresh grant is not safely retriable and the client must stop retrying it.
+31. PARTLY RESOLVED: two refresh grants in a row both succeeded and the refresh token did not rotate, so a retried refresh is safe. The dropped-connection variant was not exercised.
 32. Whether issuing a new token via the authorization-code grant invalidates the previous refresh token immediately.
 33. Whether the individual Trader API product's single `api` scope covers order placement (Phase 2).
 
@@ -55,13 +57,14 @@ Everything the app assumes about Schwab that has not been checked against the po
 34. Whether `toEnteredTime`/`endDate` filter by timestamp or by calendar date (the app sends end of the UTC day either way).
 35. Whether `/orders/{orderId}` returns orders older than the list lookback.
 36. Whether a replacement order also appears top-level with its own `enteredTime`.
-37. Orders list with `status=WORKING` and a one-year lookback (Schwabdev claims it works); this is how GTC stops older than 60 days become visible on first sync.
+37. RESOLVED: `status=WORKING` with a 364-day window returned 200. First sync now backfills a year.
 38. Whether `positions` is omitted entirely on an empty account versus returned as an empty array.
 
-## Added by the step 5 review
-34. Whether `toEnteredTime`/`endDate` filter by timestamp or by calendar date (the app sends end of the UTC day either way).
-35. Whether `/orders/{orderId}` returns orders older than the list lookback.
-36. Whether a replacement order also appears top-level with its own `enteredTime`.
-37. Orders list with `status=WORKING` and a one-year lookback (Schwabdev claims it works); this is how GTC stops older than 60 days become visible on first sync.
-38. Whether `positions` is omitted entirely on an empty account versus returned as an empty array.
-39. Whether Schwab echoes `state` on an error redirect (`error=access_denied`); if not, a cancelled login reads as a state mismatch.
+## Added by the live probe
+40. `/marketdata/v1/instruments/{cusip}` returns 400 "Not Found" (not 404) for a CUSIP Schwab no longer knows; symbol search works for listed securities. The adapter treats both 400 and 404 as RequestError.
+41. Market hours cannot be fetched more than 7 days in the past; the calendar only looks forward.
+42. The asset-type vocabulary differs per endpoint (positions, quotes, instruments). `instruments.asset_type` comes from positions only.
+43. RESOLVED by accident: a refresh grant with an empty Basic auth header returns 401 with no JSON body. The client now refuses to build without app credentials (`Schwab::NotConfigured`) so a configuration gap can never read as a revoked token.
+44. Whether `netAmount` on a buy fill equals −(quantity × price) − commission − fees exactly (the journal's realized P&L sums leg cash amounts; a mismatch on a real fill is quarantined rather than guessed).
+45. How cash-in-lieu for fractional shares arrives (CASH_RECEIPT reads as a deposit today and would distort the flow-adjusted series).
+46. Whether ACH_DISBURSEMENT amounts arrive negative (the snapshot classifies directional types by type, sign only for ELECTRONIC_FUND and JOURNAL).

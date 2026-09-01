@@ -8,6 +8,12 @@ module Schwab
                                :position_effect, :commission, :fees, :raw)
     Security = Data.define(:instrument, :amount, :cost, :price, :position_effect)
 
+    # The transaction types a cash account produces; one request each. SCHWAB_SHAPE_UNVERIFIED.
+    CASH_ACCOUNT_TYPES = %w[ TRADE RECEIVE_AND_DELIVER DIVIDEND_OR_INTEREST ELECTRONIC_FUND ACH_RECEIPT ACH_DISBURSEMENT WIRE_IN WIRE_OUT
+                             JOURNAL CASH_RECEIPT CASH_DISBURSEMENT MONEY_MARKET ].freeze
+    VALID = "VALID"
+    CASH_MOVEMENT_TYPES = %w[ ELECTRONIC_FUND ACH_RECEIPT ACH_DISBURSEMENT WIRE_IN WIRE_OUT CASH_RECEIPT CASH_DISBURSEMENT ].freeze
+
     def self.from(raw)
       activity_id = raw.fetch("activityId") { raise MappingError, "activity without activityId" }.to_s
       items = Array(raw["transferItems"])
@@ -34,6 +40,30 @@ module Schwab
     end
 
     def trade? = type == "TRADE"
+    def valid? = status.nil? || status == "VALID"
+
+    # The app's classification of this activity. :other is never a quiet success; the sync counts it.
+    def kind
+      return :fee if fee_only?
+      cash_equivalent = instrument&.asset_type == "CASH_EQUIVALENT"
+      case type
+      when "TRADE" then cash_equivalent ? :sweep : :fill
+      when "MONEY_MARKET" then :sweep
+      when "DIVIDEND_OR_INTEREST" then instrument && !cash_equivalent ? :dividend : :interest
+      when *CASH_MOVEMENT_TYPES then net_amount&.negative? ? :withdrawal : :deposit
+      when "JOURNAL", "RECEIVE_AND_DELIVER"
+        if securities.size >= 2 then :corporate_action
+        elsif securities.one? then :transfer
+        elsif type == "JOURNAL" then net_amount&.negative? ? :withdrawal : :deposit
+        else :other
+        end
+      else :other
+      end
+    end
+    def fee_only? = raw.fetch("transferItems", []).then { |items| items.any? && items.all? { |i| i["feeType"].present? } }
+
+    # What the sync records about an activity it could not classify.
+    def summary = { type: type, activity_type: activity_type, sub_account: sub_account, description: description, net_amount: net_amount&.to_s }
 
     def side
       return nil unless trade?

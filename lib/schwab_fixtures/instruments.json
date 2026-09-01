@@ -1,1 +1,18 @@
-{"instruments":[{"cusip":"037833100","symbol":"XYZ","description":"XYZ CORP","exchange":"NASDAQ","assetType":"EQUITY"}]}
+{
+ "instruments": [
+  {
+   "cusip": "037833100",
+   "symbol": "XYZ",
+   "description": "XYZ CORP",
+   "exchange": "NASDAQ",
+   "assetType": "EQUITY"
+  },
+  {
+   "cusip": "808515605",
+   "symbol": "SWVXX",
+   "description": "SCHWAB VALUE ADVANTAGE MONEY",
+   "exchange": "",
+   "assetType": "MUTUAL_FUND"
+  }
+ ]
+}

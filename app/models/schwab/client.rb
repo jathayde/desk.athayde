@@ -23,6 +23,8 @@ module Schwab
     # wait: false raises on the first retriable failure instead of sleeping; web callers use it.
     def initialize(token: nil, app_key: Schwab.app_key, app_secret: Schwab.app_secret, callback_url: Schwab.callback_url,
                    sleeper: method(:sleep), wait: true)
+      # A missing app key would send an empty Basic auth header and read Schwab's 401 as a revoked token.
+      raise NotConfigured, "Schwab app key and secret are not in credentials" if app_key.blank? || app_secret.blank?
       @token, @app_key, @app_secret, @callback_url, @sleeper, @wait = token, app_key, app_secret, callback_url, sleeper, wait
     end
 

@@ -14,6 +14,8 @@ FactoryBot.define do
       side { "SELL" }
       order_type { "STOP" }
       stop_price { 48.90 }
+      quantity { 40 }
+      remaining_quantity { 40 }
     end
 
     trait :trailing_stop do
@@ -21,6 +23,8 @@ FactoryBot.define do
       side { "SELL" }
       order_type { "TRAILING_STOP" }
       stop_price { nil }
+      quantity { 40 }
+      remaining_quantity { 40 }
     end
   end
 end

@@ -131,12 +131,12 @@ Symbols comma-joined and URL-encoded; chunk at 100. Response keyed by symbol: `a
 
 | Limit | Value used | Notes |
 |---|---|---|
-| Orders and transactions lookback | 60 days, one constant | Schwabdev says one year; probe 61+ days on approval |
+| Orders and transactions lookback | 364 days, one constant | Live probe 2026-09-01: 364-day windows return 200 on both endpoints |
 | Read rate limit | 100/min shared budget | community says 120/min per app, all APIs; unverified |
 | 429 handling | back off 1, 4, 16 s with jitter; `Retry-After` capped at 60 s | `Retry-After` presence unverified |
 | Quotes per call | 100 symbols | undocumented |
 | `maxResults` | 3000, sent explicitly | |
-| Market hours | one date per call, today to +1 year | |
+| Market hours | one date per call, from 7 days back to +1 year | past dates beyond 7 days are a 400 (live probe) |
 | Order write limit (Phase 2) | 120/min, 4000/day | QuantConnect figure |
 
 ## FakeClient
