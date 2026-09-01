@@ -200,7 +200,7 @@ Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 come
 
 ## 9. Deploy
 
-- `Procfile`: `web: bundle exec puma -C config/puma.rb`, `worker: bin/jobs`, `release: bin/rails db:prepare`. Postgres service on the `postgres:17` image (structure.sql uses PG17 settings).
+- `Procfile`: `web: bundle exec puma -C config/puma.rb`, `worker: bin/jobs`, `release: bin/rails db:prepare`. One Postgres 17 service and one database: Solid Queue, Solid Cache, and Solid Cable tables live in the primary schema (migration `InstallSolidTables`), so `db:prepare` on `DATABASE_URL` is the whole database setup.
 - `app.json` for the release phase.
 - `bin/dokku-setup`: documents postgres plugin, letsencrypt, config vars (`RAILS_MASTER_KEY`, `SCHWAB_CALLBACK_URL`, `MEMORY_REPO_PATH`), storage mount for the memory repo, `ps:scale worker=1`, and the daily offsite DB dump from PRD §5.9 (postgres plugin backup to object storage on a cron).
 - App time zone `Eastern Time (US & Canada)`; Solid Queue recurring schedules use the same.

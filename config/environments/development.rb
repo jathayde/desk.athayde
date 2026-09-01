@@ -42,7 +42,6 @@ Rails.application.configure do
 
   # Solid Queue in development too, so bin/jobs runs the recurring tick against the fake client.
   config.active_job.queue_adapter = :solid_queue
-  config.solid_queue.connects_to = { database: { writing: :queue } }
 
   # Mail is written to tmp/mails so sign-in links can be read without a mail server.
   config.action_mailer.delivery_method = :file
