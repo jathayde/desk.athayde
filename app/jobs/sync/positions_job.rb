@@ -32,11 +32,20 @@ module Sync
                                  buying_power: summary.balances.buying_power, raw: summary.balances.raw)
         account.update!(last_synced_at: now, raw: summary.raw_without_positions)
         run.touched(kept.size)
+        hand_off_to_journal(account, summary.balances.equity) if complete && account.trading_enabled?
         complete ? :succeeded : :partial
       end
     end
 
     private
+      # The journal reconciles to the new positions; today's snapshot is rechained only when its equity moved.
+      def hand_off_to_journal(account, equity)
+        Journal::BootstrapJob.perform_later(account)
+        today = MarketDay.today
+        snapshot = account.snapshots.find_by(as_of: today)
+        Snapshots::RebuildJob.perform_later(account, from: today) if snapshot && snapshot.equity != equity
+      end
+
       def last_price_for(position)
         return nil if position.quantity.zero? || position.market_value.nil?
         position.market_value / position.quantity

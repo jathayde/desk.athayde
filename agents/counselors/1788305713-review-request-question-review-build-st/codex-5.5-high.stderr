@@ -1,0 +1,2653 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a05f53-abce-77d3-bc82-ae2ed3cad9ce
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788305713-review-request-question-review-build-st/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the referenced prompt first, then follow whatever workflow it specifies within the workspace constraints.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788305713-review-request-question-review-build-st/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Second Opinion Request
+
+## Question
+# Review Request
+
+## Question
+Review build step 6 of Phase 1: the trade journal builder, setup stats, and daily snapshots, built to the design you reviewed (plug-leg bootstrap reconciled to the broker, transactional per-activity linking with full recompute from legs, leg cash amounts for P&L, initial quantity from the first order, flows since the prior snapshot, type-first withdrawal classification). Verify the fixes hold in the code and find what will still produce wrong journal rows or drawdown numbers.
+
+## Context
+
+### Files to Review
+Uncommitted on top of commit 8970691; `git status --porcelain` lists them.
+- @app/models/trade.rb @app/models/journal/linker.rb @app/models/trade_leg.rb @app/models/setup.rb @app/models/snapshot.rb @app/models/activity.rb @app/models/schwab/activity.rb
+- @app/jobs/journal/bootstrap_job.rb @app/jobs/journal/link_fills_job.rb @app/jobs/journal/recompute_setup_stats_job.rb @app/jobs/snapshots/daily_job.rb @app/jobs/snapshots/rebuild_job.rb
+- Hooks: @app/jobs/sync/positions_job.rb @app/jobs/sync/activities_job.rb @app/jobs/sync/tick_job.rb
+- @db/migrate/20260901250001_prepare_journal_columns.rb
+- Specs: @spec/models/journal/linker_spec.rb @spec/models/setup_stats_spec.rb @spec/models/snapshot_spec.rb @spec/jobs/journal/hooks_spec.rb @spec/support/journal.rb
+
+### The design it implements
+- @docs/phase-1-plan.md §4 and §6
+- Your previous design review: @agents/counselors/1788302368-review-request-question-before-build-st/codex-5.5-high.md and claude-fable.md
+
+## Instructions
+You are providing an independent review. Be critical and thorough.
+- Re-walk each sequence from your previous review against the code: buy/sell; scale in and out; legacy sell-first; bootstrap then the entry fill arriving in the window; 2:1 split via transfer with a stop; dividend mid-trade and after close; reverse merger A to B with a bootstrapped B; same-day out-of-order fills; partial fill on one order. State where the code's rows differ from what you expected
+- Trace Trade#recompute! for correctness with adjustment ratios (quantity, avg_entry, initial_risk, total_risk), income legs, and the plug leg sorting first
+- Trace reconcile_plug! for: bootstrap before fills, fills before bootstrap, a sell that exceeds the plug, and the plug being deleted at zero; check the LinkFillsJob's second reconcile pass
+- Check idempotency and crash safety: the per-activity transaction, journaled_at last, unjournal! on changed activities, the retry on RecordNotUnique in BootstrapJob, two jobs sharing the journal concurrency key
+- Check the succession merge in link_corporate_action, including the fallback when one side is missing
+- Check Snapshot.build!: balance choice, flows since prior snapshot, share transfers, first snapshot, division by zero, the rebuild range and triggers from both sync jobs, and the tick's snapshot_due?
+- Check Setup#recompute_stats! eligibility and the recompute triggers (close, review, exclude)
+- Flag missing specs; say which of your earlier concerns are now closed and which remain
+- Be direct and opinionated; do not hedge; order by severity with file paths
+
+## Instructions
+You are providing an independent second opinion. Be critical and thorough.
+- Analyze the question in the context provided
+- Identify risks, tradeoffs, and blind spots
+- Suggest alternatives if you see better approaches
+- Be direct and opinionated — don't hedge
+- Structure your response with clear headings
+- Keep your response focused and actionable
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+This is a review task, so I’m going to work from the diff and the referenced design docs rather than make changes. I’ll first identify the touched files and then trace the sequences called out in the prompt.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' docs/phase-1-plan.md" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,260p' agents/counselors/1788302368-review-request-question-before-build-st/codex-5.5-high.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+**Severity 1**
+
+1. **Bootstrap plus sell-first will create false P&L unless the synthetic entry quantity is the pre-sale holding, not the sold quantity.**
+
+Planned design says “sell fill with no open trade bootstraps first, quantity from the fill, then applies exit.” That is wrong for real accounts.
+
+Sequence: legacy holding is 40 shares. First synced journalable fill is `sell 15`.
+
+Expected trade state after the fill:
+
+| field | expected |
+|---|---|
+| `status` | `open` |
+| `bootstrapped` | `true` |
+| `needs_review` | `true` |
+| synthetic entry qty | `40`, from broker position before/around sale, not `15` |
+| exit leg qty | `15` |
+| remaining qty | `25` |
+| `peak_quantity` | `40` |
+| `avg_entry` | broker average price for the 40-share legacy position |
+| `realized_pnl` | partial realized only if basis is trustworthy; otherwise nil or provisional |
+| `realized_r` | nil until reviewed stop exists |
+
+If the system bootstraps 15, it immediately closes the trade and treats the remaining 25 as a separate new bootstrapped trade on the next positions sync. That splits one lifecycle into two fake trades and corrupts setup stats, P&L, and missing-review UX.
+
+Fix: sell-first must reconcile against the current/nearest broker position and infer pre-fill quantity as `current_position.quantity + sold_quantity` when the position still exists. If no position exists because the sale fully closed before positions sync, bootstrap quantity can equal the sell quantity, but mark basis/P&L as provisional.
+
+2. **`journaled_at` is not a safe idempotency boundary.**
+
+The design says unique `trade_legs.activity_id` gives idempotency and every processed activity gets `journaled_at`. That is insufficient because one activity can drive multiple durable side effects: create trade, create leg, mutate trade aggregates, mutate instrument succession, journal activity.
+
+Crash examples:
+
+| crash point | bad result |
+|---|---|
+| leg inserted, trade aggregates not recomputed | activity may be skipped if `journaled_at` was set early, leaving stale trade totals |
+| trade created, leg insert fails on unique activity | duplicate open-trade rescue may attach future fills to the wrong row unless reloaded under lock |
+| corporate action moves trade to new CUSIP, crashes before leg | rerun may not find the open trade on old instrument and falls back to bogus exit/entry |
+| dividend leg inserted, crashes before closed trade P&L recompute | realized P&L excludes income forever if closed trade is not recalculated |
+
+Fix: process each activity in one DB transaction with row locks on account/instrument/open trade. Insert/find the leg by `activity_id`, then recompute the affected trade from all legs, then set `journaled_at` last. Reruns should be “find existing leg and recompute,” not “skip because activity is marked.”
+
+3. **Same-day fill ordering will be wrong if `executed_at` is missing, date-only, or broker-order granularity.**
+
+The planned ordering is `executed_at, id`. Schwab transactions often have date-level or coarse timestamps, and the mapper already falls back from `time` to `tradeDate`. For a same-day wash, order matters.
+
+Sequence: same instrument, same day, activities arrive out of order:
+
+- Actual: buy 40 at 10:00, sell 40 at 15:00.
+- API ingestion order: sell row first, buy row second.
+- `executed_at` is date-only for both.
+
+Expected trade row:
+
+| field | expected |
+|---|---|
+| legs | entry 40, exit 40 |
+| `status` | `closed` |
+| `needs_review` | false if originating proposal resolves; true otherwise |
+| `realized_pnl` | sell proceeds minus buy cost minus fees |
+| `realized_r` | computed only if planned stop exists |
+
+Bad planned result: sell-first bootstrap creates a fake legacy trade, then buy opens a second trade. That is catastrophically wrong.
+
+Fix: ordering needs a broker-provided sequence if available. If not available, group same-account/same-instrument/same-day fills and solve against position deltas/orders. Where ordering cannot be proven, create/link legs but mark trade `needs_review` and exclude from setup stats until resolved.
+
+4. **R math is underdefined and will misstate scaled trades.**
+
+Current plan: `initial_risk = first entry quantity × (first entry price - planned_stop)`, fixed at first entry. That makes scale-ins look artificially good or bad depending on added size.
+
+Sequence: buy 40 at 100, stop 95. Later buy 20 at 110, same stop 95. Sell all at 115.
+
+Using first-entry risk: `40 × 5 = 200`. P&L = `40×15 + 20×5 = 700`. R = `3.5R`.
+
+But the trade actually had capital added at risk. Total risk after scale-in is `40×5 + 20×15 = 500`. R = `1.4R`.
+
+Expected behavior: store both concepts or choose one explicitly.
+
+| field | recommendation |
+|---|---|
+| `initial_risk` | risk after the initial entry only |
+| `max_risk` or `total_risk_basis` | risk added by all entry legs at their then-current planned stop |
+| `realized_r` for setup stats | use total risk basis, not first-entry risk |
+| `initial_realized_r` if desired | optional diagnostic using initial risk |
+
+For setup expectancy, first-entry-only R is misleading because scaled trades become non-comparable. The review path must recompute risk from every entry leg, not just the first entry leg, especially for orphan trades reviewed after scaling or closure.
+
+5. **Bootstrapped closed-before-review trades must not enter setup stats after review unless basis and stop timing are known.**
+
+A bootstrapped trade can close before the user reviews it. If the user later enters setup and planned stop, the system can compute a number, but it is not the same quality as a planned trade captured at entry.
+
+Expected:
+
+| condition | setup stats inclusion |
+|---|---|
+| non-bootstrapped, planned stop known at first entry | include |
+| orphan fill reviewed before exit, stop entered | include, but mark reviewed |
+| bootstrapped legacy trade with synthetic entry | exclude by default |
+| trade closed before stop/setup review | exclude unless user explicitly marks it valid for stats |
+
+Otherwise the Sunday edge review will mix real strategy executions with reconstructed history.
+
+**Severity 2**
+
+6. **Realized P&L sign conventions need to be based on normalized leg economics, not `Activity.net_amount` directly.**
+
+The design says `realized_pnl = exits − entries − commissions − fees + income legs`. That is correct only if entries/exits are computed from positive `quantity × price` and commissions/fees are positive. Do not mix that with signed `net_amount`.
+
+Expected conventions:
+
+| activity | normalized effect |
+|---|---|
+| buy 40 at 100, $1 fees | entry cost `4000`, fees `1`, P&L effect `-4001` |
+| sell 40 at 110, $1 fees | exit proceeds `4400`, fees `1`, P&L effect `+4399` |
+| dividend $12 | income `+12` |
+| return of capital $20 | basis reduction, not income P&L unless trade is closed/accounting chooses otherwise |
+
+If Schwab `net_amount` is negative for buys and positive for sells, do not also subtract fees parsed from transfer items if they are already included in net amount. Pick one accounting source. I recommend normalized gross legs plus explicit positive fee columns, with tests proving `net_amount` is not double-counted.
+
+7. **Dividends should not blindly attach to the open trade.**
+
+“Dividend with matching open trade creates income leg” is too broad. Real accounts can receive dividends after exit because of ex-dividend/record/payable-date timing. If the trade was open on ex-date but closed before pay date, there may be no open trade when the dividend activity arrives.
+
+Expected behavior: attach dividend to the trade that held the shares on ex-date if available; otherwise attach by payable date only when an open trade exists and mark uncertain. The current model lacks ex-date, so payable-date matching to open trade will miss legitimate dividends and sometimes attach them to a later, unrelated lifecycle.
+
+8. **Corporate actions cannot be represented safely as one `activity_id` per leg.**
+
+A reverse merger replacing CUSIP A with CUSIP B in one activity needs multiple journal effects: remove/convert old shares, add new shares, possibly cash-in-lieu, ratio, and instrument succession. But `trade_legs.activity_id` is unique. That allows only one leg per Schwab activity.
+
+Expected for reverse merger A → B:
+
+| field | expected |
+|---|---|
+| original trade | same trade lifecycle continues |
+| `trade.instrument_id` | moved from A to B |
+| instrument B | `predecessor_instrument_id = A` |
+| adjustment leg | records ratio, old quantity, new quantity, cash-in-lieu if any |
+| P&L | unchanged except cash-in-lieu/fees |
+| `needs_review` | true if ratio/cash components cannot be confidently parsed |
+
+Fix: either allow multiple legs per activity with unique `(activity_id, leg_role)`, or store one corporate-action leg with structured JSON details. A single `quantity`, `ratio`, `cash_amount` row may be too thin.
+
+9. **Split math needs exact quantity and price semantics.**
+
+For a 2:1 split mid-trade with planned stop:
+
+Before: buy 40 at 100, planned stop 90.
+
+Expected after split:
+
+| field | expected |
+|---|---|
+| quantity | `80` |
+| `avg_entry` | `50` |
+| `planned_stop` | `45` |
+| `planned_target` | divided by 2 if present |
+| `initial_risk` | unchanged in dollars: `40×(100−90)=400`, or recomputed equivalent `80×(50−45)=400` |
+| realized P&L | unchanged at split moment |
+
+The plan says scale quantity, avg_entry, planned_stop, target by ratio. Be precise: for a 2:1 split, quantity multiplies by 2, prices divide by 2. For a 1:10 reverse split, quantity divides by 10, prices multiply by 10. Do not multiply both quantity and prices by the same ratio.
+
+10. **Partial fills for one order must remain separate legs but share proposal metadata.**
+
+Sequence: one order to buy 40 partially fills as two activities: buy 25, buy 15.
+
+Expected trade:
+
+| field | expected |
+|---|---|
+| one trade | yes |
+| legs | two entry legs, each linked to its own activity |
+| setup/thesis/stop | copied once from `orders.order_proposal_id` |
+| `avg_entry` | weighted average across both fills plus entry commissions if basis includes them |
+| `peak_quantity` | `40` |
+| `initial_risk` | should reflect total planned entry risk once order completes, or update as each entry fill arrives |
+
+If initial risk is fixed after the first 25-share fill and never updated, a partially filled order that later completes will overstate R.
+
+**Severity 3**
+
+11. **Expected rows for ordinary scale cases need stricter definitions.**
+
+Buy 40, sell 40:
+
+| field | expected |
+|---|---|
+| legs | entry 40, exit 40 |
+| `status` | `closed` |
+| `peak_quantity` | `40` |
+| `avg_entry` | entry price |
+| `avg_exit` | exit price |
+| `realized_pnl` | exit proceeds - entry cost - fees/commissions + income |
+| `realized_r` | P&L / chosen risk basis |
+
+Buy 40, buy 20, sell 30, sell 30:
+
+| field | expected |
+|---|---|
+| one trade | yes |
+| legs | entry 40, entry 20, exit 30, exit 30 |
+| `peak_quantity` | `60` |
+| `status` after first sell | `open`, qty 30 |
+| `status` after second sell | `closed`, qty 0 |
+| `avg_entry` | weighted average entries |
+| `avg_exit` | weighted average exits |
+| `realized_pnl` | all exits - all entries - fees + income |
+| `realized_r` | should use total risk basis, not first-entry risk |
+
+12. **Bootstrap quantity disagreement with later broker positions must force reconciliation, not silent recompute.**
+
+Positions are broker-derived. If an open trade’s computed running quantity differs from the latest broker position for the same account/instrument, that is not a harmless drift.
+
+Expected handling:
+
+| mismatch | action |
+|---|---|
+| trade qty > broker qty | missing exit, transfer, corporate action, or position sync race |
+| trade qty < broker qty | missing entry, transfer in, split, or bootstrap error |
+| broker position absent but trade open | close only if a journaled exit/corporate action proves zero; otherwise flag |
+| trade closed but broker position exists | create/reopen only through reviewed reconciliation |
+
+Add `computed_quantity` either as a stored field or a deterministic query, and compare it to `positions.quantity` after each sync. Raise dashboard/system-health review items for mismatches.
+
+13. **IRA/read-only account behavior must be isolated by account, but still available for wash-sale context.**
+
+The plan says journal builder runs trading-enabled accounts only, which is correct. But the design review must explicitly preserve this:
+
+| case | expected |
+|---|---|
+| same instrument held in IRA | no trade row in IRA |
+| taxable trade in same instrument | taxable journal unaffected |
+| IRA buy after taxable loss | future wash-sale warning/block context, not Phase 1 journal mutation |
+
+The partial unique index includes `account_id`, so it will not collide. The risk is product-level: do not let linked-account positions satisfy taxable bootstrap reconciliation.
+
+14. **Snapshots use the right high-level idea, but the daily return formula will break on external flows unless signs and timing are nailed down.**
+
+PRD intent: deposits and withdrawals must not affect drawdown. The chain-linked index is right. The fragile parts are flow sign, day boundary, missing balances, and rebuild.
+
+Expected formula if `net_flows` is positive for deposits and negative for withdrawals:
+
+`daily_return = (ending_equity - prior_equity - net_flows) / prior_equity`
+
+Examples:
+
+| prior equity | ending equity | flow | expected return |
+|---:|---:|---:|---:|
+| 10000 | 15000 | +5000 deposit | 0% |
+| 10000 | 5000 | -5000 withdrawal | 0% |
+| 10000 | 9000 | 0 | -10% |
+
+The planned formula says `equity − net_flows − prior equity`, which is correct only if withdrawals are negative. The text says deposits positive but does not explicitly say withdrawals negative in the snapshot section. Tests must lock this down.
+
+15. **Flow day should probably use settlement date for equity reconciliation, not trade date.**
+
+For deposits/withdrawals, drawdown should be neutralized on the day the cash hits account equity. If balance equity changes on settlement/posted date but snapshot subtracts the flow on trade date, the index gets distorted for one or more days.
+
+Recommendation:
+
+| field | use |
+
+ succeeded in 0ms:
+# Phase 1 Plan: Investment Copilot (read-only)
+
+Source of truth: `docs/artifacts/investment-copilot-prd.md` (v9). Screen states from `docs/artifacts/investment-copilot-ui-flows.md` and the wireframes. This plan covers only PRD §6 Phase 1 as scoped in the kickoff brief. Revision 2 incorporates the counselors PRD review (codex-5.5-high, claude-fable; outputs in `agents/counselors/1788296923-*`).
+
+Sections: decisions, migrations, jobs, tool surface, journal builder, stops and open risk, snapshots, UI, testing, deploy, build order, deferred items, Schwab assumptions, working method.
+
+---
+
+## 0. Decisions (resolved 2026-09-01)
+
+1. **Secrets in Rails credentials**, production-only file (`config/credentials/production.yml.enc`), keys `schwab.app_key`, `schwab.app_secret`, `mcp.bearer_token`, `anthropic.api_key`, `resend.api_key`, plus Active Record Encryption keys. `SCHWAB_CALLBACK_URL` and `MEMORY_REPO_PATH` stay in dokku ENV (not secret). The dokku `SCHWAB_APP_KEY`/`SCHWAB_APP_SECRET` vars get unset once the credentials file is on the server. Rotating the MCP token is an edit to the credentials file plus a deploy.
+2. **Gems beyond defaults:** `rspec-rails`, `factory_bot_rails`, `vcr`, `webmock`, `bundler-audit`, `mcp` (official Ruby SDK), `anthropic` (official Ruby SDK). No claude-on-rails.
+3. **Web login is passwordless magic link**, built on the Rails 8 auth generator with `generates_token_for :magic_link` (15 min, single use). Users are seeded, not self-registered: john@athayde.com and whitney@athayde.com only. No gem. Because a second person can log in, `audit_events.user_id` exists from day one so Phase 2 approvals are attributable. Fallback when email is down: `bin/rails login:link[email]` prints a magic link to the console.
+4. **Email via Resend over SMTP**, no gem; API key in credentials. Production login and re-auth depend on it, so Resend DNS is a prerequisite for the first production deploy.
+5. **`evaluate_hypothetical_order` omitted** from Phase 1. `get_risk_rules` ships and returns the (empty) `risk_rules` rows.
+6. **§5.12 allocation tables deferred** to Phase 2.5.
+7. **Off-hours cadence** for orders/transactions sync: hourly.
+8. **MCP auth (open verification, not blocking):** the Claude app's custom-connector UI exposes static bearer headers only to orgs in a beta. John checks Settings → Connectors → Add custom connector for a "headers" option before step 8. If absent, the fallback is a minimal OAuth 2.1 authorization-code + PKCE endpoint on the app that issues the same bearer after magic-link login. `McpAuth` verifies the bearer either way, so the tool layer is unaffected.
+
+---
+
+## 1. Migrations (in creation order)
+
+All money columns `decimal(18,4)`, quantities `decimal(18,6)` (fractional shares unverified, PRD §5.12). All timestamps `timestamptz`. No table stores a bare ticker as a key; instrument references are `instrument_id`.
+
+| # | Table | Key columns | Phase 1 populated? |
+|---|---|---|---|
+| 1 | `users`, `sessions` | Rails 8 auth generator, password column removed; `email_address` unique. Magic-link tokens via `generates_token_for`, no table. | yes (two seeded users) |
+| 2 | `schwab_tokens` | `access_token` (encrypted), `refresh_token` (encrypted), `access_expires_at`, `refresh_expires_at` (= `issued_at` + 168 hours, never moved by access refreshes), `issued_at`, `last_refreshed_at`, `last_refresh_error`, `revoked_at`, `scope` | yes |
+| 3 | `accounts` | `schwab_hash` (Schwab's opaque hashValue, unique), `account_type` enum (taxable/ira, nullable: set by the operator since Schwab only reports CASH or MARGIN), `trading_enabled` bool, `nickname`, `last_synced_at`, `raw` jsonb. A plaintext account number is never a column. | yes |
+| 4 | `instruments` | `cusip` (nullable, unique where present), `schwab_instrument_id` (nullable, unique where present), `symbol`, `symbol_history` jsonb `[{symbol, until}]` (UTC), `asset_type`, `leveraged` bool default false, `description`, `predecessor_instrument_id` (self FK, set on CUSIP succession: reverse split, merger, spin-off). Identity resolution order: CUSIP, then Schwab instrument id, then symbol+asset_type as last resort with a `needs_review` audit. | yes |
+| 5 | `positions` | `account_id`, `instrument_id`, `quantity`, `average_price`, `cost_basis`, `market_value`, `last_price`, `working_stop_order_id` (FK orders, nullable), `synced_at`, `raw` jsonb. Unique on (account, instrument). Rows absent from the broker response are deleted on sync. | yes |
+| 6 | `balances` | Time series: `account_id`, `as_of`, `equity`, `cash_available_for_trading`, `unsettled_cash`, `settled_cash` (derived; mapping unverified), `buying_power`, `raw` jsonb. Current balance = latest row per account. | yes |
+| 7 | `orders` | `account_id`, `instrument_id`, `broker_order_id` (unique per account), `status` enum incl. Phase 2 states, `side`, `quantity`, `filled_quantity`, `order_type`, `limit_price`, `stop_price`, `remaining_quantity`, `strategy_type` (SINGLE/TRIGGER/OCO, reconciliation needs it), `duration`, `session`, `tax_lot_method`, `placed_via` enum (schwab_direct/app), `parent_order_id` (self FK, bracket child), `replaces_order_id` (self FK, cancel/replace chain), `order_proposal_id` (nullable), `entered_at`, `closed_at`, `raw` jsonb. `instrument_id` is nullable for container strategies with no legs. Index on (account, instrument, entered_at) for Phase 2 reconciliation. An upsert never nulls a lineage or proposal column that already has a value | yes (sync only) |
+| 8 | `order_proposals` | `account_id`, `instrument_id`, `kind` enum (entry, exit, stop_adjustment), `target_order_id` (nullable, for stop adjustments), `origin` enum (agent/human), `user_id` (nullable), `status` enum (proposed, validated, rejected, approved, submitted, submission_unknown, filled, cancelled), `side`, `quantity`, `order_type`, `limit_price`, `stop_price` (the order's own trigger), `planned_stop` (the protective stop that becomes the bracket child), `target_price`, `duration`, `session`, `tax_lot_method`, `thesis`, `setup_id`, `guardrail_results` jsonb (records `{rule_id, version}` pairs), `acknowledged_warnings` jsonb, `expires_at`, `override_reason`, `reject_reason`, `approved_at`, `submitted_at` | no |
+| 9 | `submission_attempts` | `order_proposal_id`, `attempted_at`, `payload` jsonb, `response` jsonb, `outcome` enum (submitted, unknown, failed, reconciled), `reconciled_order_id` (nullable) | no |
+| 10 | `activities` (the PRD's `transactions`; renamed because `transaction` is reserved by Active Record) | One row per Schwab activity. `account_id`, `instrument_id` (nullable for cash-only), `order_id` (FK, nullable), `broker_order_id` (nullable), `broker_activity_id` (unique per account), `kind` enum (fill, sweep, dividend, interest, fee, deposit, withdrawal, transfer, corporate_action, other), `status` (Schwab's VALID/INVALID/PENDING; only VALID is journaled), `sub_type` string (raw Schwab type), `side`, `quantity`, `price`, `commission`, `fees` (summed from the activity's fee transfer items), `net_amount`, `trade_date`, `settlement_date`, `executed_at`, `raw` jsonb, `journaled_at` | yes |
+| 11 | `setups` | `name` (unique), `definition`, `active` bool, `win_rate`, `avg_r`, `expectancy`, `sample_size`, `stats_computed_at`. Stats are stored here and recomputed by `Journal::RecomputeSetupStatsJob` whenever a trade closes; `get_setup_stats` reads them. | table yes, rows via seed |
+| 12 | `trades` | `account_id`, `instrument_id`, `setup_id` (nullable), `order_proposal_id` (nullable), `status` enum (open, closed) only, with a partial unique index allowing one open trade per account and instrument, `needs_review` bool, `review_reason`, `excluded_from_stats` bool, `stopped_out` bool, `initial_quantity`, `total_risk` (orphan or bootstrapped, missing setup/stop), `bootstrapped` bool (created from an existing position, entry history unavailable), `opened_at` (nullable when bootstrapped), `closed_at`, `avg_entry`, `avg_exit`, `peak_quantity`, `planned_stop`, `planned_target`, `initial_risk`, `realized_pnl`, `realized_r`, `thesis`, `post_mortem`, `followed_setup` (nullable bool), `journal_completed_at` | yes |
+| 13 | `trade_legs` | `trade_id`, `activity_id` (unique where present, nil on synthetic bootstrap legs), `kind` enum (entry, exit, adjustment, income), `quantity`, `price`, `ratio` (splits), `cash_amount`, `executed_at`, `note` | yes |
+| 14 | `risk_rules` | `rule_type`, `params` jsonb, `active`, `version`, `setup_id` (nullable), `superseded_by_id` | no |
+| 15 | `snapshots` | `account_id`, `as_of` date (unique per account), `equity`, `net_flows` (day), `daily_return` (net of flows), `index_value` (chain-linked, starts at 1.0), `high_water_index`, `drawdown` (fraction), `open_risk_amount`, `open_risk_ratio` (fraction of equity), `unprotected_count`. Fully rebuildable from `balances` + `transactions`. | yes |
+| 16 | `audit_events` | `kind` string, `actor` enum (human/system/agent), `user_id` (nullable), `subject` polymorphic (nullable), `data` jsonb, `reason`, `created_at` only. Postgres triggers reject UPDATE, DELETE, and TRUNCATE; `kind` is validated against `AuditEvent::KINDS`. Reserved for the PRD's "logged" list; not telemetry. | yes |
+| 17 | `market_days` | `date` (unique), `trading` bool, `session_opens_at` (pre-market), `regular_opens_at`, `regular_closes_at`, `session_closes_at` (post-market), `raw` jsonb, `fetched_at`, `source` enum (schwab, fallback) | yes |
+| 18 | `sync_runs` | `feed` enum (accounts, positions, orders, activities, market_hours, memory_repo, snapshots; balances ride with positions), `account_id` (nullable; cursors are per account and feed), `status` (running, succeeded, partial, failed, skipped_token), `started_at`, `finished_at`, `error`, `records_touched`, `unmapped_values` jsonb, `window_from`, `window_to` (captured before the request; the next window starts from it), `gap_from` (set when the computed window start is later than the last success: data Schwab can no longer return) | yes |
+| 19 | `agent_runs` | `kind` enum (morning_brief, eod, sunday_review), `status`, `degraded` bool (ran with expired token / stale data), `started_at`, `finished_at`, `tool_turns`, `input_tokens`, `output_tokens`, `estimated_cost`, `output_markdown`, `error`, `model` | yes |
+| 20 | `tool_calls` | `agent_run_id` (nullable), `transport` enum (mcp, scheduled), `tool_name`, `arguments` jsonb, `duration_ms`, `error`, `created_at`. This is where MCP and runtime tool telemetry goes, not `audit_events`. | yes |
+| 21 | `system_settings` | Singleton row (check constraint `id = 1`): `shadow_mode` bool default true, `manual_halt` bool default false, `manual_halt_reason`, `manual_halt_at`, `sync_paused_reason` (set while token expired) | yes |
+
+Solid Queue / Cache / Cable schemas already generated. Every datetime column is `timestamptz` (adapter default set in an initializer). Schema format is `structure.sql` for the audit triggers; the dump pins Postgres 17 settings, so dokku runs the postgres:17 image. Active Record Encryption: production keys live in `config/credentials/production.yml.enc`; development and test share `config/credentials.yml.enc` (dev keys) with fixed test keys in `config/environments/test.rb`.
+
+Phase 2 columns present now so `orders`/`order_proposals` never need a shape change: `parent_order_id`, `replaces_order_id`, `order_proposal_id`, `submission_unknown` state, `submission_attempts`, `guardrail_results`, `risk_rule_version`, `acknowledged_warnings`, `kind`/`target_order_id` for stop adjustments.
+
+---
+
+## 2. Jobs (Solid Queue, `config/recurring.yml`, all times America/New_York)
+
+**Token model (revised after the step 4 counselors review).** Pause state is *derived* from the current token, never written by a failure. `schwab_tokens` gains `revoked_at`; `SchwabToken.current` is the newest by `issued_at, id`; `usable?` = present, not refresh-expired (`issued_at + 168.hours`, elapsed time not calendar days), not revoked. `SchwabToken.issue!(response)` inserts the new row and clears `system_settings.sync_paused_reason` in one transaction, enqueuing `Sync::CatchUpJob` after commit. `SchwabToken#refresh!` takes the row lock, reloads, and returns early if the row is no longer current or was refreshed in the last minute (so two workers cannot double-refresh and a stale row cannot act); it builds the client inside the lock; `access_expires_at` = now + `expires_in` − 60 s; `refresh_token` = response value or the existing one; `refresh_expires_at` is never touched. On `ReauthRequired` it sets `revoked_at` on the current row only, records `last_refresh_error` outside the lock so a rollback cannot lose it, audits `token_refresh_failed`, and sets `sync_paused_reason`. On `ServerError`/`TransportError` it records the error and does nothing else. `ensure_fresh!(margin:)` refreshes proactively when the access token is near expiry, so a 401 is the safety net rather than the norm. `Schwab.client` raises `Schwab::NoUsableToken` rather than letting nil reach a request.
+
+**Token gating.** Only `Sync::TickJob` and the agent jobs are scheduled; everything else is enqueued by them. When `SchwabToken.current` is not usable, the tick job writes one `sync_runs` `skipped_token` row per hour, audits `sync_paused_token_expired` once per episode, and enqueues nothing. No self-re-enqueue, so the queue cannot grow. The re-auth callback (`issue!`) clears the pause, audits `sync_resumed`, and enqueues `Sync::CatchUpJob`, which runs all feeds with windows widened to cover the gap (capped at the 60-day limit). Agent jobs run degraded rather than wait: `degraded: true`, the prompt states the token is unusable and every number carries its as-of time, the email subject is prefixed, and the token status line sits at the top of every brief so a dead nag path is still visible daily. Snapshots are not written for days without a fresh balance.
+
+**Re-auth flow.** `SchwabController#authorize` (login required) stores a random `state` with a timestamp in the session and redirects to the authorize URL. `#callback` (login required; an unauthenticated hit is rejected without storing a return-to URL, so the code never lands in the session) reads and deletes the pending state; no pending state renders "nothing pending, start again" with no audit; a mismatch audits `re_auth_failed` as CSRF; `params[:error]` (user cancelled) renders the failure without calling the token endpoint. On success: `exchange_code`, then `/accounts/accountNumbers` must overlap the known `accounts` hashes (first auth accepts anything) or the token is not made current and `re_auth_failed` is audited; then `issue!`, audit `re_auth_succeeded`, and **redirect** to a clean success page so a browser refresh cannot resubmit the single-use code. A failed exchange never writes to `schwab_tokens`. The retry link goes to `authorize`. `code`, `state`, and `session` join `filter_parameters`. The callback URL comes only from `SCHWAB_CALLBACK_URL`, never from the request. `fake_authorize` 404s unless the adapter is fake and the environment is not production, and `?fail=1` redirects with a bad code for Playwright.
+
+**Health and nags.** `Schwab::TokenHealthJob` runs 08:00 and 20:00 ET. Nag when: no usable token (absent, revoked, or expired), sent at every run; or the 24-hour warning, sent once per token row (deduped on token id in the audit data). Monday/Tuesday escalation fires when `SchwabToken.current.issued_at` is before the most recent Sunday 18:00 ET, which is the PRD's literal "the Sunday re-auth hasn't happened"; no buffer, no comparison against the coming Sunday. Cron strings carry `America/New_York` explicitly. The refresh task gets a higher queue priority than sync.
+
+| Job | Schedule | Does |
+|---|---|---|
+| `Schwab::RefreshAccessTokenJob` | every 25 min, high priority | `SchwabToken.current&.refresh!`; no-op when there is no usable token |
+| `Schwab::TokenHealthJob` | daily 08:00 + 20:00 | See "Health and nags" above. Audits `token_nag_sent` with the token id and reason. |
+| `Sync::TickJob` | every 5 min | Sole scheduled sync entry point. Refreshes `market_days` for today (New York) plus 7 days when missing or `source: fallback` (one call per date; a market-hours failure never aborts the tick). Due checks compare against the last *started* run per account and feed with 1-minute slack, and a `running` run is never due; jobs also declare Solid Queue `limits_concurrency` keyed on account and feed so backlog cannot double-enqueue. Cadences apply to trading-enabled accounts: positions (15 min inside the session window pre-market through post-market, 60 min otherwise), orders and activities (5 min inside, 60 outside); read-only accounts sync hourly. `Snapshots::DailyJob` once per market day after `regular_closes_at` + 20 min, only when that day's calendar row came from Schwab. |
+| `Sync::AccountsJob` | daily 06:05, after every re-auth | `/accounts/accountNumbers` only; upsert by `schwab_hash`. New accounts land with `trading_enabled: false` and no `account_type`; the system screen shows accounts needing operator setup |
+| `Sync::PositionsJob(account)` | via tick | `/accounts/{hash}?fields=positions`; resolve instruments (§2 "Instrument identity"); upsert positions; append a `balances` row; delete positions absent from the response only when the run is complete (every position resolved) and the payload is sane (no positions with positive long market value is a `failed` run, not an empty account); then `Journal::BootstrapJob` for trading-enabled accounts |
+| `Sync::OrdersJob(account)` | via tick | Window: from = max(last `window_to` for this account − 1 day, now − 364 days), to = end of the current UTC day (bounds may be date-granular; verify item). First sync backfills a year (live probe confirmed the window). Flatten nested orders and upsert in two passes (rows, then lineage by broker id); container strategies are stored with no instrument; exactly 3000 rows means truncation and finishes `partial`. Any `positions.working_stop_order` not present in the response is re-fetched by id (covers old GTC stops, out-of-band cancels, and replacements outside the window). A daily `status: WORKING` pass. Then working-stop detection (§5) for every position, only on a complete run; a failed or partial run leaves stop assignments untouched |
+| `Sync::ActivitiesJob(account)` | via tick | One call per transaction type the cash account can produce (TRADE, RECEIVE_AND_DELIVER, DIVIDEND_OR_INTEREST, ELECTRONIC_FUND, ACH_RECEIPT, ACH_DISBURSEMENT, WIRE_IN, WIRE_OUT, JOURNAL, CASH_RECEIPT, CASH_DISBURSEMENT, MONEY_MARKET), cursor per account and feed: from = max(last `window_to` − 3 days, now − 364 days), to = end of the current UTC day. A `RequestError` on one type skips that type and finishes `partial`; 429, 5xx, and transport failures leave the cursor alone. Upsert by `broker_activity_id`, link `order_id` via the activity's orderId, classify `kind` (§2 "Activity kinds"); then `Journal::LinkFillsJob` |
+| `Sync::CatchUpJob` | after re-auth | Bypasses due checks: accounts, then per account positions, orders (with the WORKING pass), activities. Windows already derive from the last `window_to`, so a short pause needs nothing special; when the computed start is later than the last success, the run records `gap_from` and audits `sync_gap_unrecoverable` so nobody believes the catch-up was complete |
+| `Journal::BootstrapJob` | after positions sync | See §4 |
+| `Journal::LinkFillsJob` | after activities sync | See §4 |
+| `Journal::RecomputeSetupStatsJob` | after any trade closes | Rolling stats onto `setups` |
+| `Snapshots::DailyJob` | via tick | See §6 |
+| `Jobs::FailureDigestJob` | daily 17:00 | One email listing failed `sync_runs`, `agent_runs`, and Solid Queue failed executions since the last digest, grouped by kind |
+| `Memory::PullRepoJob` | every 30 min | `git -C $MEMORY_REPO_PATH pull --ff-only`; record `sync_runs` |
+| `Agent::MorningBriefJob` | 07:00 market days | See §3 |
+| `Agent::EndOfDayJob` | 16:30 market days | See §3 |
+| `Agent::SundayReviewJob` | Sunday 18:00 | Phase 1 stub, no API call: re-auth link, token age, sync health, job failures, setup stats table |
+
+**Sync runs.** `SyncRun.record(feed, account:, window:)` wraps every feed: creates the row, captures `window_to` before the request, rescues `NoUsableToken`, `AuthError`, and `ReauthRequired` into `skipped_token`, rescues other `Schwab::Error` into `failed`, counts quarantined records into `partial` with `unmapped_values` (raw type, description, subAccount, sign, item shape), and stamps `records_touched`. `partial` advances the cursor; `failed` does not. A cash-affecting `other` activity makes the run `partial`, never a quiet success.
+
+**Instrument identity** (`Instrument.resolve(ref)`): CUSIP, then Schwab instrument id, then symbol plus asset type **matching only rows with no CUSIP**, then an `instrument_by_symbol` lookup, then create a provisional row. A weaker-key match backfills a missing CUSIP or instrument id from the ref but never overwrites a differing one. A CUSIP match with a different symbol calls `rename!`. The `instrument_identity_fallback` audit fires once, when a provisional row is created, not on every resolve. `RecordNotUnique` is handled with a re-lookup because positions and activities race.
+
+**Activity kinds.** TRADE with an EQUITY security → `fill`; TRADE with a CASH_EQUIVALENT security or MONEY_MARKET → `sweep`; DIVIDEND_OR_INTEREST → `dividend` when a security is present, else `interest`; ELECTRONIC_FUND, ACH_*, WIRE_*, CASH_* and JOURNAL with only currency items → `deposit` or `withdrawal` by sign; JOURNAL or RECEIVE_AND_DELIVER with one security → `transfer` (ACAT deliveries are not corporate actions), with two securities → `corporate_action`; all items fees → `fee`; anything else → `other` and counted. Activities whose `status` is not VALID are stored and never journaled.
+
+**Market calendar.** `MarketDay.for(date)` reads the row or fetches it (source schwab). When the token is unusable or the call fails it writes a weekday-open 9:30 to 16:00 row with `source: fallback`, which drives cadence only: snapshots and market-day briefs require a Schwab-sourced row, and fallback rows are re-fetched on every tick until they flip. "Today" is computed in America/New_York.
+
+**Schwab client:** built to `docs/schwab-api-contract.md`. Net::HTTP; plaintext account numbers scrubbed inside the client before any body is returned; logs carry path templates (`/accounts/{hash}/orders`), never hashes, bodies, or headers; one time helper for the three input and three output formats; `BigDecimal` for every money and quantity value; a shared Solid Cache rate budget of 100 requests/minute across Puma and the worker; retries on 429, 5xx, and transport errors for GETs and the refresh grant only (1, 4, 16 s with jitter, `Retry-After` capped at 60 s), never on 4xx; one refresh-and-retry on a 401. Error classes: `AuthError`, `ReauthRequired`, `RateLimited`, `ServerError`, `RequestError`, `TransportError`, `UnknownOutcome` (non-idempotent calls only, chosen by HTTP method), `MappingError`. Interface adds `order(hash, order_id)` so working stops older than the lookback are re-fetched by id, and `instrument(symbol_or_cusip)` for identity fallback. Mappers return `Data` structs with a scrubbed `raw` member; jobs never see a Schwab field name. `Schwab::FakeClient` sits below the mappers and returns raw-shaped hashes with a scriptable per-call queue. Sync runs can finish `partial` with an `unmapped_values` count when individual records are quarantined.
+
+---
+
+## 3. Tool surface (one registry, two transports)
+
+`app/models/agent/tools/*` each defines `name`, `description`, `input_schema`, `call(**args)`, and permission metadata: `read_only`, `interactive_allowed`, `scheduled_allowed`. The MCP server registers tools where `interactive_allowed`; the scheduled runtime passes only tools where `scheduled_allowed && read_only`, enforced in one place so a Phase 2 write tool cannot reach an unattended run by omission. Phase 1 tools:
+
+| Tool | Returns |
+|---|---|
+| `get_portfolio` | Positions with last price, unrealized P&L, working stop, distance to stop, per-position open risk, `unprotected` flag, synced_at per row |
+| `get_account_health` | Equity, settled/unsettled cash, drawdown from HWM (index-based), unprotected count, token status and age, last sync per feed, shadow mode, halt state, sync pause reason |
+| `get_quotes(symbols)` | Schwab `/marketdata/v1/quotes`, cached 2 min in Solid Cache, each quote stamped with fetched_at; when the token is expired returns the cached value with `stale: true` or an explicit unavailable error |
+| `get_price_history(symbol, range)` | Schwab `/marketdata/v1/pricehistory`, cached 5 min |
+| `get_journal(filters)` | Trades with legs; filters: status, needs_review, setup, instrument, date range, missing_post_mortem |
+| `get_setup_stats` | Stored stats from `setups` |
+| `get_risk_rules` | Active `risk_rules` rows (empty in Phase 1) |
+
+Every call writes a `tool_calls` row. Nothing in this section writes to `audit_events`.
+
+**MCP server:** `POST /mcp` (Streamable HTTP, JSON-RPC 2.0). `McpAuth` extracts a bearer from `Authorization` and compares with `ActiveSupport::SecurityUtils.secure_compare`; 401 renders a plain "MCP auth failed" page (Playwright target). See decision 0.8 for the OAuth fallback.
+
+**Scheduled runtime:** `Agent::Run` wraps one Messages API conversation: system prompt = memory repo markdown files + setup stats + token health + as-of timestamps; tools = scheduled-allowed registry; hard cap `MAX_TOOL_TURNS = 12`; result stored in `agent_runs` and emailed via `BriefMailer`. Prompts live in `app/models/agent/prompts/*.md.erb`. The morning-brief prompt states that earnings and economic-calendar data are unavailable in Phase 1 and must not be inferred. Morning brief and EOD are real; Sunday review stub does not call the API.
+
+---
+
+## 4. Journal builder (zero-to-zero, trading-enabled accounts only; revised after the step 6 counselors review)
+
+IRA and other read-only accounts sync positions and activities (for Phase 2 wash-sale checks) but never create trades. `Journal::BootstrapJob` and `Journal::LinkFillsJob` share one Solid Queue concurrency key per account, and every activity is linked in its own transaction: insert or find the leg by `activity_id`, recompute the trade as a pure function of its legs, then stamp `journaled_at` last. A rerun finds the existing leg and recomputes; it never skips because the activity was marked.
+
+**Bootstrap** (`Journal::BootstrapJob`, after every complete positions sync). Every open position in a trading-enabled account has one open trade. Its synthetic `entry` leg is a **reconciling plug**: quantity = broker quantity − net quantity of the linked fill legs, priced at the broker average price, recomputed after every bootstrap and link run and deleted when it reaches zero. A trade whose plug is non-zero is `bootstrapped: true, needs_review: true, review_reason: bootstrapped`, with `opened_at` nil. Positions with zero quantity or no average price are skipped. After a complete positions sync, an open trade whose instrument has no position and no unjournaled fills is flagged `review_reason: position_missing`.
+
+**Link fills** (`Journal::LinkFillsJob`), per account and instrument, VALID unjournaled activities in `executed_at, id` order:
+- Buy fill, no open trade: open one. If `activity.order.order_proposal` resolves, copy setup, thesis, planned stop, and target; else `needs_review` with `review_reason: missing_setup`.
+- Sell fill, no open trade: open a bootstrapped trade whose plug covers the pre-sale holding (position quantity + sold quantity when the position exists, else the sold quantity with `review_reason: bootstrapped`), then apply the exit.
+- Every fill is an `entry` or `exit` leg carrying `cash_amount` = the activity's signed `net_amount` (which already includes commissions and fees). Running quantity, `avg_entry`, `avg_exit`, `peak_quantity` are recomputed from legs.
+- Running quantity reaches zero: `status: closed`, `closed_at`, `realized_pnl` = sum of leg cash amounts (entries negative, exits and income positive; fees are never subtracted again), `stopped_out` when the closing exit's order was a stop type.
+- Out-of-order arrival: when a newly linked activity precedes the latest leg on that instrument, the instrument's fills are replayed from scratch. Same-day fills with date-only timestamps are linked but flagged `review_reason: ordering_ambiguous`.
+- A re-synced activity whose quantity, price, or status changed after journaling has its leg dropped and `journaled_at` cleared, then the instrument replays.
+- Dividend or interest on an instrument with an open trade: `income` leg (feeds realized P&L, not basis). After close, attach to the most recent closed trade on that instrument within 90 days and recompute; otherwise journal with no leg. Return of capital is treated as income in Phase 1.
+- Instrument-bearing `transfer` with an open trade (forward split, stock dividend, ACAT delivery): `adjustment` leg with ratio derived as (running + delivered) / running; quantity × ratio, prices ÷ ratio, `initial_risk` unchanged. Ratios that are not clean are flagged `review_reason: corporate_action`.
+- `corporate_action` with two securities (CUSIP succession): both securities are read from the activity's `securities`; set `predecessor_instrument_id` on the new instrument and move the open trade to it with an adjustment leg. An unreviewed bootstrapped trade already on the new instrument is absorbed by the moved trade. Unmatched halves fall back to exit/entry with `review_reason: corporate_action`.
+- Symbol change on a known CUSIP: `rename!` only.
+- Sweeps, deposits, withdrawals, fees, and cash-only transfers: `journaled_at` set, no leg.
+- A fill with no side or an unresolved instrument is quarantined on the sync run, never raised.
+
+**R math.** `initial_quantity` = every entry fill sharing the first entry's `order_id` (fallback: all entries before the first exit), so a partial fill does not understate risk. `initial_risk` = `initial_quantity` × (average initial entry price − `planned_stop`), fixed once the stop is known; at or below zero it is nil and so is R. `realized_r` = `realized_pnl` / `initial_risk`. `total_risk` = sum over entry legs of quantity × (price − stop at that time), stored for the journal browser, never used as the R denominator. A bootstrapped trade closed before review takes setup and thesis only; its R stays nil.
+
+**Review path.** `review_reason` enum (missing_setup, missing_stop, bootstrapped, ordering_ambiguous, corporate_action, position_missing) drives the Monarch-style queue with Skip / Not a trade / Save. Save takes setup, planned stop, and thesis, clears `needs_review`, computes `initial_risk`, and audits `trade_reviewed`. Not a trade sets `excluded_from_stats`. The post-mortem quick entry (one line plus followed/improvised) is separate and available on any closed trade.
+
+**Setup stats** (`Journal::RecomputeSetupStatsJob`, after a trade closes, is reviewed, or is excluded): over closed trades with a positive `initial_risk`, not `needs_review`, not `excluded_from_stats`, and not bootstrapped-without-stop-at-entry: win rate (R > 0), average R, expectancy (mean R), sample size. Trailing-20 trend is deferred to the edge-review screen in Phase 2 and the plan says so.
+
+---
+
+## 5. Stops and open risk in Phase 1
+
+No stop is not zero risk. On every complete orders sync, for each position the working stop is chosen from sell stop orders (STOP, STOP_LIMIT, TRAILING_STOP, TRAILING_STOP_LIMIT) on the same account and instrument that are the terminal order of their replacement chain and in a working status, preferring live statuses (WORKING, ACCEPTED, QUEUED, PENDING_ACTIVATION) over AWAITING_* so a new bracket child cannot displace the stop on an existing lot. The newest such order is assigned regardless of whether it carries a readable price; the model decides what that means. A stop missing from the list response is re-fetched by id before it is considered gone.
+
+- Protected: a working stop with a readable price whose remaining quantity covers the position. Distance to stop = (last − stop) / last, signed; open risk = max(quantity × (last − stop), 0).
+- Partially protected: remaining stop quantity below the position quantity. Shown as such, counted as unprotected in the portfolio total.
+- Oversized: remaining stop quantity above the position quantity. Schwab will reject the whole order at activation in a cash account, so this is flagged unprotected with its own reason (PRD §5.4.2 hard-alert case).
+- Trailing stop without a price: unknown risk, labelled "trailing stop, price unknown".
+- No stop, or a stop no longer working: unprotected.
+- Portfolio open risk sums protected positions only, and the dashboard and `get_account_health` state how many positions are excluded and why.
+
+---
+
+## 6. Snapshots (per account, chain-linked; revised after the step 6 counselors review)
+
+For each trading-enabled account and each market day with a Schwab-sourced calendar row:
+- `equity` = the latest balance at or after the regular close on that day, else the day's latest balance, else **no snapshot** (a stale balance is never smeared across days). The first snapshot is the first day with positive equity, with return 0 and index 1.
+- `net_flows` = every deposit and withdrawal with `trade_date` after the prior snapshot's date and up to this one, so a flow that lands on a paused or missing day is still neutralized. Deposits positive, withdrawals negative, classified by type for the directional types (ACH_RECEIPT, WIRE_IN, CASH_RECEIPT in; ACH_DISBURSEMENT, WIRE_OUT, CASH_DISBURSEMENT out) and by sign only for ELECTRONIC_FUND and JOURNAL, with a disagreement quarantined. Share transfers are valued at quantity × that day's position price when known, else the day is flagged.
+- `daily_return` = (equity − net_flows − prior equity) / prior equity; `index_value` = prior index × (1 + daily_return); `high_water_index` = max to date; `drawdown` = 1 − index / high_water_index.
+- `open_risk_amount`, `open_risk_ratio`, `unprotected_count` from §5 at snapshot time.
+- Rebuildable: `Snapshots::RebuildJob(account, from:)` recomputes forward. The activities sync captures `new_record?` before each upsert and enqueues a rebuild from the earliest new or changed cash-affecting activity date; the positions sync enqueues one from any balance row it inserts for a day that already has a snapshot.
+
+Dashboard day change is flow-adjusted (equity − flows − prior snapshot equity) and reads "no prior snapshot" on a gap day. The EOD fills recap reads activities journaled today; the missing-post-mortem list excludes `needs_review` and `excluded_from_stats` trades.
+
+---
+
+## 7. UI (Hotwire, mobile-responsive, no JS routers, no hover-dependent modals)
+
+| Screen | Route | Phase 1 content |
+|---|---|---|
+| Dashboard | `/` | Banner (healthy / expiring / expired / halted), equity + day change, open risk with unprotected count, settled/unsettled cash, positions list with distance-to-stop as the primary number and inline `unprotected` where applicable, "N trades need review" callout, pending proposals count (0), staleness stamps on every number, empty state before first sync |
+| Trade review | `/trades/:id/review` | Setup, planned stop, thesis for `needs_review` trades; "N more to review" progression |
+| Trade detail / post-mortem | `/trades`, `/trades/:id` | List and detail; Flow 4 quick entry (one line + followed/improvised) |
+| System health | `/system` | Token age vs 7d with next Sunday marked, last sync per feed, sync pause reason, job failures (7d), API spend (month, from `agent_runs`), shadow mode indicator, manual halt toggle with reason (audited) |
+| Re-auth | `/schwab/authorize` → Schwab → `/schwab/callback` | Requires login; success page with new expiry and catch-up sync enqueued; failure page with error and retry |
+| Login | `/session/new` → email → `/session/magic/:token` | Passwordless; unknown emails get the same "check your inbox" response |
+
+**App mark:** the Athayde (Ataíde) family arms, azure, four bends argent running top-left to bottom-right, from the Portuguese Ataíde family (https://en.wikipedia.org/wiki/Ata%C3%ADde_family); the crest animal is a lion, reserved for later use. It sits top-left of the shell on every screen and serves as favicon and PWA icon. Vector at `app/assets/images/brand/crest.svg`, drawn from the athayde.com reference PNG kept in `docs/artifacts/brand/`.
+
+Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 comes only from `system_settings.manual_halt`.
+
+---
+
+## 8. Testing
+
+- **RSpec**, in the kickoff's priority order: token lifecycle with `travel_to` (25-minute refresh, 7-day expiry unaffected by refreshes, pause and catch-up, Mon/Tue escalation rule); sync jobs with fixture payloads (positions incl. removal, orders incl. cancel/replace and working stops, transactions incl. cash dividend, split, return of capital, CUSIP succession, fee items); journal linking (scale-in/out, orphan fill, sell-first legacy holding, bootstrap, ticker change on same CUSIP, R math); snapshot math (flows, late-landing deposit rebuild); MCP tool contracts (auth, each tool's schema and output, permission metadata excludes non-scheduled tools); scheduled runtime with a stubbed Messages API (turn cap, degraded mode).
+- **VCR cassettes** in `spec/cassettes`, recorded against Schwab only once the app is Ready For Use, with a scrubber that replaces bearer tokens, refresh tokens, and account hash values before write. Until then, cassettes are hand-built from community-client response shapes and marked `# SCHWAB_SHAPE_UNVERIFIED`.
+- **`Schwab::FakeClient`** implements the same interface as `Schwab::Client`, returns canned payloads, selected by `config.x.schwab.adapter`. Used by dev seeds and Playwright.
+- **Playwright** (`e2e/`, `@playwright/test` via npm, the only Node dependency): dashboard in four banner states via a test-env-only `/playwright/scenarios/:name` reseed route, MCP 401 page, re-auth success and failure (FakeClient scripted), trade review flow.
+- **`bin/ci`**: Rails 8.1 `ActiveSupport::ContinuousIntegration` with steps in `config/ci.rb`, the pattern borrowed from Patchvault. Kickoff order: rubocop → rspec → brakeman (strict, warnings fail) → `bin/importmap audit` → `bundle exec bundle-audit check --update` → Playwright (`bin/playwright`, which boots a test-env server with the FakeClient, runs `npx playwright test`, and tears down). Fails on the first red step.
+
+---
+
+## 9. Deploy
+
+- `Procfile`: `web: bundle exec puma -C config/puma.rb`, `worker: bin/jobs`, `release: bin/rails db:prepare`. One Postgres 17 service and one database: Solid Queue, Solid Cache, and Solid Cable tables live in the primary schema (migration `InstallSolidTables`), so `db:prepare` on `DATABASE_URL` is the whole database setup.
+- `app.json` for the release phase.
+- `bin/dokku-setup`: documents postgres plugin, letsencrypt, config vars (`RAILS_MASTER_KEY`, `SCHWAB_CALLBACK_URL`, `MEMORY_REPO_PATH`), storage mount for the memory repo, `ps:scale worker=1`, and the daily offsite DB dump from PRD §5.9 (postgres plugin backup to object storage on a cron).
+- App time zone `Eastern Time (US & Canada)`; Solid Queue recurring schedules use the same.
+
+---
+
+## 10. Build order (green `bin/ci` at each step)
+
+1. Tooling: RSpec, rubocop config, brakeman, bundler-audit, `bin/ci` (without Playwright), authentication generator adapted to magic link, AR encryption keys, credentials layout, crest in the layout.
+2. Migrations 1–21, models with validations/enums, `AuditEvent` append-only trigger, `SystemSettings` singleton.
+3. Schwab adapter: `Schwab::Client` (OAuth, accounts, positions, orders, transactions, market hours, quotes, price history) with retry/backoff/limiter, `Schwab::FakeClient`, response mappers, `docs/verify-on-approval.md` started from §12.
+4. OAuth controller + token model + refresh job + token health job + re-auth pages + pause/catch-up + audit events.
+5. Sync jobs, market calendar, tick scheduler, `sync_runs`, working-stop detection.
+6. Journal builder (bootstrap, link, review path) + setup stats + snapshots.
+7. Dashboard, system health, trade screens; Playwright added to `bin/ci`.
+8. MCP server + tool registry with permission metadata (after decision 0.8 is verified).
+9. Scheduled runtime + mailers (briefs, nags, failure digest) + memory repo pull.
+10. Seeds for dev via FakeClient; `Procfile`, `app.json`, `bin/dokku-setup`; DHH-skill review pass.
+
+---
+
+## 11. Explicitly not built in Phase 1
+
+Guardrail engine, order proposals (tables only), approval UI, submission, brackets, reconciliation job, allocation module, FMP, earnings/econ calendar, watchlist screen (watchlist.md in the memory repo is read as text), push notifications, iOS shell.
+
+---
+
+## 12. Schwab assumptions to verify on approval
+
+Maintained in `docs/verify-on-approval.md` (30 items as of the step 3 contract review). The original seed list:
+
+From PRD §9: exact `TaxLotMethod` enum values; order-endpoint rate limits. Added by this plan:
+- `/accounts/{hash}?fields=positions` returns balances in the same payload (`currentBalances`, `initialBalances`).
+- Which balance fields map to settled cash vs unsettled cash for a cash account.
+- Orders endpoint supports `fromEnteredTime`/`toEnteredTime` and a `status` filter; maximum lookback window.
+- Transactions endpoint: 60-day start-date limit, `activityId` uniqueness, `orderId` presence on trade activities, transfer-item structure with fee items, CUSIP presence on every instrument (cash equivalents, sweeps, options).
+- Corporate-action activity shapes for splits, mergers, spin-offs, return of capital, and whether old and new CUSIPs arrive in one activity.
+- Market-hours endpoint takes one date per call and returns pre/regular/post session times.
+- Order status enum values for "working" stops; cancel/replace produces a new order id and marks the old one REPLACED.
+- Fractional-share quantities in positions and orders.
+- Refresh token expiry is 7 days from issuance and is not extended by access-token refreshes.
+- Claude app custom connectors: static bearer header availability for this org (decision 0.8).
+
+---
+
+## 13. Working method, per phase and per build step
+
+Each numbered step in §10 that ships a feature runs this loop:
+
+1. **PRD review with counselors** (`counselors run`, agents `codex-5.5-high` and `claude-fable`): the relevant PRD sections plus this plan's section for the step. Findings are folded into the plan before code.
+2. **Build** the feature vertically per §10.
+3. **RSpec green** and reviewed for coverage against the §8 priority list, not just passing.
+4. **DHH skill review pass** (`dhh-code-reviewer` agent) on the step's diff; fix what it flags.
+5. **Counselors review of the build** (same two agents) on the diff; fix or explicitly decline each finding in the commit message.
+6. **`bin/ci` green.** Commit.
+
+Counselors runs are long (10 to 20 minutes) and run in the background while unrelated work continues. Whole-phase gates: the counselors PRD review before step 1 (done, revision 2 of this plan is the result), and a DHH pass plus counselors review over the full Phase 1 diff after step 10.
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' agents/counselors/1788302368-review-request-question-before-build-st/claude-fable.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+The prior counselor run for this prompt timed out with an empty output file, so this is the review itself. It is based on the PRD, the flows doc, plan §4 and §6, the models, the two sync jobs, the Schwab activity mapper, and the schema in structure.sql.
+
+# Step 6 design review: journal builder, setup stats, snapshots
+
+## Critical: will produce wrong journal rows on day one
+
+**1. Bootstrap plus link-fills double counts every holding whose entry fills are inside the sync window.** The plan text still says 60 days, but the feed job uses a 364-day lookback (app/jobs/sync/feed_job.rb:4). On the first sync, most positions will have their entry fills inside the window. The sequence is: positions sync runs, BootstrapJob creates a trade with a synthetic 40-share entry leg, activities sync runs, LinkFillsJob finds an open trade and appends the real 40-share buy as a second entry leg. The trade now shows 80 shares against a broker position of 40, and the next full sell leaves it open at 40 forever. The ordering is not even deterministic, since the tick enqueues positions and activities as independent jobs.
+
+Fix: make the synthetic leg a reconciling plug, not a fixed entry. Its quantity is broker quantity minus the net quantity of linked fill legs, recomputed after every bootstrap and every link run, and deleted when it reaches zero. This one rule also answers "bootstrap quantity disagrees with a later broker position" and the sell-before-bootstrap race. The bootstrap job should also skip positions with zero or negative quantity and nil average price.
+
+**2. Forward splits, stock dividends, and ACAT deliveries are classified as `transfer` and the design drops them.** The mapper returns `corporate_action` only when an activity carries two security items and `transfer` when it carries one (app/models/schwab/activity.rb:52). A 2:1 split on the same CUSIP arrives as one RECEIVE_AND_DELIVER with a single item for the 40 new shares. The design lists only cash-only transfers, so a transfer with an instrument and an open trade is silently stamped journaled with no leg. Trade quantity stays at 40, the broker says 80, and selling 80 drives running quantity to negative 40. The ratio is not on the activity. It has to be derived: (running quantity + delivered quantity) / running quantity, or reconciled against the broker position.
+
+Related and in the same bucket:
+- **Return of capital is unreachable.** A ROC arrives as DIVIDEND_OR_INTEREST with a security, which maps to `dividend`, so it will always become an income leg. Drop the basis-adjustment path for Phase 1 and treat it as income. Realized P&L is identical either way. Only basis attribution differs.
+- **CUSIP succession collides with a bootstrapped trade on B.** Corporate actions post days after the position changes. The positions sync sees B, BootstrapJob opens a bootstrapped trade on B, then the succession activity tries to move A's trade to B and hits the one-open-trade-per-instrument index. Define the merge: an unreviewed bootstrapped trade on B is absorbed, and A's trade takes its place.
+- **No trade-without-position reconciliation.** Bootstrap only covers positions without a trade. If A's succession activity never arrives, or a position is delivered out by ACAT, A's trade stays open with no position indefinitely. After each complete positions sync, any open trade whose instrument has no position and no unjournaled fills should be flagged needing review with a reason.
+- **The activity row keeps only one instrument.** For a two-security activity, `instrument_id` is whichever item came first in the payload. LinkFills has to read both securities out of `raw`, and the design should say so.
+- **Cash in lieu** for fractional shares arrives as CASH_RECEIPT or similar, which the mapper classifies as a `deposit`. That is a flow in the snapshot math, and it is wrong.
+
+**3. Realized P&L will double-count fees or ignore them, depending on which formula gets coded.** Schwab's `netAmount` is the signed cash impact and already includes commissions and fee items. The design's formula, exits minus entries minus commissions minus fees plus income, is correct only if exits and entries are quantity times price. If any leg uses `net_amount`, fees are subtracted twice. Pick one: store `cash_amount` on every leg as the activity's `net_amount` and define realized P&L as the sum of leg cash amounts. Then add a spec and a live-data check that `net_amount` equals minus (quantity times price) minus commission minus fees for a buy fill. If the identity fails on a real fill, quarantine it rather than guess.
+
+**4. Initial risk on "the first entry leg" is wrong for partial fills, negative for legacy holdings, and fictional for post-hoc stops.**
+- A 40-share order filling as two activities of 25 and 15 gives initial risk on 25 shares, so realized R is overstated by 1.6x. Define initial quantity as all entry fills sharing the first entry's `order_id`, with a fallback of all entries before the first exit for orphans. Store `initial_quantity` explicitly.
+- A bootstrapped holding reviewed with a stop above the broker average price yields negative initial risk. `Trade#realized_r_available?` only checks nonzero, so R will be computed and it will be nonsense. Initial risk at or below zero must give nil R.
+- A bootstrapped trade that closes before review, then gets a stop typed in afterward, produces an R measured against a stop that never existed. Review on a closed bootstrapped trade should set setup and thesis only, and leave R nil.
+- On the scale-in question: keep R denominated in initial risk. That is the standard definition and it is what expectancy per setup means. Store total risk, the sum of each entry leg's quantity times its distance to the stop at that time, as a second column for the journal browser, but do not divide by it.
+
+**5. Snapshots lose flows on every gap and fake a drawdown.** Net flows are summed for flows with trade date on the snapshot day. Snapshots are skipped on days with no fresh balance, so a deposit that lands during a paused-sync day, or on a day where the balance was missing, is never subtracted. The next snapshot books it as return, the high-water index jumps, and every day after shows a permanent fake drawdown. This is exactly the §5.2 failure the design is supposed to prevent. Define net flows as all flows with trade date after the prior snapshot's date and up to this one. The same rule handles weekends and holidays.
+
+Also in the snapshot math:
+- **Share transfers valued at net amount** are valued at zero, since a stock ACAT carries no cash. Equity jumps by the market value with no offsetting flow. Value them at quantity times the day's price from the position, or exclude the day and flag it.
+- **Withdrawal classification is by sign only.** If Schwab reports ACH_DISBURSEMENT amounts as positive, which is unverified, every withdrawal becomes a deposit and the index moves the wrong way. Classify by type first for the directional types and use sign only for ELECTRONIC_FUND and JOURNAL, quarantining a disagreement.
+- **Balance choice.** "Latest balance on or before the close" can be a 15:50 balance. Prefer the latest balance on the day at or after the regular close, falling back to the day's latest, and skip the day if none.
+- **Deposit timing.** The balance may include a pending ACH before the activity's trade date. Then day D books a fake gain and day D+1 a fake loss. The rebuild corrects the index only if the flow date matches the balance move. Accept trade date, write the spec, and watch the first real deposit.
+- **The rebuild trigger cannot fire as written.** The activities upsert calls `update!` on a found-or-initialized row and never records which rows were new. Capture `new_record?` before the update and enqueue the rebuild from the earliest new flow date.
+- **Prior equity of zero** on a newly funded account divides by zero. The first snapshot must be the first day with positive equity.
+
+## Major: idempotency, ordering, concurrency
+
+**6. Recompute trades from legs, never incrementally.** If the job crashes after inserting a leg and before updating the trade and stamping `journaled_at`, the rerun hits the unique leg index and the trade aggregates are stale. Wrap leg insert, trade recompute, and `journaled_at` in one transaction per activity, and make trade fields a pure function of the legs in `executed_at` order.
+
+**7. Out-of-order arrival breaks trade boundaries.** A sell can arrive in an earlier sync than its buy, or a PENDING activity can flip to VALID later, or an activity with only a trade date sorts to midnight UTC ahead of the day's fills. Processing incrementally, the sell bootstraps a trade from the fill and closes it, then the buy opens a new one. The same-day wash of four fills becomes three trades with a bogus bootstrapped one. When a newly linked activity precedes the latest leg on that instrument, replay the instrument's fills from scratch, or at minimum flag the trade.
+
+**8. Re-synced activities are not handled.** The upsert overwrites price, quantity, and status. A VALID to INVALID flip after journaling leaves a leg for a busted trade. A corrected price leaves a stale leg. Clear `journaled_at` and drop the leg when a journaled activity's quantity, price, or status changes on upsert. ACTIVITY_CORRECTION rows need a decision too.
+
+**9. Bootstrap and link race on the open-trade index.** They are separate job classes with separate concurrency keys. Give both a shared `limits_concurrency` key per account, and rescue `RecordNotUnique` with a re-find.
+
+**10. Side nil and unresolved instruments.** A fill with `positionEffect` AUTOMATIC and nil `net_amount` has no side. A fill whose instrument did not resolve has no `instrument_id`. Both must quarantine, not raise.
+
+## Major: review path and stats
+
+- **No "Not a trade" outcome.** The Monarch flow has Skip / Not a trade / Save. Status is open or closed only and there is no exclusion flag. Legacy holdings and dividend reinvestment buys will pollute setup stats. Add an `excluded_from_stats` boolean, set by the review form.
+- **Stats recompute triggers are incomplete.** A closed trade gains a realized R only when review sets the stop, and loses it when excluded. Recompute after review and after exclusion, not only on close.
+- **Define win rate** as realized R greater than zero. State what breakeven counts as.
+- **Dividends after close** have no rule. Attach to the most recent closed trade on the instrument and recompute, or stamp with no leg. Say which.
+
+## Sequences and the rows they must produce
+
+| Sequence | Expected rows | Where the design fails |
+|---|---|---|
+| Buy 40 @ 50, sell 40 @ 55, stop 48 | One trade, two legs, peak 40, entry 50, exit 55, P&L 200 less fees, initial risk 80, R about 2.5 | OK if P&L uses one formula (item 3) |
+| Buy 40 @ 50, buy 20 @ 52, sell 30 @ 55, sell 30 @ 54 | One trade, four legs, peak 60, entry 50.67, exit 54.5, P&L 230, initial risk 80, R 2.875, total risk 160 | Store total risk (item 4) |
+| Legacy 40, sell 15 day one | One bootstrapped trade, plug leg 40, exit 15, running 25, open, needs review | Two trades if the sell links first; 65 shares if the buy is in the window (item 1) |
+| 2:1 split with stop 48 on 40 @ 50 | Adjustment leg ratio 2, 80 @ 25, stop 24, initial risk unchanged | Dropped as a transfer (item 2) |
+| Cash dividend mid-trade | Income leg, cash amount from net amount, P&L up, basis untouched | Dividend after close undefined |
+| Reverse merger A to B in one activity | B predecessor is A, trade moved to B, adjustment leg with ratio, entry and stop rescaled | Collides with bootstrapped B, needs both securities from raw, A dangles if late (item 2) |
+| Same-day wash, out of order | Two trades, two legs each | Three trades with a bogus bootstrap (item 7) |
+| Partial fill 25 plus 15 on one order | One trade, two entry legs, initial quantity 40 | Initial risk on 25 shares (item 4) |
+
+## What the EOD brief and dashboard need that is not produced
+
+- **Day change** on the dashboard should be flow-adjusted: equity minus flows minus prior snapshot equity. Derivable, but only if the prior snapshot exists. Say what to show on a gap day.
+- **Trailing-20 trend** per setup for the Sunday edge review is not in the stats columns. Either add it or defer it visibly.
+- **Stopped-out flag.** Flow 4 shows planned versus actual stop. Whether the exit came from the stop child order is derivable through the exit leg's activity and its order type, but nothing records it. Add it at close time.
+- **Fills recap** for the EOD should read activities journaled today, not trades created today. Both are needed and neither is named as a query.
+- **Missing post-mortems** will include closed bootstrapped legacy trades unless the exclusion flag exists.
+
+## Recommended order of fixes before writing code
+
+1. Plug-leg bootstrap reconciled to the broker position (item 1).
+2. Handle instrument-bearing transfers as adjustments with derived ratio, drop the ROC path, define the succession merge and trade-without-position sweep (item 2).
+3. Sum of leg cash amounts for P&L, initial quantity from the first order, nil R for non-positive risk (items 3 and 4).
+4. Flows since prior snapshot, type-first withdrawal classification, new-record detection for the rebuild trigger (item 5).
+5. Transactional per-activity linking with full recompute from legs, replay on out-of-order arrival, shared concurrency key (items 6 through 9).
+6. Exclusion flag and recompute triggers (review path).
+
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc 'git status --porcelain' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'git diff --stat 8970691 -- app/models/trade.rb app/models/journal/linker.rb app/models/trade_leg.rb app/models/setup.rb app/models/snapshot.rb app/models/activity.rb app/models/schwab/activity.rb app/jobs/journal/bootstrap_job.rb app/jobs/journal/link_fills_job.rb app/jobs/journal/recompute_setup_stats_job.rb app/jobs/snapshots/daily_job.rb app/jobs/snapshots/rebuild_job.rb app/jobs/sync/positions_job.rb app/jobs/sync/activities_job.rb app/jobs/sync/tick_job.rb db/migrate/20260901250001_prepare_journal_columns.rb spec/models/journal/linker_spec.rb spec/models/setup_stats_spec.rb spec/models/snapshot_spec.rb spec/jobs/journal/hooks_spec.rb spec/support/journal.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 73ms:
+git: error: couldn't create cache file '/tmp/xcrun_db-c61RjtJm' (errno=Operation not permitted)
+ app/jobs/sync/activities_job.rb |  11 +++-
+ app/jobs/sync/positions_job.rb  |   4 ++
+ app/jobs/sync/tick_job.rb       |  13 +++++
+ app/models/activity.rb          |  16 ++++++
+ app/models/schwab/activity.rb   |   8 ++-
+ app/models/setup.rb             |  10 ++++
+ app/models/snapshot.rb          |  44 +++++++++++++++
+ app/models/trade.rb             | 122 +++++++++++++++++++++++++++++++++++++++-
+ app/models/trade_leg.rb         |   4 +-
+ 9 files changed, 226 insertions(+), 6 deletions(-)
+
+ succeeded in 74ms:
+git: error: couldn't create cache file '/tmp/xcrun_db-dkiTcw9w' (errno=Operation not permitted)
+ M app/jobs/sync/activities_job.rb
+ M app/jobs/sync/positions_job.rb
+ M app/jobs/sync/tick_job.rb
+ M app/models/activity.rb
+ M app/models/audit_event.rb
+ M app/models/schwab/activity.rb
+ M app/models/schwab/order.rb
+ M app/models/setup.rb
+ M app/models/snapshot.rb
+ M app/models/trade.rb
+ M app/models/trade_leg.rb
+ M db/structure.sql
+?? agents/counselors/1788305713-review-request-question-before-build-st/
+?? agents/counselors/1788305713-review-request-question-review-build-st/
+?? app/jobs/journal/
+?? app/jobs/snapshots/
+?? app/models/journal/
+?? db/migrate/20260901250001_prepare_journal_columns.rb
+?? spec/factories/balances.rb
+?? spec/jobs/journal/
+?? spec/models/journal/
+?? spec/models/setup_stats_spec.rb
+?? spec/models/snapshot_spec.rb
+?? spec/support/journal.rb
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The prior design concerns are already explicit: plug reconciliation, per-activity transactions, full recompute, flow-adjusted snapshots, and setup-stat eligibility. I’m now checking whether the implementation actually satisfies those invariants rather than just matching names.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/models/trade.rb | sed -n '1,280p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# One instrument's position lifecycle from zero back to zero. Every aggregate here is a pure function of
+     2	# the legs, recomputed after any leg changes; nothing is updated incrementally.
+     3	class Trade < ApplicationRecord
+     4	  DIVIDEND_AFTER_CLOSE_WINDOW = 90.days
+     5	
+     6	  belongs_to :account
+     7	  belongs_to :instrument
+     8	  belongs_to :setup, optional: true
+     9	  belongs_to :order_proposal, optional: true
+    10	  has_many :trade_legs, dependent: :destroy
+    11	
+    12	  enum :status, { open: "open", closed: "closed" }
+    13	  enum :review_reason, {
+    14	    missing_setup: "missing_setup", missing_stop: "missing_stop", bootstrapped: "bootstrapped",
+    15	    ordering_ambiguous: "ordering_ambiguous", corporate_action: "corporate_action", position_missing: "position_missing"
+    16	  }, prefix: :review, validate: { allow_nil: true }
+    17	
+    18	  normalizes :post_mortem, with: ->(text) { text.presence }
+    19	
+    20	  scope :needing_review, -> { where(needs_review: true) }
+    21	  scope :missing_post_mortem, -> { closed.where(post_mortem: nil, needs_review: false, excluded_from_stats: false) }
+    22	  scope :eligible_for_stats, -> { closed.where(needs_review: false, excluded_from_stats: false).where("initial_risk > 0") }
+    23	
+    24	  def realized_r_available? = initial_risk.present? && initial_risk.positive?
+    25	
+    26	  # Reasons in order of seriousness; a more serious reason replaces a lesser one, never the reverse.
+    27	  REVIEW_PRIORITY = %w[ corporate_action ordering_ambiguous position_missing bootstrapped missing_stop missing_setup ].freeze
+    28	
+    29	  def flag!(reason)
+    30	    reason = reason.to_s
+    31	    return if needs_review? && review_reason.present? && REVIEW_PRIORITY.index(review_reason) <= REVIEW_PRIORITY.index(reason)
+    32	    update!(needs_review: true, review_reason: reason)
+    33	  end
+    34	
+    35	  # The synthetic entry leg that reconciles the journal to the broker: quantity = broker quantity minus the net
+    36	  # of the linked fill legs. Recomputed after every bootstrap and link run, deleted when it reaches zero.
+    37	  def reconcile_plug!(broker_quantity, average_price:)
+    38	    linked = trade_legs.where.not(activity_id: nil)
+    39	    net = linked.kind_entry.sum(:quantity) - linked.kind_exit.sum(:quantity)
+    40	    plug_quantity = broker_quantity - net
+    41	    plug = trade_legs.find_by(activity_id: nil, kind: :entry)
+    42	    if plug_quantity.positive?
+    43	      (plug || trade_legs.build(kind: :entry, note: "plug")).update!(quantity: plug_quantity, price: average_price, cash_amount: -(plug_quantity * (average_price || 0)))
+    44	      update!(bootstrapped: true) unless bootstrapped?
+    45	      flag!(:bootstrapped)
+    46	    else
+    47	      plug&.destroy!
+    48	    end
+    49	    recompute!
+    50	  end
+    51	
+    52	  # Legs in execution order; the plug (no time) sorts first.
+    53	  def ordered_legs = trade_legs.order(Arel.sql("executed_at ASC NULLS FIRST"), :id)
+    54	
+    55	  def recompute!
+    56	    running = BigDecimal("0"); peak = BigDecimal("0")
+    57	    entry_qty = BigDecimal("0"); entry_cost = BigDecimal("0"); exit_qty = BigDecimal("0"); exit_proceeds = BigDecimal("0")
+    58	    cash = BigDecimal("0"); closing_leg = nil; first_fill = nil
+    59	    ordered_legs.each do |leg|
+    60	      case leg.kind.to_sym
+    61	      when :entry
+    62	        running += leg.quantity; entry_qty += leg.quantity; entry_cost += leg.quantity * (leg.price || 0)
+    63	        first_fill ||= leg if leg.activity_id
+    64	      when :exit
+    65	        running -= leg.quantity; exit_qty += leg.quantity; exit_proceeds += leg.quantity * (leg.price || 0)
+    66	        closing_leg = leg if running.zero?
+    67	      when :adjustment
+    68	        if leg.ratio.present?
+    69	          running *= leg.ratio; entry_qty *= leg.ratio; exit_qty *= leg.ratio
+    70	        elsif leg.quantity.present?
+    71	          running += leg.quantity
+    72	        end
+    73	      end
+    74	      cash += leg.cash_amount || 0
+    75	      peak = running if running > peak
+    76	    end
+    77	    closed = running.zero? && closing_leg.present?
+    78	    assign_attributes(
+    79	      quantity: running, peak_quantity: peak, status: closed ? :closed : :open, closed_at: closed ? closing_leg.executed_at : nil,
+    80	      avg_entry: entry_qty.positive? ? entry_cost / entry_qty : nil, avg_exit: exit_qty.positive? ? exit_proceeds / exit_qty : nil,
+    81	      opened_at: opened_at || first_fill&.executed_at,
+    82	      initial_quantity: initial_quantity_from(first_fill),
+    83	      realized_pnl: closed ? cash : nil
+    84	    )
+    85	    self.initial_risk = compute_initial_risk
+    86	    self.total_risk = compute_total_risk
+    87	    self.realized_r = closed && realized_r_available? ? realized_pnl / initial_risk : nil
+    88	    save!
+    89	  end
+    90	
+    91	  # Called by the review form: the stop and setup are known now, so risk and R can be computed.
+    92	  def review!(setup:, planned_stop:, thesis:, user:)
+    93	    update!(setup: setup, planned_stop: planned_stop, thesis: thesis, needs_review: false, review_reason: nil, journal_completed_at: Time.current)
+    94	    recompute!
+    95	    AuditEvent.log("trade_reviewed", actor: :human, user: user, subject: self, data: { setup: setup&.name, planned_stop: planned_stop&.to_s })
+    96	    Journal::RecomputeSetupStatsJob.perform_later(setup) if setup
+    97	    self
+    98	  end
+    99	
+   100	  def exclude!(user:)
+   101	    update!(excluded_from_stats: true, needs_review: false, review_reason: nil)
+   102	    AuditEvent.log("trade_reviewed", actor: :human, user: user, subject: self, data: { excluded: true })
+   103	    Journal::RecomputeSetupStatsJob.perform_later(setup) if setup
+   104	  end
+   105	
+   106	  private
+   107	    # Every entry fill from the first fill's order (a partial fill is still one entry); without an order id, the first fill alone.
+   108	    def initial_quantity_from(first_fill)
+   109	      return nil unless first_fill
+   110	      legs = ordered_legs.to_a.select(&:activity_id)
+   111	      same_order = first_fill.activity&.broker_order_id
+   112	      group = same_order ? legs.select { |l| l.kind_entry? && l.activity&.broker_order_id == same_order } : [ first_fill ]
+   113	      group.sum(&:quantity)
+   114	    end
+   115	
+   116	    # Splits after a leg scale its quantity up and its price down; risk in dollars is unchanged.
+   117	    def split_factor_after(leg)
+   118	      ordered_legs.to_a.drop_while { |l| l.id != leg.id }.drop(1).select { |l| l.kind_adjustment? && l.ratio }.reduce(BigDecimal("1")) { |f, l| f * l.ratio }
+   119	    end
+   120	
+   121	    # Fixed to the initial entry. Nil, never a number, when the stop is unknown, above the entry, or the entry is synthetic.
+   122	    def compute_initial_risk
+   123	      return nil if planned_stop.blank? || initial_quantity.blank? || initial_quantity.zero?
+   124	      first = ordered_legs.find { |l| l.kind_entry? && l.activity_id } or return nil
+   125	      factor = split_factor_after(first)
+   126	      risk = initial_quantity * ((first.price || 0) - planned_stop * factor)
+   127	      risk.positive? ? risk : nil
+   128	    end
+   129	
+   130	    def compute_total_risk
+   131	      return nil if planned_stop.blank?
+   132	      ordered_legs.select { |l| l.kind_entry? && l.price }.sum { |l| [ l.quantity * (l.price - planned_stop * split_factor_after(l)), 0 ].max }
+   133	    end
+   134	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/models/journal/linker.rb | sed -n '1,360p'" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "nl -ba app/jobs/journal/link_fills_job.rb | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Journal
+     2	  class LinkFillsJob < ApplicationJob
+     3	    limits_concurrency to: 1, key: ->(account) { "journal-#{account.id}" }, on_conflict: :discard
+     4	
+     5	    def perform(account)
+     6	      return unless account.trading_enabled?
+     7	      Journal::Linker.new(account).link_all!
+     8	      account.positions.includes(:instrument).find_each do |position|
+     9	        account.trades.open.find_by(instrument: position.instrument)&.reconcile_plug!(position.quantity, average_price: position.average_price)
+    10	      end
+    11	      Setup.where(id: account.trades.where(status: :closed).select(:setup_id)).find_each(&:recompute_stats!)
+    12	    end
+    13	  end
+    14	end
+
+ succeeded in 0ms:
+     1	# Links one account's unjournaled activities into trades, one activity per transaction: find or insert the leg,
+     2	# recompute the trade from its legs, then stamp journaled_at last. A rerun finds the leg and recomputes.
+     3	class Journal::Linker
+     4	  def initialize(account)
+     5	    @account = account
+     6	  end
+     7	
+     8	  def link_all!
+     9	    @account.activities.unjournaled.valid_for_journal.chronological.includes(:instrument, :order).each { |activity| link!(activity) }
+    10	    @account.activities.unjournaled.where.not(status: Schwab::Activity::VALID).update_all(journaled_at: Time.current)
+    11	  end
+    12	
+    13	  def link!(activity)
+    14	    Activity.transaction do
+    15	      case activity.kind.to_sym
+    16	      when :fill then link_fill(activity)
+    17	      when :dividend, :interest then link_income(activity)
+    18	      when :transfer then link_transfer(activity)
+    19	      when :corporate_action then link_corporate_action(activity)
+    20	      end
+    21	      activity.update!(journaled_at: Time.current)
+    22	    end
+    23	  end
+    24	
+    25	  private
+    26	    def open_trade_for(instrument) = @account.trades.open.find_by(instrument: instrument)
+    27	
+    28	    def link_fill(activity)
+    29	      return if activity.instrument.nil? || activity.side.nil? || activity.quantity.nil?
+    30	      trade = open_trade_for(activity.instrument) || open_trade_from(activity)
+    31	      leg = trade.trade_legs.find_or_create_by!(activity: activity) do |l|
+    32	        l.kind = activity.buy? ? :entry : :exit
+    33	        l.quantity = activity.quantity
+    34	        l.price = activity.price
+    35	        l.cash_amount = activity.net_amount
+    36	        l.executed_at = activity.executed_at
+    37	      end
+    38	      latest = trade.trade_legs.where.not(id: leg.id).where.not(activity_id: nil).maximum(:executed_at)
+    39	      trade.flag!(:ordering_ambiguous) if latest && leg.executed_at < latest
+    40	      trade.recompute!
+    41	      trade.update!(stopped_out: true) if trade.closed? && leg.kind_exit? && activity.order&.stop?
+    42	    end
+    43	
+    44	    # A buy with no open trade starts one, copying the proposal's plan when the fill came from the app.
+    45	    # A sell with no open trade is a legacy holding: bootstrap a plug that covers what was held before the sale.
+    46	    def open_trade_from(activity)
+    47	      proposal = activity.order&.order_proposal
+    48	      trade = @account.trades.create!(instrument: activity.instrument, status: :open, order_proposal: proposal, setup: proposal&.setup,
+    49	                                      thesis: proposal&.thesis, planned_stop: proposal&.planned_stop, planned_target: proposal&.target_price)
+    50	      if !activity.buy?
+    51	        position = @account.positions.find_by(instrument: activity.instrument)
+    52	        held_before = (position&.quantity || 0) + activity.quantity
+    53	        trade.reconcile_plug!(held_before, average_price: position&.average_price || activity.price)
+    54	      elsif proposal.nil?
+    55	        trade.flag!(:missing_setup)
+    56	      elsif trade.planned_stop.nil?
+    57	        trade.flag!(:missing_stop)
+    58	      end
+    59	      trade
+    60	    rescue ActiveRecord::RecordNotUnique
+    61	      open_trade_for(activity.instrument)
+    62	    end
+    63	
+    64	    # Income lands on the open trade, else on a trade closed recently enough to have held the shares on the record date.
+    65	    def link_income(activity)
+    66	      return if activity.instrument.nil?
+    67	      trade = open_trade_for(activity.instrument) ||
+    68	        @account.trades.closed.where(instrument: activity.instrument, closed_at: (activity.executed_at - Trade::DIVIDEND_AFTER_CLOSE_WINDOW)..).order(closed_at: :desc).first
+    69	      return unless trade
+    70	      trade.trade_legs.find_or_create_by!(activity: activity) { |l| l.kind = :income; l.cash_amount = activity.net_amount; l.executed_at = activity.executed_at }
+    71	      trade.recompute!
+    72	    end
+    73	
+    74	    # Shares delivered onto an open trade (split, stock dividend, ACAT in): an adjustment with the derived ratio.
+    75	    def link_transfer(activity)
+    76	      return if activity.instrument.nil? || activity.quantity.nil?
+    77	      trade = open_trade_for(activity.instrument) or return
+    78	      return if trade.trade_legs.exists?(activity: activity)
+    79	      running = trade.quantity
+    80	      delivered = activity.net_amount&.negative? ? -activity.quantity : activity.quantity
+    81	      if running.positive? && delivered.positive? && ((running + delivered) / running).then { |r| r == r.round(6) && r > 1 }
+    82	        ratio = (running + delivered) / running
+    83	        trade.trade_legs.create!(activity: activity, kind: :adjustment, ratio: ratio, quantity: delivered, cash_amount: 0, executed_at: activity.executed_at, note: "split or stock dividend")
+    84	        trade.update!(planned_stop: trade.planned_stop && trade.planned_stop / ratio, planned_target: trade.planned_target && trade.planned_target / ratio)
+    85	      else
+    86	        trade.trade_legs.create!(activity: activity, kind: :adjustment, quantity: delivered, cash_amount: activity.net_amount, executed_at: activity.executed_at, note: "transfer")
+    87	        trade.flag!(:corporate_action)
+    88	      end
+    89	      trade.recompute!
+    90	    end
+    91	
+    92	    # CUSIP succession: the old instrument's open trade moves to the new instrument, absorbing any unreviewed
+    93	    # bootstrapped trade already opened there by the positions sync.
+    94	    def link_corporate_action(activity)
+    95	      securities = Schwab::Activity.from(activity.raw).securities
+    96	      out_ref = securities.find { |s| s.amount&.negative? }&.instrument
+    97	      in_ref = securities.find { |s| s.amount&.positive? }&.instrument
+    98	      old = out_ref && Instrument.resolve(out_ref)
+    99	      new = in_ref && Instrument.resolve(in_ref)
+   100	      trade = old && open_trade_for(old)
+   101	      return flag_orphans(activity, old, new) unless trade && new
+   102	      Trade.transaction do
+   103	        if (bootstrapped = open_trade_for(new)) && bootstrapped.bootstrapped? && bootstrapped.needs_review?
+   104	          bootstrapped.trade_legs.where.not(activity_id: nil).update_all(trade_id: trade.id)
+   105	          bootstrapped.destroy!
+   106	        end
+   107	        new.update!(predecessor_instrument: old) if new.predecessor_instrument_id.nil? && new != old
+   108	        old_quantity = trade.quantity
+   109	        new_quantity = securities.find { |s| s.amount&.positive? }.amount
+   110	        ratio = old_quantity.positive? ? new_quantity / old_quantity : nil
+   111	        trade.update!(instrument: new)
+   112	        trade.trade_legs.create!(activity: activity, kind: :adjustment, ratio: ratio, cash_amount: activity.net_amount, executed_at: activity.executed_at, note: "succession #{old.symbol} -> #{new.symbol}")
+   113	        trade.update!(planned_stop: ratio && trade.planned_stop && trade.planned_stop / ratio, planned_target: ratio && trade.planned_target && trade.planned_target / ratio)
+   114	        trade.flag!(:corporate_action) unless ratio
+   115	        trade.recompute!
+   116	      end
+   117	    end
+   118	
+   119	    def flag_orphans(activity, old, new)
+   120	      [ old, new ].compact.each { |instrument| open_trade_for(instrument)&.flag!(:corporate_action) }
+   121	    end
+   122	end
+
+exec
+/bin/zsh -lc "nl -ba app/jobs/journal/bootstrap_job.rb | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+hook: PostToolUse
+hook: PreToolUse
+hook: PostToolUse
+ succeeded in 0ms:
+     1	module Journal
+     2	  # Every open position in a trading account has one open trade; the plug leg reconciles the journal to the
+     3	  # broker. After a complete positions sync, an open trade with no position is flagged.
+     4	  class BootstrapJob < ApplicationJob
+     5	    limits_concurrency to: 1, key: ->(account) { "journal-#{account.id}" }, on_conflict: :discard
+     6	
+     7	    def perform(account)
+     8	      return unless account.trading_enabled?
+     9	      account.positions.includes(:instrument).find_each do |position|
+    10	        next if position.quantity <= 0 || position.average_price.nil?
+    11	        trade = account.trades.open.find_or_create_by!(instrument: position.instrument)
+    12	        trade.reconcile_plug!(position.quantity, average_price: position.average_price)
+    13	      rescue ActiveRecord::RecordNotUnique
+    14	        retry
+    15	      end
+    16	      held = account.positions.pluck(:instrument_id)
+    17	      account.trades.open.where.not(instrument_id: held).find_each do |trade|
+    18	        trade.flag!(:position_missing) unless account.activities.unjournaled.where(instrument_id: trade.instrument_id).exists?
+    19	      end
+    20	    end
+    21	  end
+    22	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/models/trade_leg.rb | sed -n '1,220p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	class TradeLeg < ApplicationRecord
+     2	  belongs_to :trade
+     3	  belongs_to :activity, optional: true # nil only on the synthetic plug leg of a bootstrapped trade
+     4	
+     5	  enum :kind, { entry: "entry", exit: "exit", adjustment: "adjustment", income: "income" }, prefix: true
+     6	
+     7	  def plug? = activity_id.nil? && kind_entry?
+     8	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+A few implementation details are already standing out: `recompute!` is intended to be pure, but its risk math and closed/income behavior need closer attention. I’m checking snapshots, sync triggers, and specs next so the findings are grounded in code paths, not isolated methods.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/models/setup.rb | sed -n '1,220p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	class Setup < ApplicationRecord
+     2	  has_many :trades, dependent: :restrict_with_exception
+     3	  has_many :risk_rules, dependent: :restrict_with_exception
+     4	
+     5	  validates :name, presence: true, uniqueness: true
+     6	
+     7	  scope :active, -> { where(active: true) }
+     8	
+     9	  # Rolling stats over closed, reviewed, included trades with a positive initial risk. A win is R above zero.
+    10	  def recompute_stats!
+    11	    rs = trades.eligible_for_stats.pluck(:realized_r).compact
+    12	    update!(sample_size: rs.size,
+    13	            win_rate: rs.any? ? rs.count(&:positive?).to_d / rs.size : nil,
+    14	            avg_r: rs.any? ? rs.sum / rs.size : nil,
+    15	            expectancy: rs.any? ? rs.sum / rs.size : nil,
+    16	            stats_computed_at: Time.current)
+    17	  end
+    18	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/models/snapshot.rb | sed -n '1,320p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# One row per account per market day, chain-linked so deposits and withdrawals never move the drawdown.
+     2	class Snapshot < ApplicationRecord
+     3	  belongs_to :account
+     4	
+     5	  scope :chronological, -> { order(:as_of) }
+     6	
+     7	  # Builds (or rebuilds) the snapshot for one day from balances, flows, and positions. Returns nil, writing
+     8	  # nothing, when the day has no usable balance: a stale balance is never smeared across days.
+     9	  def self.build!(account, date)
+    10	    day = MarketDay.find_by(date: date)
+    11	    return nil unless day&.schwab? && day.trading?
+    12	    balance = balance_for(account, day) or return nil
+    13	    return nil unless balance.equity&.positive?
+    14	
+    15	    prior = account.snapshots.where(as_of: ...date).order(as_of: :desc).first
+    16	    flows = net_flows(account, after: prior&.as_of, through: date)
+    17	    daily_return = prior ? (balance.equity - flows - prior.equity) / prior.equity : BigDecimal("0")
+    18	    index = prior ? prior.index_value * (1 + daily_return) : BigDecimal("1")
+    19	    high_water = [ prior&.high_water_index || BigDecimal("1"), index ].max
+    20	    protected_positions = account.positions.includes(:working_stop_order).select(&:protected?)
+    21	    open_risk = protected_positions.sum(&:open_risk)
+    22	
+    23	    snapshot = account.snapshots.find_or_initialize_by(as_of: date)
+    24	    snapshot.update!(equity: balance.equity, net_flows: flows, daily_return: daily_return, index_value: index, high_water_index: high_water,
+    25	                     drawdown: 1 - index / high_water, open_risk_amount: open_risk, open_risk_ratio: open_risk / balance.equity,
+    26	                     unprotected_count: account.positions.count - protected_positions.size)
+    27	    snapshot
+    28	  end
+    29	
+    30	  # Latest balance at or after the regular close on the day, else the day's latest, else nothing.
+    31	  def self.balance_for(account, day)
+    32	    on_day = account.balances.where(as_of: day.regular_opens_at.beginning_of_day..day.regular_opens_at.end_of_day)
+    33	    on_day.where(as_of: day.regular_closes_at..).order(as_of: :desc).first || on_day.order(as_of: :desc).first
+    34	  end
+    35	
+    36	  # Deposits positive, withdrawals negative, over every day since the prior snapshot so a flow on a
+    37	  # missing day is still neutralized. Share transfers count at the position's current price when known.
+    38	  def self.net_flows(account, after:, through:)
+    39	    range = after ? (after + 1)..through : ..through
+    40	    cash = account.activities.where(kind: %w[ deposit withdrawal ], trade_date: range).sum(:net_amount)
+    41	    shares = account.activities.where(kind: :transfer, trade_date: range).where.not(instrument_id: nil).sum do |a|
+    42	      price = account.positions.find_by(instrument_id: a.instrument_id)&.last_price
+    43	      price && a.quantity ? a.quantity * price * (a.net_amount&.negative? ? -1 : 1) : 0
+    44	    end
+    45	    cash + shares
+    46	  end
+    47	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/jobs/snapshots/daily_job.rb | sed -n '1,220p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Snapshots
+     2	  class DailyJob < ApplicationJob
+     3	    def perform(account, date = MarketDay.today)
+     4	      SyncRun.record(:snapshots, account: account) do |run|
+     5	        snapshot = Snapshot.build!(account, date)
+     6	        run.touched(snapshot ? 1 : 0)
+     7	      end
+     8	    end
+     9	  end
+    10	end
+
+exec
+/bin/zsh -lc "nl -ba app/models/activity.rb | sed -n '1,280p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# One row per Schwab activity: fills, dividends, fees, cash movements, corporate actions.
+     2	class Activity < ApplicationRecord
+     3	  belongs_to :account
+     4	  belongs_to :instrument, optional: true
+     5	  belongs_to :order, optional: true
+     6	  has_one :trade_leg, dependent: :restrict_with_exception
+     7	
+     8	  enum :kind, {
+     9	    fill: "fill", sweep: "sweep", dividend: "dividend", interest: "interest", fee: "fee", deposit: "deposit",
+    10	    withdrawal: "withdrawal", transfer: "transfer", corporate_action: "corporate_action", other: "other"
+    11	  }
+    12	
+    13	  scope :unjournaled, -> { where(journaled_at: nil) }
+    14	  scope :valid_for_journal, -> { where(status: Schwab::Activity::VALID) }
+    15	  scope :chronological, -> { order(:executed_at, :id) }
+    16	  scope :flows, -> { where(kind: [ :deposit, :withdrawal ]) }
+    17	
+    18	  def journaled? = journaled_at.present?
+    19	  def buy? = side == Schwab::Order::BUY
+    20	  def cash_flow? = deposit? || withdrawal? || (transfer? && instrument_id.present?)
+    21	
+    22	  # Deposits positive, withdrawals negative, whatever sign Schwab used.
+    23	  def flow_amount
+    24	    return nil unless deposit? || withdrawal?
+    25	    deposit? ? net_amount.abs : -net_amount.abs
+    26	  end
+    27	
+    28	  # A re-synced activity whose economics changed after journaling drops its leg so the trade is rebuilt.
+    29	  def unjournal!
+    30	    trade = trade_leg&.trade
+    31	    trade_leg&.destroy!
+    32	    update!(journaled_at: nil)
+    33	    trade&.recompute!
+    34	  end
+    35	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/models/schwab/activity.rb | sed -n '1,320p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Schwab
+     2	  # One transaction activity. The primary security transfer item gives instrument, quantity, and price
+     3	  # (trades only; on a dividend the item's amount is dollars); fee items are summed; every security item
+     4	  # is kept in `securities` because a CUSIP succession arrives as two of them in one activity.
+     5	  # Sign conventions are SCHWAB_SHAPE_UNVERIFIED; side prefers positionEffect, then the sign of netAmount.
+     6	  class Activity < Data.define(:activity_id, :type, :activity_type, :status, :sub_account, :description, :order_id,
+     7	                               :net_amount, :trade_date, :settlement_date, :executed_at, :instrument, :securities, :quantity, :price,
+     8	                               :position_effect, :commission, :fees, :raw)
+     9	    Security = Data.define(:instrument, :amount, :cost, :price, :position_effect)
+    10	
+    11	    # The transaction types a cash account produces; one request each. SCHWAB_SHAPE_UNVERIFIED.
+    12	    CASH_ACCOUNT_TYPES = %w[ TRADE RECEIVE_AND_DELIVER DIVIDEND_OR_INTEREST ELECTRONIC_FUND ACH_RECEIPT ACH_DISBURSEMENT WIRE_IN WIRE_OUT
+    13	                             JOURNAL CASH_RECEIPT CASH_DISBURSEMENT MONEY_MARKET ].freeze
+    14	    VALID = "VALID"
+    15	    INBOUND_TYPES = %w[ ACH_RECEIPT WIRE_IN CASH_RECEIPT ].freeze
+    16	    OUTBOUND_TYPES = %w[ ACH_DISBURSEMENT WIRE_OUT CASH_DISBURSEMENT ].freeze
+    17	    SIGNED_TYPES = %w[ ELECTRONIC_FUND ].freeze # direction only from the sign of netAmount
+    18	
+    19	    def self.from(raw)
+    20	      activity_id = raw.fetch("activityId") { raise MappingError, "activity without activityId" }.to_s
+    21	      items = Array(raw["transferItems"])
+    22	      securities = items.select { |i| i["feeType"].blank? && !(InstrumentRef.from(i["instrument"])&.currency?) }
+    23	        .map { |i| Security.new(instrument: InstrumentRef.from(i["instrument"]), amount: Decimal.parse(i["amount"]), cost: Decimal.parse(i["cost"]),
+    24	                                price: Decimal.parse(i["price"]), position_effect: i["positionEffect"]) }
+    25	      fee_items = items.select { |i| i["feeType"].present? }
+    26	      executed_at = Timestamp.parse(raw["time"]) || Timestamp.parse(raw["tradeDate"]) or raise MappingError, "activity #{activity_id} has no time or tradeDate"
+    27	      primary = securities.first
+    28	      trade = raw["type"] == "TRADE"
+    29	
+    30	      new(activity_id: activity_id, type: raw["type"], activity_type: raw["activityType"], status: raw["status"],
+    31	          sub_account: raw["subAccount"], description: raw["description"], order_id: raw["orderId"]&.to_s,
+    32	          net_amount: Decimal.parse(raw["netAmount"]),
+    33	          trade_date: Timestamp.parse_date(raw["tradeDate"]), settlement_date: Timestamp.parse_date(raw["settlementDate"]),
+    34	          executed_at: executed_at,
+    35	          instrument: primary&.instrument, securities: securities,
+    36	          quantity: trade ? primary&.amount&.abs : nil,
+    37	          price: trade ? primary&.price : nil,
+    38	          position_effect: primary&.position_effect,
+    39	          commission: fee_items.select { |i| i["feeType"] == "COMMISSION" }.sum(Decimal::ZERO) { |i| Decimal.parse_or_zero(i["amount"]).abs },
+    40	          fees: fee_items.reject { |i| i["feeType"] == "COMMISSION" }.sum(Decimal::ZERO) { |i| Decimal.parse_or_zero(i["amount"]).abs },
+    41	          raw: raw)
+    42	    end
+    43	
+    44	    def trade? = type == "TRADE"
+    45	    def valid? = status.nil? || status == "VALID"
+    46	
+    47	    # The app's classification of this activity. :other is never a quiet success; the sync counts it.
+    48	    def kind
+    49	      return :fee if fee_only?
+    50	      cash_equivalent = instrument&.asset_type == "CASH_EQUIVALENT"
+    51	      case type
+    52	      when "TRADE" then cash_equivalent ? :sweep : :fill
+    53	      when "MONEY_MARKET" then :sweep
+    54	      when "DIVIDEND_OR_INTEREST" then instrument && !cash_equivalent ? :dividend : :interest
+    55	      when *INBOUND_TYPES then :deposit
+    56	      when *OUTBOUND_TYPES then :withdrawal
+    57	      when *SIGNED_TYPES then net_amount&.negative? ? :withdrawal : :deposit
+    58	      when "JOURNAL", "RECEIVE_AND_DELIVER"
+    59	        if securities.size >= 2 then :corporate_action
+    60	        elsif securities.one? then :transfer
+    61	        elsif type == "JOURNAL" then net_amount&.negative? ? :withdrawal : :deposit
+    62	        else :other
+    63	        end
+    64	      else :other
+    65	      end
+    66	    end
+    67	    def fee_only? = raw.fetch("transferItems", []).then { |items| items.any? && items.all? { |i| i["feeType"].present? } }
+    68	
+    69	    # What the sync records about an activity it could not classify.
+    70	    def summary = { type: type, activity_type: activity_type, sub_account: sub_account, description: description, net_amount: net_amount&.to_s }
+    71	
+    72	    def side
+    73	      return nil unless trade?
+    74	      case position_effect
+    75	      when "OPENING" then "BUY"
+    76	      when "CLOSING" then "SELL"
+    77	      else net_amount&.negative? ? "BUY" : (net_amount ? "SELL" : nil)
+    78	      end
+    79	    end
+    80	  end
+    81	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/jobs/snapshots/rebuild_job.rb | sed -n '1,220p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Snapshots
+     2	  # Recomputes forward from a date, for a flow or balance that landed late.
+     3	  class RebuildJob < ApplicationJob
+     4	    def perform(account, from:)
+     5	      from = from.to_date
+     6	      account.snapshots.where(as_of: from..).delete_all
+     7	      (from..MarketDay.today).each { |date| Snapshot.build!(account, date) }
+     8	    end
+     9	  end
+    10	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/jobs/sync/activities_job.rb | sed -n '1,360p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Sync
+     2	  # Activities for one account, one request per transaction type a cash account produces. A bad request on
+     3	  # one type fails the run so the cursor does not advance past rows that were never fetched; the rows that
+     4	  # did arrive are still upserted and will simply be seen again. A malformed record is quarantined alone.
+     5	  class ActivitiesJob < FeedJob
+     6	    OVERLAP = 3.days
+     7	
+     8	    limits_concurrency to: 1, key: ->(account) { "activities-#{account.id}" }, on_conflict: :discard
+     9	
+    10	    def perform(account)
+    11	      from, to, gap_from = window_for(:activities, account, overlap: OVERLAP)
+    12	      SyncRun.record(:activities, account: account, window_from: from, window_to: to) do |run|
+    13	        note_gap(run, gap_from, account)
+    14	        @earliest_flow = nil
+    15	        outcome = :succeeded
+    16	        Schwab::Activity::CASH_ACCOUNT_TYPES.each do |type|
+    17	          raws = client.transactions(account.schwab_hash, from: from, to: to, type: type)
+    18	          raws.each { |raw| upsert(account, raw, run) }
+    19	          run.touched(raws.size)
+    20	        rescue Schwab::RequestError => e
+    21	          run.quarantine(:activity_types_rejected, "#{type}: #{e.message}")
+    22	          outcome = :failed
+    23	        end
+    24	        Journal::LinkFillsJob.perform_later(account) if account.trading_enabled?
+    25	        Snapshots::RebuildJob.perform_later(account, from: @earliest_flow) if @earliest_flow && account.trading_enabled?
+    26	        outcome
+    27	      end
+    28	    end
+    29	
+    30	    private
+    31	      def upsert(account, raw, run)
+    32	        activity = Schwab::Activity.from(raw)
+    33	        instrument = activity.instrument && Instrument.resolve(activity.instrument)
+    34	        if activity.instrument && instrument.nil?
+    35	          run.quarantine(:activities_unresolved, activity.instrument.to_h)
+    36	          return
+    37	        end
+    38	        row = account.activities.find_or_initialize_by(broker_activity_id: activity.activity_id)
+    39	        kind = activity.kind
+    40	        new_record = row.new_record?
+    41	        run.quarantine(:activity_kinds_other, activity.summary) if kind == :other && new_record
+    42	        row.update!(instrument: instrument, order: activity.order_id && account.orders.find_by(broker_order_id: activity.order_id),
+    43	                    broker_order_id: activity.order_id, kind: kind, status: activity.status, sub_type: activity.type, side: activity.side,
+    44	                    quantity: activity.quantity, price: activity.price, commission: activity.commission, fees: activity.fees,
+    45	                    net_amount: activity.net_amount, trade_date: activity.trade_date, settlement_date: activity.settlement_date,
+    46	                    executed_at: activity.executed_at, raw: activity.raw)
+    47	        changed = row.saved_changes.keys.intersect?(%w[ quantity price status net_amount kind ])
+    48	        row.unjournal! if row.journaled? && changed && !new_record
+    49	        if row.cash_flow? && (new_record || changed) && row.trade_date
+    50	          @earliest_flow = [ @earliest_flow, row.trade_date ].compact.min
+    51	        end
+    52	      rescue Schwab::MappingError, ActiveRecord::RecordInvalid => e
+    53	        run.quarantine(:activities_unmapped, e.message)
+    54	      end
+    55	  end
+    56	end
+
+exec
+/bin/zsh -lc "nl -ba app/jobs/sync/positions_job.rb | sed -n '1,340p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Sync
+     2	  # Positions and balances for one account. Rows absent from the broker are deleted only when every
+     3	  # position resolved and the payload is sane. Zero-quantity positions are treated as absent.
+     4	  class PositionsJob < FeedJob
+     5	    limits_concurrency to: 1, key: ->(account) { "positions-#{account.id}" }, on_conflict: :discard
+     6	
+     7	    def perform(account)
+     8	      SyncRun.record(:positions, account: account) do |run|
+     9	        summary = Schwab::AccountSummary.from(client.account(account.schwab_hash))
+    10	        raise Schwab::MappingError, "no positions but positive long market value" if summary.positions.empty? && summary.balances.long_market_value&.positive?
+    11	
+    12	        now = Time.current
+    13	        held = summary.positions.reject { |p| p.quantity.zero? }
+    14	        kept = held.filter_map do |position|
+    15	          instrument = Instrument.resolve(position.instrument)
+    16	          unless instrument
+    17	            run.quarantine(:positions_unresolved, position.instrument.to_h)
+    18	            next
+    19	          end
+    20	          account.positions.find_or_initialize_by(instrument: instrument).tap do |row|
+    21	            row.update!(quantity: position.quantity, average_price: position.average_price, cost_basis: position.cost_basis,
+    22	                        market_value: position.market_value, last_price: last_price_for(position), synced_at: now, raw: position.raw)
+    23	          end
+    24	        rescue Schwab::MappingError => e
+    25	          run.quarantine(:positions_unmapped, e.message)
+    26	          nil
+    27	        end
+    28	        complete = kept.size == held.size
+    29	        account.positions.where.not(id: kept.map(&:id)).destroy_all if complete
+    30	        account.balances.create!(as_of: now, equity: summary.balances.equity, cash_available_for_trading: summary.balances.cash_available_for_trading,
+    31	                                 unsettled_cash: summary.balances.unsettled_cash, settled_cash: summary.balances.settled_cash,
+    32	                                 buying_power: summary.balances.buying_power, raw: summary.balances.raw)
+    33	        account.update!(last_synced_at: now, raw: summary.raw_without_positions)
+    34	        run.touched(kept.size)
+    35	        if complete && account.trading_enabled?
+    36	          Journal::BootstrapJob.perform_later(account)
+    37	          Snapshots::RebuildJob.perform_later(account, from: now.in_time_zone(MarketDay::ZONE).to_date) if account.snapshots.exists?(as_of: now.in_time_zone(MarketDay::ZONE).to_date)
+    38	        end
+    39	        complete ? :succeeded : :partial
+    40	      end
+    41	    end
+    42	
+    43	    private
+    44	      def last_price_for(position)
+    45	        return nil if position.quantity.zero? || position.market_value.nil?
+    46	        position.market_value / position.quantity
+    47	      end
+    48	  end
+    49	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/jobs/sync/tick_job.rb | sed -n '1,320p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Sync
+     2	  # The only scheduled sync entry point. Refreshes the calendar, checks the token once, and enqueues what is due.
+     3	  class TickJob < ApplicationJob
+     4	    INTRADAY = { positions: 15.minutes, orders: 5.minutes, activities: 5.minutes }.freeze
+     5	    OFF_HOURS = 60.minutes
+     6	    CALENDAR_DAYS = 7
+     7	    SNAPSHOT_DELAY = 20.minutes
+     8	
+     9	    def perform
+    10	      refresh_calendar
+    11	      return pause! unless SchwabToken.usable?
+    12	
+    13	      in_session = MarketDay.session_open?
+    14	      Account.find_each do |account|
+    15	        intraday = in_session && account.trading_enabled?
+    16	        INTRADAY.each do |feed, interval|
+    17	          every = intraday ? interval : OFF_HOURS
+    18	          next unless SyncRun.due?(feed, account, every: every)
+    19	          job_for(feed).perform_later(account)
+    20	        end
+    21	        Snapshots::DailyJob.perform_later(account, today) if snapshot_due?(account, today)
+    22	      end
+    23	    end
+    24	
+    25	    private
+    26	      # Once per Schwab-sourced market day, 20 minutes after the regular close, after a positions sync since the close.
+    27	      def snapshot_due?(account, date)
+    28	        day = MarketDay.find_by(date: date)
+    29	        return false unless account.trading_enabled? && day&.schwab? && day.trading? && Time.current >= day.regular_closes_at + SNAPSHOT_DELAY
+    30	        return false if account.snapshots.exists?(as_of: date)
+    31	        SyncRun.for(:positions, account).advanced_cursor.where(started_at: day.regular_closes_at..).exists?
+    32	      end
+    33	
+    34	      def today = MarketDay.today
+    35	
+    36	
+    37	      def refresh_calendar
+    38	        today = MarketDay.today
+    39	        (today..today + CALENDAR_DAYS).each { |date| MarketDay.for(date) }
+    40	      end
+    41	
+    42	      # One skipped row per hour and one audit per episode; nothing is enqueued, so the queue cannot grow.
+    43	      # The settings row lock serializes this against issue!, so a re-auth landing mid-tick cannot be marked paused.
+    44	      def pause!
+    45	        reason = SystemSettings.transaction do
+    46	          settings = SystemSettings.instance.lock!
+    47	          next nil if SchwabToken.usable?
+    48	          unless settings.sync_paused_reason
+    49	            settings.update!(sync_paused_reason: "Schwab token unusable; re-authenticate")
+    50	            AuditEvent.log("sync_paused_token_expired", actor: :system)
+    51	          end
+    52	          settings.sync_paused_reason
+    53	        end
+    54	        return if reason.nil? || SyncRun.where(status: :skipped_token, started_at: 1.hour.ago..).exists?
+    55	        SyncRun.create!(feed: :positions, status: :skipped_token, started_at: Time.current, finished_at: Time.current, error: reason)
+    56	      end
+    57	
+    58	      def job_for(feed) = { positions: PositionsJob, orders: OrdersJob, activities: ActivitiesJob }.fetch(feed)
+    59	  end
+    60	end
+
+exec
+/bin/zsh -lc "nl -ba app/jobs/journal/recompute_setup_stats_job.rb | sed -n '1,160p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Journal
+     2	  class RecomputeSetupStatsJob < ApplicationJob
+     3	    def perform(setup) = setup.recompute_stats!
+     4	  end
+     5	end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "nl -ba db/migrate/20260901250001_prepare_journal_columns.rb | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	class PrepareJournalColumns < ActiveRecord::Migration[8.1]
+     2	  def change
+     3	    add_column :trades, :review_reason, :string
+     4	    add_column :trades, :excluded_from_stats, :boolean, null: false, default: false
+     5	    add_column :trades, :stopped_out, :boolean, null: false, default: false
+     6	    add_column :trades, :initial_quantity, :decimal, precision: 18, scale: 6
+     7	    add_column :trades, :total_risk, :decimal, precision: 18, scale: 4
+     8	    add_column :trades, :quantity, :decimal, precision: 18, scale: 6, null: false, default: 0 # running, recomputed from legs
+     9	  end
+    10	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The implementation has the requested hooks, but some are weaker than the design asks for: several paths stamp activities as journaled even when no durable journal effect was created, and snapshot flow sign handling appears inconsistent with the helper it defines. I’m reading specs now to separate “known gap with no test” from “test asserts the wrong behavior.”
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba spec/support/journal.rb | sed -n '1,360p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Builds activities the way the sync writes them, so journal specs read as trade sequences.
+     2	module JournalHelpers
+     3	  def fill(account, instrument, side, qty, price, at:, fees: 0, order: nil, status: "VALID")
+     4	    signed = side == "BUY" ? -(qty * price) - fees : (qty * price) - fees
+     5	    create(:activity, account: account, instrument: instrument, kind: "fill", side: side, quantity: qty, price: price, fees: fees,
+     6	                      net_amount: signed, executed_at: at, trade_date: at.to_date, status: status, order: order, broker_order_id: order&.broker_order_id)
+     7	  end
+     8	
+     9	  def income(account, instrument, amount, at:, kind: "dividend")
+    10	    create(:activity, account: account, instrument: instrument, kind: kind, side: nil, quantity: nil, price: nil, net_amount: amount,
+    11	                      executed_at: at, trade_date: at.to_date, status: "VALID")
+    12	  end
+    13	
+    14	  def flow(account, kind, amount, on:)
+    15	    create(:activity, account: account, instrument: nil, kind: kind, side: nil, quantity: nil, price: nil, net_amount: amount,
+    16	                      executed_at: on.to_time, trade_date: on, status: "VALID")
+    17	  end
+    18	
+    19	  def link!(account) = Journal::Linker.new(account).link_all!
+    20	end
+    21	
+    22	RSpec.configure { |c| c.include JournalHelpers }
+
+exec
+/bin/zsh -lc "nl -ba spec/models/journal/linker_spec.rb | sed -n '1,420p'" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "nl -ba spec/models/setup_stats_spec.rb | sed -n '1,300p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe Setup, "#recompute_stats!" do
+     4	  it "counts only closed, reviewed, included trades with positive initial risk, and calls R above zero a win" do
+     5	    setup = create(:setup)
+     6	    account = create(:account)
+     7	    create(:trade, account: account, setup: setup, status: "closed", initial_risk: 100, realized_r: 2)
+     8	    create(:trade, account: account, setup: setup, status: "closed", initial_risk: 100, realized_r: -1)
+     9	    create(:trade, account: account, setup: setup, status: "closed", initial_risk: 100, realized_r: 0)
+    10	    create(:trade, account: account, setup: setup, status: "closed", initial_risk: 100, realized_r: 5, needs_review: true)
+    11	    create(:trade, account: account, setup: setup, status: "closed", initial_risk: 100, realized_r: 5, excluded_from_stats: true)
+    12	    create(:trade, account: account, setup: setup, status: "closed", initial_risk: nil, realized_r: nil)
+    13	    create(:trade, account: account, setup: setup, status: "open")
+    14	    setup.recompute_stats!
+    15	    expect(setup.sample_size).to eq(3)
+    16	    expect(setup.expectancy).to be_within(0.0001).of(BigDecimal("1") / 3)
+    17	    expect(setup.avg_r).to be_within(0.0001).of(BigDecimal("1") / 3)
+    18	    expect(setup.win_rate).to be_within(0.0001).of(BigDecimal("1") / 3)
+    19	  end
+    20	end
+
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe Journal::Linker do
+     4	  let(:account) { create(:account, trading_enabled: true) }
+     5	  let(:xyz) { create(:instrument, symbol: "XYZ", cusip: "037833100") }
+     6	  let(:t0) { Time.zone.parse("2026-08-14 10:00 EDT") }
+     7	
+     8	  it "journals buy 40, sell 40 into one closed trade with P&L from leg cash amounts" do
+     9	    fill(account, xyz, "BUY", 40, 50, at: t0, fees: 1)
+    10	    fill(account, xyz, "SELL", 40, 55, at: t0 + 2.days, fees: 1)
+    11	    link!(account)
+    12	    trade = account.trades.sole
+    13	    expect(trade).to be_closed
+    14	    expect(trade.trade_legs.map(&:kind)).to eq(%w[ entry exit ])
+    15	    expect(trade).to have_attributes(peak_quantity: 40, quantity: 0, avg_entry: 50, avg_exit: 55, realized_pnl: BigDecimal("198"), initial_quantity: 40)
+    16	    expect(trade.realized_r).to be_nil
+    17	    expect(trade).to be_needs_review.and be_review_missing_setup
+    18	    expect(Activity.unjournaled).to be_empty
+    19	  end
+    20	
+    21	  it "computes R from the initial entry once a stop is known, and total risk across every entry" do
+    22	    fill(account, xyz, "BUY", 40, 50, at: t0)
+    23	    fill(account, xyz, "BUY", 20, 52, at: t0 + 1.day)
+    24	    fill(account, xyz, "SELL", 30, 55, at: t0 + 2.days)
+    25	    fill(account, xyz, "SELL", 30, 54, at: t0 + 3.days)
+    26	    link!(account)
+    27	    trade = account.trades.sole
+    28	    expect(trade).to be_closed
+    29	    expect(trade.peak_quantity).to eq(60)
+    30	    expect(trade.avg_entry).to be_within(0.01).of(50.67)
+    31	    expect(trade.avg_exit).to eq(BigDecimal("54.5"))
+    32	    expect(trade.realized_pnl).to eq(230)
+    33	    trade.review!(setup: create(:setup), planned_stop: 48, thesis: "breakout", user: create(:user))
+    34	    expect(trade.reload).to have_attributes(initial_quantity: 40, initial_risk: 80, total_risk: 160, realized_r: BigDecimal("2.875"))
+    35	    expect(trade).not_to be_needs_review
+    36	    expect(AuditEvent.where(kind: "trade_reviewed")).to exist
+    37	  end
+    38	
+    39	  it "treats a partial fill on one order as one initial entry" do
+    40	    order = create(:order, account: account, instrument: xyz, broker_order_id: "777")
+    41	    fill(account, xyz, "BUY", 25, 50, at: t0, order: order)
+    42	    fill(account, xyz, "BUY", 15, 50.2, at: t0 + 1.minute, order: order)
+    43	    link!(account)
+    44	    trade = account.trades.sole
+    45	    trade.update!(planned_stop: 48)
+    46	    trade.recompute!
+    47	    expect(trade.initial_quantity).to eq(40)
+    48	    expect(trade.initial_risk).to eq(80)
+    49	  end
+    50	
+    51	  it "bootstraps a legacy holding when the first fill is a sale, covering what was held before" do
+    52	    create(:position, account: account, instrument: xyz, quantity: 25, average_price: 40)
+    53	    fill(account, xyz, "SELL", 15, 55, at: t0)
+    54	    link!(account)
+    55	    trade = account.trades.sole
+    56	    expect(trade).to be_open.and be_bootstrapped.and be_review_bootstrapped
+    57	    plug = trade.trade_legs.find_by(activity_id: nil)
+    58	    expect(plug).to have_attributes(quantity: 40, price: 40)
+    59	    expect(trade.quantity).to eq(25)
+    60	    expect(trade.peak_quantity).to eq(40)
+    61	    expect(trade.realized_pnl).to be_nil
+    62	  end
+    63	
+    64	  it "reconciles the plug against the broker so an entry inside the sync window is not double counted" do
+    65	    create(:position, account: account, instrument: xyz, quantity: 40, average_price: 50)
+    66	    Journal::BootstrapJob.perform_now(account)
+    67	    expect(account.trades.sole.trade_legs.sole.quantity).to eq(40)
+    68	    fill(account, xyz, "BUY", 40, 50, at: t0)
+    69	    Journal::LinkFillsJob.perform_now(account)
+    70	    trade = account.trades.sole
+    71	    expect(trade.trade_legs.where(activity_id: nil)).not_to exist
+    72	    expect(trade.quantity).to eq(40)
+    73	    expect(trade.reload).to be_bootstrapped # history: it started as one
+    74	  end
+    75	
+    76	  it "copies the plan from an originating proposal and needs no review" do
+    77	    proposal = OrderProposal.create!(account: account, instrument: xyz, origin: :agent, side: "BUY", setup: create(:setup, name: "breakout-A"), thesis: "t", planned_stop: 48, target_price: 56)
+    78	    order = create(:order, account: account, instrument: xyz, order_proposal: proposal, broker_order_id: "888")
+    79	    fill(account, xyz, "BUY", 40, 50, at: t0, order: order)
+    80	    link!(account)
+    81	    trade = account.trades.sole
+    82	    expect(trade).to have_attributes(setup: proposal.setup, planned_stop: 48, planned_target: 56, initial_risk: 80, needs_review: false)
+    83	  end
+    84	
+    85	  it "records a stop-out when the closing exit came from a stop order" do
+    86	    stop = create(:order, :working_stop, account: account, instrument: xyz, status: "FILLED")
+    87	    fill(account, xyz, "BUY", 40, 50, at: t0)
+    88	    fill(account, xyz, "SELL", 40, 48.9, at: t0 + 1.day, order: stop)
+    89	    link!(account)
+    90	    expect(account.trades.sole).to be_stopped_out
+    91	  end
+    92	
+    93	  it "adds a mid-trade dividend as income and a post-close dividend to the recent trade" do
+    94	    fill(account, xyz, "BUY", 40, 50, at: t0)
+    95	    income(account, xyz, 12, at: t0 + 1.day)
+    96	    fill(account, xyz, "SELL", 40, 55, at: t0 + 2.days)
+    97	    income(account, xyz, 5, at: t0 + 10.days)
+    98	    link!(account)
+    99	    trade = account.trades.sole
+   100	    expect(trade.trade_legs.kind_income.count).to eq(2)
+   101	    expect(trade.realized_pnl).to eq(217)
+   102	    expect(trade.avg_entry).to eq(50)
+   103	  end
+   104	
+   105	  it "applies a 2:1 split delivered as a transfer: quantity doubles, prices and stop halve, risk unchanged" do
+   106	    fill(account, xyz, "BUY", 40, 50, at: t0)
+   107	    link!(account)
+   108	    trade = account.trades.sole
+   109	    trade.update!(planned_stop: 48)
+   110	    trade.recompute!
+   111	    create(:activity, account: account, instrument: xyz, kind: "transfer", quantity: 40, price: nil, net_amount: 0, side: nil, executed_at: t0 + 5.days, trade_date: (t0 + 5.days).to_date, status: "VALID")
+   112	    link!(account)
+   113	    expect(trade.reload).to have_attributes(quantity: 80, avg_entry: 25, planned_stop: 24, initial_risk: 80)
+   114	    fill(account, xyz, "SELL", 80, 30, at: t0 + 6.days)
+   115	    link!(account)
+   116	    expect(trade.reload).to be_closed
+   117	    expect(trade.realized_pnl).to eq(400)
+   118	    expect(trade.realized_r).to eq(5)
+   119	  end
+   120	
+   121	  it "moves a trade across a CUSIP succession, absorbing a bootstrapped trade on the new instrument" do
+   122	    fill(account, xyz, "BUY", 40, 50, at: t0)
+   123	    link!(account)
+   124	    new_instrument = create(:instrument, symbol: "NEWCO", cusip: "222222222")
+   125	    create(:position, account: account, instrument: new_instrument, quantity: 20, average_price: 100)
+   126	    Journal::BootstrapJob.perform_now(account)
+   127	    raw = { "activityId" => 777, "type" => "RECEIVE_AND_DELIVER", "tradeDate" => "2026-08-20T00:00:00+0000", "netAmount" => 0, "transferItems" => [
+   128	      { "instrument" => { "assetType" => "EQUITY", "cusip" => "037833100", "symbol" => "XYZ" }, "amount" => -40 },
+   129	      { "instrument" => { "assetType" => "EQUITY", "cusip" => "222222222", "symbol" => "NEWCO" }, "amount" => 20 } ] }
+   130	    create(:activity, account: account, instrument: xyz, kind: "corporate_action", quantity: nil, side: nil, net_amount: 0, executed_at: t0 + 6.days, trade_date: (t0 + 6.days).to_date, status: "VALID", raw: raw)
+   131	    link!(account)
+   132	    trade = account.trades.sole
+   133	    expect(trade.instrument).to eq(new_instrument)
+   134	    expect(new_instrument.reload.predecessor_instrument).to eq(xyz)
+   135	    expect(trade.quantity).to eq(20)
+   136	    expect(trade.avg_entry).to eq(100)
+   137	  end
+   138	
+   139	  it "flags a fill that arrives out of order instead of forking the trade" do
+   140	    fill(account, xyz, "BUY", 40, 50, at: t0 + 1.day)
+   141	    link!(account)
+   142	    fill(account, xyz, "BUY", 10, 49, at: t0)
+   143	    link!(account)
+   144	    trade = account.trades.sole
+   145	    expect(trade.quantity).to eq(50)
+   146	    expect(trade).to be_review_ordering_ambiguous
+   147	  end
+   148	
+   149	  it "drops the leg and rebuilds when a journaled activity changes, and leaves invalid activities alone" do
+   150	    fill(account, xyz, "BUY", 40, 50, at: t0)
+   151	    pending = fill(account, xyz, "SELL", 40, 55, at: t0 + 1.day, status: "PENDING")
+   152	    link!(account)
+   153	    expect(account.trades.sole).to be_open
+   154	    expect(pending.reload).to be_journaled
+   155	    expect(pending.trade_leg).to be_nil
+   156	    entry = account.activities.find_by(side: "BUY")
+   157	    entry.update!(quantity: 30)
+   158	    entry.unjournal!
+   159	    expect(account.trades.sole.quantity).to eq(0)
+   160	    link!(account)
+   161	    expect(account.trades.sole.quantity).to eq(30)
+   162	  end
+   163	
+   164	  it "never journals the IRA and ignores sweeps and cash movements" do
+   165	    ira = create(:account, trading_enabled: false, account_type: "ira")
+   166	    fill(ira, xyz, "BUY", 10, 50, at: t0)
+   167	    create(:activity, account: account, instrument: create(:instrument, symbol: "SWVXX", asset_type: "CASH_EQUIVALENT"), kind: "sweep", net_amount: -500, executed_at: t0, trade_date: t0.to_date, status: "VALID")
+   168	    flow(account, "deposit", 1000, on: t0.to_date)
+   169	    Journal::LinkFillsJob.perform_now(ira)
+   170	    link!(account)
+   171	    expect(Trade.count).to eq(0)
+   172	    expect(account.activities.unjournaled).to be_empty
+   173	  end
+   174	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba spec/models/snapshot_spec.rb | sed -n '1,360p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe Snapshot do
+     4	  let(:account) { create(:account, trading_enabled: true) }
+     5	
+     6	  def market_day(date)
+     7	    MarketDay.for(date)
+     8	  end
+     9	
+    10	  def balance(date, equity, at: "16:05")
+    11	    create(:balance, account: account, as_of: Time.zone.parse("#{date} #{at} EDT"), equity: equity)
+    12	  end
+    13	
+    14	  before { (Date.new(2026, 9, 8)..Date.new(2026, 9, 11)).each { |d| market_day(d) } }
+    15	
+    16	  it "starts at index 1, and a deposit or withdrawal never moves the index" do
+    17	    balance("2026-09-08", 10_000)
+    18	    balance("2026-09-09", 15_000)
+    19	    flow(account, "deposit", 5_000, on: Date.new(2026, 9, 9))
+    20	    balance("2026-09-10", 10_000)
+    21	    flow(account, "withdrawal", -5_000, on: Date.new(2026, 9, 10))
+    22	    balance("2026-09-11", 9_000)
+    23	    (8..11).each { |d| Snapshot.build!(account, Date.new(2026, 9, d)) }
+    24	    s = account.snapshots.chronological.to_a
+    25	    expect(s.map(&:daily_return).map(&:to_f)).to eq([ 0.0, 0.0, 0.0, -0.1 ])
+    26	    expect(s.last.index_value.to_f).to be_within(0.0001).of(0.9)
+    27	    expect(s.last.drawdown.to_f).to be_within(0.0001).of(0.1)
+    28	    expect(s[1].net_flows).to eq(5_000)
+    29	    expect(s[2].net_flows).to eq(-5_000)
+    30	  end
+    31	
+    32	  it "neutralizes a flow that landed on a day with no snapshot" do
+    33	    balance("2026-09-08", 10_000)
+    34	    Snapshot.build!(account, Date.new(2026, 9, 8))
+    35	    flow(account, "deposit", 5_000, on: Date.new(2026, 9, 9)) # no balance on the 9th: paused sync
+    36	    balance("2026-09-10", 15_000)
+    37	    expect(Snapshot.build!(account, Date.new(2026, 9, 9))).to be_nil
+    38	    Snapshot.build!(account, Date.new(2026, 9, 10))
+    39	    expect(account.snapshots.find_by(as_of: Date.new(2026, 9, 10)).daily_return).to eq(0)
+    40	  end
+    41	
+    42	  it "uses the post-close balance, skips weekends, fallback days, and zero equity" do
+    43	    balance("2026-09-08", 9_000, at: "15:50")
+    44	    balance("2026-09-08", 10_000, at: "16:10")
+    45	    expect(Snapshot.build!(account, Date.new(2026, 9, 8)).equity).to eq(10_000)
+    46	    expect(Snapshot.build!(account, Date.new(2026, 9, 12))).to be_nil
+    47	    MarketDay.find_by(date: Date.new(2026, 9, 9)).update!(source: :fallback)
+    48	    balance("2026-09-09", 10_000)
+    49	    expect(Snapshot.build!(account, Date.new(2026, 9, 9))).to be_nil
+    50	    balance("2026-09-10", 0)
+    51	    expect(Snapshot.build!(account, Date.new(2026, 9, 10))).to be_nil
+    52	  end
+    53	
+    54	  it "rebuilds forward from a date" do
+    55	    balance("2026-09-08", 10_000); balance("2026-09-09", 11_000); balance("2026-09-10", 12_000)
+    56	    (8..10).each { |d| Snapshot.build!(account, Date.new(2026, 9, d)) }
+    57	    flow(account, "deposit", 1_000, on: Date.new(2026, 9, 9))
+    58	    # do/end, not braces: a brace block here would bind to Time.zone.parse and the job would run outside the travel.
+    59	    travel_to Time.zone.parse("2026-09-10 17:00 EDT") do
+    60	      Snapshots::RebuildJob.perform_now(account, from: Date.new(2026, 9, 9))
+    61	    end
+    62	    expect(account.snapshots.find_by(as_of: Date.new(2026, 9, 9)).daily_return).to eq(0)
+    63	    expect(account.snapshots.find_by(as_of: Date.new(2026, 9, 10)).index_value.to_f).to be_within(0.0001).of(12.0 / 11)
+    64	  end
+    65	
+    66	  it "carries open risk and the unprotected count" do
+    67	    balance("2026-09-08", 10_000)
+    68	    xyz = create(:instrument)
+    69	    stop = create(:order, :working_stop, account: account, instrument: xyz, stop_price: 48.9)
+    70	    create(:position, account: account, instrument: xyz, quantity: 40, last_price: 53, working_stop_order: stop)
+    71	    create(:position, account: account, instrument: create(:instrument), quantity: 10, last_price: 20)
+    72	    snapshot = Snapshot.build!(account, Date.new(2026, 9, 8))
+    73	    expect(snapshot.open_risk_amount).to eq(164)
+    74	    expect(snapshot.open_risk_ratio.to_f).to be_within(0.0001).of(0.0164)
+    75	    expect(snapshot.unprotected_count).to eq(1)
+    76	  end
+    77	end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba spec/jobs/journal/hooks_spec.rb | sed -n '1,360p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe "Journal and snapshot hooks from sync" do
+     4	  let!(:token) { create(:schwab_token) }
+     5	  let!(:account) { create(:account, schwab_hash: Schwab::FakeClient::ACCOUNT_HASH, trading_enabled: true) }
+     6	
+     7	  it "bootstraps trades after a complete positions sync and links fills after activities" do
+     8	    expect { Sync::PositionsJob.perform_now(account) }.to have_enqueued_job(Journal::BootstrapJob).with(account)
+     9	    Journal::BootstrapJob.perform_now(account)
+    10	    expect(account.trades.open.count).to eq(3)
+    11	    expect(account.trades.all?(&:bootstrapped?)).to be(true)
+    12	    expect { Sync::ActivitiesJob.perform_now(account) }.to have_enqueued_job(Journal::LinkFillsJob).with(account).and have_enqueued_job(Snapshots::RebuildJob)
+    13	    Journal::LinkFillsJob.perform_now(account)
+    14	    xyz = account.trades.joins(:instrument).find_by!(instruments: { symbol: "XYZ" })
+    15	    expect(xyz.trade_legs.where(activity_id: nil)).not_to exist # the 40-share fill replaced the plug
+    16	    expect(xyz.quantity).to eq(40)
+    17	    expect(xyz.trade_legs.kind_income.count).to eq(1)
+    18	  end
+    19	
+    20	  it "does not hook journaling for a read-only account" do
+    21	    account.update!(trading_enabled: false)
+    22	    expect { Sync::PositionsJob.perform_now(account) }.not_to have_enqueued_job(Journal::BootstrapJob)
+    23	  end
+    24	
+    25	  it "schedules the daily snapshot once, after the close, after a positions sync" do
+    26	    MarketDay.for(Date.new(2026, 9, 8))
+    27	    travel_to Time.zone.parse("2026-09-08 16:25 EDT") do
+    28	      create(:sync_run, feed: "positions", account: account, status: "succeeded", started_at: 2.minutes.ago)
+    29	      %w[ orders activities ].each { |f| create(:sync_run, feed: f, account: account, started_at: 1.minute.ago) }
+    30	      expect { Sync::TickJob.perform_now }.to have_enqueued_job(Snapshots::DailyJob).with(account, Date.new(2026, 9, 8)).once
+    31	      create(:snapshot, account: account, as_of: Date.new(2026, 9, 8)) rescue account.snapshots.create!(as_of: Date.new(2026, 9, 8), equity: 1, index_value: 1, high_water_index: 1)
+    32	      expect { Sync::TickJob.perform_now }.not_to have_enqueued_job(Snapshots::DailyJob)
+    33	    end
+    34	  end
+    35	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "rg -n \"trade_legs|index.*activity|unique.*activity|create_table \\\"trade_legs\\\"|quantity\" db/structure.sql | sed -n '1,140p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+80:    quantity numeric(18,6),
+334:    quantity numeric(18,6),
+387:    quantity numeric(18,6),
+388:    filled_quantity numeric(18,6),
+404:    remaining_quantity numeric(18,6),
+436:    quantity numeric(18,6) NOT NULL,
+1322:-- Name: trade_legs; Type: TABLE; Schema: public; Owner: -
+1325:CREATE TABLE public.trade_legs (
+1330:    quantity numeric(18,6),
+1342:-- Name: trade_legs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+1345:CREATE SEQUENCE public.trade_legs_id_seq
+1354:-- Name: trade_legs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+1357:ALTER SEQUENCE public.trade_legs_id_seq OWNED BY public.trade_legs.id;
+1377:    peak_quantity numeric(18,6),
+1392:    initial_quantity numeric(18,6),
+1394:    quantity numeric(18,6) DEFAULT 0.0 NOT NULL
+1690:-- Name: trade_legs id; Type: DEFAULT; Schema: public; Owner: -
+1693:ALTER TABLE ONLY public.trade_legs ALTER COLUMN id SET DEFAULT nextval('public.trade_legs_id_seq'::regclass);
+1999:-- Name: trade_legs trade_legs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2002:ALTER TABLE ONLY public.trade_legs
+2003:    ADD CONSTRAINT trade_legs_pkey PRIMARY KEY (id);
+2044:-- Name: index_activities_on_account_id_and_broker_activity_id; Type: INDEX; Schema: public; Owner: -
+2047:CREATE UNIQUE INDEX index_activities_on_account_id_and_broker_activity_id ON public.activities USING btree (account_id, broker_activity_id);
+2660:-- Name: index_trade_legs_on_activity_id; Type: INDEX; Schema: public; Owner: -
+2663:CREATE UNIQUE INDEX index_trade_legs_on_activity_id ON public.trade_legs USING btree (activity_id) WHERE (activity_id IS NOT NULL);
+2667:-- Name: index_trade_legs_on_trade_id; Type: INDEX; Schema: public; Owner: -
+2670:CREATE INDEX index_trade_legs_on_trade_id ON public.trade_legs USING btree (trade_id);
+2944:-- Name: trade_legs fk_rails_b361f1f1f1; Type: FK CONSTRAINT; Schema: public; Owner: -
+2947:ALTER TABLE ONLY public.trade_legs
+3056:-- Name: trade_legs fk_rails_fb47c7025b; Type: FK CONSTRAINT; Schema: public; Owner: -
+3059:ALTER TABLE ONLY public.trade_legs
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba db/structure.sql | sed -n '1322,1398p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+  1322	-- Name: trade_legs; Type: TABLE; Schema: public; Owner: -
+  1323	--
+  1324	
+  1325	CREATE TABLE public.trade_legs (
+  1326	    id bigint NOT NULL,
+  1327	    trade_id bigint NOT NULL,
+  1328	    activity_id bigint,
+  1329	    kind character varying NOT NULL,
+  1330	    quantity numeric(18,6),
+  1331	    price numeric(18,4),
+  1332	    ratio numeric(12,6),
+  1333	    cash_amount numeric(18,4),
+  1334	    executed_at timestamp(6) with time zone,
+  1335	    note character varying,
+  1336	    created_at timestamp(6) with time zone NOT NULL,
+  1337	    updated_at timestamp(6) with time zone NOT NULL
+  1338	);
+  1339	
+  1340	
+  1341	--
+  1342	-- Name: trade_legs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+  1343	--
+  1344	
+  1345	CREATE SEQUENCE public.trade_legs_id_seq
+  1346	    START WITH 1
+  1347	    INCREMENT BY 1
+  1348	    NO MINVALUE
+  1349	    NO MAXVALUE
+  1350	    CACHE 1;
+  1351	
+  1352	
+  1353	--
+  1354	-- Name: trade_legs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+  1355	--
+  1356	
+  1357	ALTER SEQUENCE public.trade_legs_id_seq OWNED BY public.trade_legs.id;
+  1358	
+  1359	
+  1360	--
+  1361	-- Name: trades; Type: TABLE; Schema: public; Owner: -
+  1362	--
+  1363	
+  1364	CREATE TABLE public.trades (
+  1365	    id bigint NOT NULL,
+  1366	    account_id bigint NOT NULL,
+  1367	    instrument_id bigint NOT NULL,
+  1368	    setup_id bigint,
+  1369	    order_proposal_id bigint,
+  1370	    status character varying DEFAULT 'open'::character varying NOT NULL,
+  1371	    needs_review boolean DEFAULT false NOT NULL,
+  1372	    bootstrapped boolean DEFAULT false NOT NULL,
+  1373	    opened_at timestamp(6) with time zone,
+  1374	    closed_at timestamp(6) with time zone,
+  1375	    avg_entry numeric(18,4),
+  1376	    avg_exit numeric(18,4),
+  1377	    peak_quantity numeric(18,6),
+  1378	    planned_stop numeric(18,4),
+  1379	    planned_target numeric(18,4),
+  1380	    initial_risk numeric(18,4),
+  1381	    realized_pnl numeric(18,4),
+  1382	    realized_r numeric(10,4),
+  1383	    thesis text,
+  1384	    post_mortem text,
+  1385	    followed_setup boolean,
+  1386	    journal_completed_at timestamp(6) with time zone,
+  1387	    created_at timestamp(6) with time zone NOT NULL,
+  1388	    updated_at timestamp(6) with time zone NOT NULL,
+  1389	    review_reason character varying,
+  1390	    excluded_from_stats boolean DEFAULT false NOT NULL,
+  1391	    stopped_out boolean DEFAULT false NOT NULL,
+  1392	    initial_quantity numeric(18,6),
+  1393	    total_risk numeric(18,4),
+  1394	    quantity numeric(18,6) DEFAULT 0.0 NOT NULL
+  1395	);
+  1396	
+  1397	
+  1398	--
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "rg -n \"index_trades|trades.*open|unique.*trades|CREATE.*trades\" db/structure.sql | sed -n '1,120p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+1364:CREATE TABLE public.trades (
+1402:CREATE SEQUENCE public.trades_id_seq
+2674:-- Name: index_trades_needing_review; Type: INDEX; Schema: public; Owner: -
+2677:CREATE INDEX index_trades_needing_review ON public.trades USING btree (id) WHERE needs_review;
+2681:-- Name: index_trades_on_account_id; Type: INDEX; Schema: public; Owner: -
+2684:CREATE INDEX index_trades_on_account_id ON public.trades USING btree (account_id);
+2688:-- Name: index_trades_on_account_id_and_instrument_id_and_status; Type: INDEX; Schema: public; Owner: -
+2691:CREATE INDEX index_trades_on_account_id_and_instrument_id_and_status ON public.trades USING btree (account_id, instrument_id, status);
+2695:-- Name: index_trades_on_instrument_id; Type: INDEX; Schema: public; Owner: -
+2698:CREATE INDEX index_trades_on_instrument_id ON public.trades USING btree (instrument_id);
+2702:-- Name: index_trades_on_order_proposal_id; Type: INDEX; Schema: public; Owner: -
+2705:CREATE UNIQUE INDEX index_trades_on_order_proposal_id ON public.trades USING btree (order_proposal_id);
+2709:-- Name: index_trades_on_setup_id; Type: INDEX; Schema: public; Owner: -
+2712:CREATE INDEX index_trades_on_setup_id ON public.trades USING btree (setup_id);
+2716:-- Name: index_trades_one_open_per_instrument; Type: INDEX; Schema: public; Owner: -
+2719:CREATE UNIQUE INDEX index_trades_one_open_per_instrument ON public.trades USING btree (account_id, instrument_id) WHERE ((status)::text = 'open'::text);
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "rg -n \"def protected|open_risk|class Position|stop\\?\" app/models app/jobs spec | sed -n '1,220p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+app/jobs/sync/positions_job.rb:4:  class PositionsJob < FeedJob
+app/models/order.rb:21:  def stop? = Schwab::Order::STOP_TYPES.include?(order_type)
+app/models/schwab/order.rb:44:    def stop? = STOP_TYPES.include?(order_type)
+app/models/snapshot.rb:21:    open_risk = protected_positions.sum(&:open_risk)
+app/models/snapshot.rb:25:                     drawdown: 1 - index / high_water, open_risk_amount: open_risk, open_risk_ratio: open_risk / balance.equity,
+app/models/position.rb:1:class Position < ApplicationRecord
+app/models/position.rb:32:  def protected? = protection == :protected
+app/models/position.rb:43:  def open_risk
+spec/models/position_spec.rb:15:    expect(position.open_risk).to eq(164.0)
+spec/models/position_spec.rb:23:    expect(position.open_risk).to be_nil
+spec/models/position_spec.rb:30:    expect(position.open_risk).to be_nil
+spec/models/position_spec.rb:43:    expect(position.open_risk).to eq(0)
+spec/models/snapshot_spec.rb:73:    expect(snapshot.open_risk_amount).to eq(164)
+spec/models/snapshot_spec.rb:74:    expect(snapshot.open_risk_ratio.to_f).to be_within(0.0001).of(0.0164)
+app/models/journal/linker.rb:41:      trade.update!(stopped_out: true) if trade.closed? && leg.kind_exit? && activity.order&.stop?
+spec/models/position_protection_spec.rb:65:    expect(position.open_risk).to be_nil
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/models/position.rb | sed -n '1,220p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	class Position < ApplicationRecord
+     2	  belongs_to :account
+     3	  belongs_to :instrument
+     4	  belongs_to :working_stop_order, class_name: "Order", optional: true
+     5	
+     6	  validates :instrument_id, uniqueness: { scope: :account_id }
+     7	
+     8	  scope :protected_by_stop, -> { where.not(working_stop_order_id: nil) }
+     9	  scope :unprotected, -> { where(working_stop_order_id: nil) }
+    10	
+    11	  def stop_price = working_stop_order&.stop_price
+    12	
+    13	  # Every live terminal sell stop on this instrument, so a scale-in covered by two stops reads as covered.
+    14	  def live_stops = account.orders.where(instrument: instrument).stops.sells.live.terminal
+    15	
+    16	  def covered_quantity
+    17	    return nil unless working_stop_order
+    18	    live_stops.filter_map(&:remaining).sum
+    19	  end
+    20	
+    21	  # Why this position is or is not protected. Only :protected counts; every other state is unknown or
+    22	  # insufficient risk, and the dashboard says which.
+    23	  def protection
+    24	    return :unprotected unless working_stop_order&.working?
+    25	    return :awaiting if !working_stop_order.live?
+    26	    return :trailing_unknown if stop_price.blank?
+    27	    return :oversized if covered_quantity > quantity
+    28	    return :partial if covered_quantity < quantity
+    29	    :protected
+    30	  end
+    31	
+    32	  def protected? = protection == :protected
+    33	  def unprotected? = !protected?
+    34	
+    35	  # Signed fraction of price between here and the stop; negative once price has gapped through it.
+    36	  def distance_to_stop
+    37	    return unless protected? && last_price.present? && last_price.nonzero?
+    38	    (last_price - stop_price) / last_price
+    39	  end
+    40	
+    41	  # Dollars still at risk if the stop fills. Unknown (nil) without a usable stop, never zero for that reason,
+    42	  # and never negative: a position already through its stop has nothing left to protect.
+    43	  def open_risk
+    44	    return unless protected? && last_price.present?
+    45	    [ quantity * (last_price - stop_price), 0 ].max
+    46	  end
+    47	
+    48	  # The newest terminal working sell stop on this instrument, preferring live statuses over AWAITING_* so a
+    49	  # new bracket child cannot displace the stop on an existing lot. Assigned regardless of price; #protection decides.
+    50	  def assign_working_stop!
+    51	    candidates = account.orders.where(instrument: instrument).stops.sells.working.terminal.to_a
+    52	    pick = newest(candidates.select(&:live?)) || newest(candidates)
+    53	    update!(working_stop_order: pick)
+    54	  end
+    55	
+    56	  private
+    57	    def newest(orders) = orders.max_by { |o| o.entered_at || Time.at(0) }
+    58	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/models/order.rb | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	class Order < ApplicationRecord
+     2	  belongs_to :account
+     3	  belongs_to :instrument, optional: true # container strategies have no leg
+     4	  belongs_to :parent_order, class_name: "Order", optional: true
+     5	  belongs_to :replaces_order, class_name: "Order", optional: true
+     6	  belongs_to :order_proposal, optional: true
+     7	  has_many :child_orders, class_name: "Order", foreign_key: :parent_order_id, dependent: :nullify, inverse_of: :parent_order
+     8	  has_many :replacements, class_name: "Order", foreign_key: :replaces_order_id, dependent: :nullify, inverse_of: :replaces_order
+     9	  has_many :activities, dependent: :nullify
+    10	
+    11	  enum :placed_via, { schwab_direct: "schwab_direct", app: "app" }
+    12	
+    13	  scope :working, -> { where(status: Schwab::Order::WORKING_STATUSES) }
+    14	  scope :stops, -> { where(order_type: Schwab::Order::STOP_TYPES) }
+    15	  scope :sells, -> { where(side: Schwab::Order::SELL) }
+    16	  scope :live, -> { where(status: Schwab::Order::LIVE_STATUSES) }
+    17	  scope :terminal, -> { where.not(id: select(:replaces_order_id).where.not(replaces_order_id: nil)) }
+    18	
+    19	  def working? = Schwab::Order::WORKING_STATUSES.include?(status)
+    20	  def live? = Schwab::Order::LIVE_STATUSES.include?(status)
+    21	  def stop? = Schwab::Order::STOP_TYPES.include?(order_type)
+    22	  def container? = instrument_id.nil?
+    23	
+    24	  def remaining = remaining_quantity || (quantity && quantity - (filled_quantity || 0))
+    25	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+I’m also checking schema constraints because some of the correctness depends on database uniqueness, not Ruby conditionals. The open-trade unique index exists, and `trade_legs.activity_id` is still one-leg-per-activity, which matters for corporate actions and correction handling.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'rg -n "factory :activity|factory :trade|factory :order|factory :position|factory :balance|factory :market_day" spec/factories -S' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "rg -n \"def self\\.resolve|class Instrument|predecessor\" app/models db/structure.sql spec -S | sed -n '1,220p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+spec/factories/activities.rb:2:  factory :activity do
+spec/factories/positions.rb:2:  factory :position do
+spec/factories/orders.rb:2:  factory :order do
+spec/factories/trades.rb:2:  factory :trade do
+spec/factories/balances.rb:2:  factory :balance do
+
+ succeeded in 0ms:
+db/structure.sql:256:    predecessor_instrument_id bigint,
+db/structure.sql:2135:-- Name: index_instruments_on_predecessor_instrument_id; Type: INDEX; Schema: public; Owner: -
+db/structure.sql:2138:CREATE INDEX index_instruments_on_predecessor_instrument_id ON public.instruments USING btree (predecessor_instrument_id);
+db/structure.sql:2748:    ADD CONSTRAINT fk_rails_0a8f1c5db0 FOREIGN KEY (predecessor_instrument_id) REFERENCES public.instruments(id);
+app/models/instrument.rb:1:class Instrument < ApplicationRecord
+app/models/instrument.rb:2:  belongs_to :predecessor_instrument, class_name: "Instrument", optional: true
+app/models/instrument.rb:12:  validate :predecessor_is_another_instrument
+app/models/instrument.rb:17:  def self.resolve(ref, attempt: 1)
+app/models/instrument.rb:59:    def predecessor_is_another_instrument
+app/models/instrument.rb:60:      errors.add(:predecessor_instrument, "cannot be itself") if persisted? && predecessor_instrument_id == id
+app/models/journal/linker.rb:107:        new.update!(predecessor_instrument: old) if new.predecessor_instrument_id.nil? && new != old
+spec/models/journal/linker_spec.rb:134:    expect(new_instrument.reload.predecessor_instrument).to eq(xyz)
+spec/models/instrument_spec.rb:28:  it "cannot be its own predecessor" do
+spec/models/instrument_spec.rb:30:    instrument.predecessor_instrument = instrument
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "rg -n \"cash_flow\\?|flow_amount|net_flows|withdrawal|deposit|SIGNED_TYPES|JOURNAL\" app spec -S | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+spec/jobs/sync/feeds_spec.rb:169:      expect(account.activities.pluck(:kind).sort).to eq(%w[ deposit dividend fill sweep ])
+app/models/snapshot.rb:1:# One row per account per market day, chain-linked so deposits and withdrawals never move the drawdown.
+app/models/snapshot.rb:16:    flows = net_flows(account, after: prior&.as_of, through: date)
+app/models/snapshot.rb:24:    snapshot.update!(equity: balance.equity, net_flows: flows, daily_return: daily_return, index_value: index, high_water_index: high_water,
+app/models/snapshot.rb:36:  # Deposits positive, withdrawals negative, over every day since the prior snapshot so a flow on a
+app/models/snapshot.rb:38:  def self.net_flows(account, after:, through:)
+app/models/snapshot.rb:40:    cash = account.activities.where(kind: %w[ deposit withdrawal ], trade_date: range).sum(:net_amount)
+app/models/schwab/client.rb:20:                            ELECTRONIC_FUND WIRE_OUT WIRE_IN JOURNAL MEMORANDUM MARGIN_CALL MONEY_MARKET SMA_ADJUSTMENT ].freeze
+app/models/schwab/balances.rb:3:  Balances = Data.define(:equity, :cash_available_for_trading, :cash_available_for_withdrawal, :unsettled_cash,
+app/models/schwab/balances.rb:9:          cash_available_for_withdrawal: Decimal.parse(raw["cashAvailableForWithdrawal"]),
+app/models/schwab/balances.rb:18:    # Reading A: available for trading minus unsettled. Reading B: available for withdrawal.
+app/models/schwab/balances.rb:21:      [ settled_cash_by_subtraction, cash_available_for_withdrawal ].compact.min
+spec/models/schwab/activity_spec.rb:29:  it "maps a cash deposit with no instrument" do
+spec/models/schwab/activity_spec.rb:30:    deposit = activities[2]
+spec/models/schwab/activity_spec.rb:31:    expect(deposit.instrument).to be_nil
+spec/models/schwab/activity_spec.rb:32:    expect(deposit.securities).to be_empty
+spec/models/schwab/activity_spec.rb:33:    expect(deposit.net_amount).to eq(1000)
+app/models/schwab/activity.rb:13:                             JOURNAL CASH_RECEIPT CASH_DISBURSEMENT MONEY_MARKET ].freeze
+app/models/schwab/activity.rb:17:    SIGNED_TYPES = %w[ ELECTRONIC_FUND ].freeze # direction only from the sign of netAmount
+app/models/schwab/activity.rb:55:      when *INBOUND_TYPES then :deposit
+app/models/schwab/activity.rb:56:      when *OUTBOUND_TYPES then :withdrawal
+app/models/schwab/activity.rb:57:      when *SIGNED_TYPES then net_amount&.negative? ? :withdrawal : :deposit
+app/models/schwab/activity.rb:58:      when "JOURNAL", "RECEIVE_AND_DELIVER"
+app/models/schwab/activity.rb:61:        elsif type == "JOURNAL" then net_amount&.negative? ? :withdrawal : :deposit
+app/models/activity.rb:9:    fill: "fill", sweep: "sweep", dividend: "dividend", interest: "interest", fee: "fee", deposit: "deposit",
+app/models/activity.rb:10:    withdrawal: "withdrawal", transfer: "transfer", corporate_action: "corporate_action", other: "other"
+app/models/activity.rb:16:  scope :flows, -> { where(kind: [ :deposit, :withdrawal ]) }
+app/models/activity.rb:20:  def cash_flow? = deposit? || withdrawal? || (transfer? && instrument_id.present?)
+app/models/activity.rb:22:  # Deposits positive, withdrawals negative, whatever sign Schwab used.
+app/models/activity.rb:23:  def flow_amount
+app/models/activity.rb:24:    return nil unless deposit? || withdrawal?
+app/models/activity.rb:25:    deposit? ? net_amount.abs : -net_amount.abs
+spec/models/schwab/account_summary_spec.rb:21:    expect(b.cash_available_for_withdrawal).to eq(BigDecimal("2110"))
+app/jobs/sync/activities_job.rb:49:        if row.cash_flow? && (new_record || changed) && row.trade_date
+spec/models/snapshot_spec.rb:16:  it "starts at index 1, and a deposit or withdrawal never moves the index" do
+spec/models/snapshot_spec.rb:19:    flow(account, "deposit", 5_000, on: Date.new(2026, 9, 9))
+spec/models/snapshot_spec.rb:21:    flow(account, "withdrawal", -5_000, on: Date.new(2026, 9, 10))
+spec/models/snapshot_spec.rb:28:    expect(s[1].net_flows).to eq(5_000)
+spec/models/snapshot_spec.rb:29:    expect(s[2].net_flows).to eq(-5_000)
+spec/models/snapshot_spec.rb:35:    flow(account, "deposit", 5_000, on: Date.new(2026, 9, 9)) # no balance on the 9th: paused sync
+spec/models/snapshot_spec.rb:57:    flow(account, "deposit", 1_000, on: Date.new(2026, 9, 9))
+spec/models/schwab/activity_kind_spec.rb:15:    expect(kind_of(type: "JOURNAL", net_amount: -2, fee_only: true)).to eq(:fee)
+spec/models/schwab/activity_kind_spec.rb:19:    expect(kind_of(type: "ELECTRONIC_FUND", net_amount: 1000)).to eq(:deposit)
+spec/models/schwab/activity_kind_spec.rb:20:    expect(kind_of(type: "WIRE_OUT", net_amount: -1000)).to eq(:withdrawal)
+spec/models/schwab/activity_kind_spec.rb:21:    expect(kind_of(type: "JOURNAL", net_amount: -500)).to eq(:withdrawal)
+spec/models/schwab/activity_kind_spec.rb:22:    expect(kind_of(type: "JOURNAL", securities: %w[ EQUITY ])).to eq(:transfer)
+spec/models/journal/linker_spec.rb:168:    flow(account, "deposit", 1000, on: t0.to_date)
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "rg -n \"ordering_ambiguous|same-day|date-only|partial|bootstrap|split|succession|corporate_action|post-close|after close|flow\" spec/models spec/jobs -S | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+spec/jobs/sync/feeds_spec.rb:40:      expect(SyncRun.last).to be_partial
+spec/jobs/sync/feeds_spec.rb:116:      expect(SyncRun.last).to be_partial
+spec/jobs/sync/feeds_spec.rb:124:      expect(SyncRun.last).to be_partial
+spec/jobs/sync/feeds_spec.rb:192:      expect(SyncRun.last).to be_partial
+spec/jobs/sync/feeds_spec.rb:196:    it "counts an unclassifiable activity as partial rather than a quiet success" do
+spec/jobs/sync/feeds_spec.rb:200:      expect(SyncRun.last).to be_partial
+spec/models/schwab/market_data_spec.rb:26:  it "splits quotes from invalid symbols across pages" do
+spec/jobs/journal/hooks_spec.rb:7:  it "bootstraps trades after a complete positions sync and links fills after activities" do
+spec/jobs/journal/hooks_spec.rb:8:    expect { Sync::PositionsJob.perform_now(account) }.to have_enqueued_job(Journal::BootstrapJob).with(account)
+spec/jobs/journal/hooks_spec.rb:9:    Journal::BootstrapJob.perform_now(account)
+spec/jobs/journal/hooks_spec.rb:11:    expect(account.trades.all?(&:bootstrapped?)).to be(true)
+spec/jobs/journal/hooks_spec.rb:22:    expect { Sync::PositionsJob.perform_now(account) }.not_to have_enqueued_job(Journal::BootstrapJob)
+spec/models/snapshot_spec.rb:19:    flow(account, "deposit", 5_000, on: Date.new(2026, 9, 9))
+spec/models/snapshot_spec.rb:21:    flow(account, "withdrawal", -5_000, on: Date.new(2026, 9, 10))
+spec/models/snapshot_spec.rb:28:    expect(s[1].net_flows).to eq(5_000)
+spec/models/snapshot_spec.rb:29:    expect(s[2].net_flows).to eq(-5_000)
+spec/models/snapshot_spec.rb:32:  it "neutralizes a flow that landed on a day with no snapshot" do
+spec/models/snapshot_spec.rb:35:    flow(account, "deposit", 5_000, on: Date.new(2026, 9, 9)) # no balance on the 9th: paused sync
+spec/models/snapshot_spec.rb:42:  it "uses the post-close balance, skips weekends, fallback days, and zero equity" do
+spec/models/snapshot_spec.rb:57:    flow(account, "deposit", 1_000, on: Date.new(2026, 9, 9))
+spec/models/schwab/activity_kind_spec.rb:23:    expect(kind_of(type: "RECEIVE_AND_DELIVER", securities: %w[ EQUITY EQUITY ])).to eq(:corporate_action)
+spec/models/trade_leg_spec.rb:14:    trade = create(:trade, bootstrapped: true, needs_review: true)
+spec/models/sync_run_spec.rb:14:    it "finishes partial when records were quarantined or the block says so" do
+spec/models/sync_run_spec.rb:16:      expect(quarantined).to be_partial
+spec/models/sync_run_spec.rb:18:      expect(SyncRun.record(:orders, account: account) { :partial }).to be_partial
+spec/models/sync_run_spec.rb:37:    it "advances the cursor on succeeded and partial runs only" do
+spec/models/sync_run_spec.rb:39:      create(:sync_run, feed: "orders", account: account, status: "partial", window_to: 1.day.ago)
+spec/models/position_protection_spec.rb:56:  it "reports partial, oversized, and trailing-unknown states as not protected" do
+spec/models/position_protection_spec.rb:57:    partial = stop(quantity: 20, remaining_quantity: 20)
+spec/models/position_protection_spec.rb:58:    position.update!(working_stop_order: partial)
+spec/models/position_protection_spec.rb:59:    expect(position.protection).to eq(:partial)
+spec/models/journal/linker_spec.rb:39:  it "treats a partial fill on one order as one initial entry" do
+spec/models/journal/linker_spec.rb:51:  it "bootstraps a legacy holding when the first fill is a sale, covering what was held before" do
+spec/models/journal/linker_spec.rb:56:    expect(trade).to be_open.and be_bootstrapped.and be_review_bootstrapped
+spec/models/journal/linker_spec.rb:66:    Journal::BootstrapJob.perform_now(account)
+spec/models/journal/linker_spec.rb:73:    expect(trade.reload).to be_bootstrapped # history: it started as one
+spec/models/journal/linker_spec.rb:93:  it "adds a mid-trade dividend as income and a post-close dividend to the recent trade" do
+spec/models/journal/linker_spec.rb:105:  it "applies a 2:1 split delivered as a transfer: quantity doubles, prices and stop halve, risk unchanged" do
+spec/models/journal/linker_spec.rb:121:  it "moves a trade across a CUSIP succession, absorbing a bootstrapped trade on the new instrument" do
+spec/models/journal/linker_spec.rb:126:    Journal::BootstrapJob.perform_now(account)
+spec/models/journal/linker_spec.rb:130:    create(:activity, account: account, instrument: xyz, kind: "corporate_action", quantity: nil, side: nil, net_amount: 0, executed_at: t0 + 6.days, trade_date: (t0 + 6.days).to_date, status: "VALID", raw: raw)
+spec/models/journal/linker_spec.rb:146:    expect(trade).to be_review_ordering_ambiguous
+spec/models/journal/linker_spec.rb:168:    flow(account, "deposit", 1000, on: t0.to_date)
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The tests cover the happy versions of the requested scenarios, but they miss several edge cases the design explicitly called out: type-first flow normalization, sell exceeding a plug, same-day timestamp ambiguity, bootstrapped closed-before-review stats, and missing corporate-action halves. I’ll verify those against the underlying implementation before writing the review.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+exec
+/bin/zsh -lc "nl -ba spec/models/schwab/activity_kind_spec.rb | sed -n '1,180p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe Schwab::Activity, "#kind" do
+     4	  def kind_of(type:, securities: [], net_amount: nil, fee_only: false)
+     5	    items = securities.map { |s| { "instrument" => { "assetType" => s, "symbol" => "X", "cusip" => "1" }, "amount" => 1 } }
+     6	    items = [ { "instrument" => { "assetType" => "CURRENCY", "symbol" => "CURRENCY_USD" }, "amount" => -1, "feeType" => "SEC_FEE" } ] if fee_only
+     7	    described_class.from({ "activityId" => 1, "type" => type, "tradeDate" => "2026-08-14T00:00:00+0000", "netAmount" => net_amount, "transferItems" => items }).kind
+     8	  end
+     9	
+    10	  it "classifies cash-account realities" do
+    11	    expect(kind_of(type: "TRADE", securities: %w[ EQUITY ], net_amount: -100)).to eq(:fill)
+    12	    expect(kind_of(type: "TRADE", securities: %w[ CASH_EQUIVALENT ], net_amount: -100)).to eq(:sweep)
+    13	    expect(kind_of(type: "TRADE", securities: %w[ COLLECTIVE_INVESTMENT ], net_amount: -100)).to eq(:fill)
+    14	    expect(kind_of(type: "DIVIDEND_OR_INTEREST", securities: %w[ CASH_EQUIVALENT ], net_amount: 0.4)).to eq(:interest)
+    15	    expect(kind_of(type: "JOURNAL", net_amount: -2, fee_only: true)).to eq(:fee)
+    16	    expect(kind_of(type: "MONEY_MARKET", net_amount: 5)).to eq(:sweep)
+    17	    expect(kind_of(type: "DIVIDEND_OR_INTEREST", securities: %w[ EQUITY ], net_amount: 9.6)).to eq(:dividend)
+    18	    expect(kind_of(type: "DIVIDEND_OR_INTEREST", net_amount: 0.4)).to eq(:interest)
+    19	    expect(kind_of(type: "ELECTRONIC_FUND", net_amount: 1000)).to eq(:deposit)
+    20	    expect(kind_of(type: "WIRE_OUT", net_amount: -1000)).to eq(:withdrawal)
+    21	    expect(kind_of(type: "JOURNAL", net_amount: -500)).to eq(:withdrawal)
+    22	    expect(kind_of(type: "JOURNAL", securities: %w[ EQUITY ])).to eq(:transfer)
+    23	    expect(kind_of(type: "RECEIVE_AND_DELIVER", securities: %w[ EQUITY EQUITY ])).to eq(:corporate_action)
+    24	    expect(kind_of(type: "MEMORANDUM", fee_only: true)).to eq(:fee)
+    25	    expect(kind_of(type: "SMA_ADJUSTMENT")).to eq(:other)
+    26	  end
+    27	end
+
+exec
+/bin/zsh -lc "nl -ba app/models/instrument.rb | sed -n '1,140p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	class Instrument < ApplicationRecord
+     2	  belongs_to :predecessor_instrument, class_name: "Instrument", optional: true
+     3	  has_many :positions, dependent: :restrict_with_exception
+     4	  has_many :orders, dependent: :restrict_with_exception
+     5	  has_many :activities, dependent: :restrict_with_exception
+     6	  has_many :trades, dependent: :restrict_with_exception
+     7	
+     8	  normalizes :cusip, with: ->(c) { c.strip.upcase.presence }
+     9	  normalizes :symbol, with: ->(s) { s.strip.upcase }
+    10	
+    11	  validates :symbol, presence: true
+    12	  validate :predecessor_is_another_instrument
+    13	
+    14	  # Identity in order of trust: CUSIP, Schwab instrument id, then symbol and asset type among rows that have
+    15	  # no CUSIP, then a Schwab lookup by symbol, then a provisional row. A weaker match backfills a missing
+    16	  # identifier from the ref but never overwrites a differing one.
+    17	  def self.resolve(ref, attempt: 1)
+    18	    return nil if ref.nil? || ref.symbol.blank?
+    19	    found = find_by(cusip: ref.cusip) if ref.cusip.present?
+    20	    found ||= find_by(schwab_instrument_id: ref.instrument_id) if ref.instrument_id.present?
+    21	    found ||= where(cusip: nil, symbol: ref.symbol, asset_type: ref.asset_type).first
+    22	    found ? found.absorb(ref) : create_from(ref)
+    23	  rescue ActiveRecord::RecordNotUnique
+    24	    # Another feed created or backfilled it between our lookup and our write; look once more, then give up.
+    25	    raise Schwab::MappingError, "instrument #{ref.symbol} keeps colliding on identity" if attempt > 1
+    26	    resolve(ref, attempt: attempt + 1)
+    27	  end
+    28	
+    29	  def self.create_from(ref)
+    30	    cusip = ref.cusip.presence || lookup_cusip(ref.symbol)
+    31	    if cusip && (existing = find_by(cusip: cusip))
+    32	      return existing.absorb(ref.with(cusip: cusip))
+    33	    end
+    34	    create!(cusip: cusip, schwab_instrument_id: ref.instrument_id, symbol: ref.symbol, asset_type: ref.asset_type, description: ref.description).tap do |instrument|
+    35	      AuditEvent.log("instrument_identity_fallback", actor: :system, subject: instrument, data: { symbol: ref.symbol, asset_type: ref.asset_type }) if cusip.blank?
+    36	    end
+    37	  end
+    38	
+    39	  def self.lookup_cusip(symbol)
+    40	    Schwab::InstrumentRef.from(Schwab.client(wait: false).instrument_by_symbol(symbol).first)&.cusip
+    41	  rescue Schwab::Error
+    42	    nil
+    43	  end
+    44	
+    45	  # A weaker-key match learns identifiers it lacked; a conflicting identifier already owned elsewhere is left alone.
+    46	  def absorb(ref)
+    47	    update!(cusip: ref.cusip) if cusip.blank? && ref.cusip.present? && !self.class.exists?(cusip: ref.cusip)
+    48	    update!(schwab_instrument_id: ref.instrument_id) if schwab_instrument_id.blank? && ref.instrument_id.present? && !self.class.exists?(schwab_instrument_id: ref.instrument_id)
+    49	    rename!(ref.symbol) if cusip.present? && cusip == ref.cusip && symbol != ref.symbol
+    50	    self
+    51	  end
+    52	
+    53	  def rename!(new_symbol, at: Time.current)
+    54	    return if new_symbol == symbol
+    55	    update!(symbol: new_symbol, symbol_history: symbol_history + [ { "symbol" => symbol, "until" => at.utc.iso8601 } ])
+    56	  end
+    57	
+    58	  private
+    59	    def predecessor_is_another_instrument
+    60	      errors.add(:predecessor_instrument, "cannot be itself") if persisted? && predecessor_instrument_id == id
+    61	    end
+    62	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba spec/jobs/sync/feeds_spec.rb | sed -n '150,220p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+   150	      described_class.perform_now(account)
+   151	      expect(SyncRun.last).to be_failed
+   152	      expect(account.positions.protected_by_stop.count).to eq(2)
+   153	    end
+   154	
+   155	    it "audits an unrecoverable gap when the cursor is older than the lookback" do
+   156	      create(:sync_run, feed: "orders", account: account, window_to: 400.days.ago)
+   157	      described_class.perform_now(account)
+   158	      expect(SyncRun.last.gap_from).to be_within(2.seconds).of(400.days.ago)
+   159	      expect(AuditEvent.where(kind: "sync_gap_unrecoverable")).to exist
+   160	    end
+   161	  end
+   162	
+   163	  describe Sync::ActivitiesJob do
+   164	    let!(:account) { create(:account, schwab_hash: hash, trading_enabled: true) }
+   165	
+   166	    it "upserts every type, classifies kinds, links orders, and counts the sweep" do
+   167	      Sync::OrdersJob.perform_now(account)
+   168	      described_class.perform_now(account)
+   169	      expect(account.activities.pluck(:kind).sort).to eq(%w[ deposit dividend fill sweep ])
+   170	      expect(Activity.valid_for_journal.count).to eq(4)
+   171	      fill = account.activities.find_by!(kind: "fill")
+   172	      expect(fill.order.broker_order_id).to eq("1004055538123")
+   173	      expect(fill).to have_attributes(side: "BUY", quantity: 40, fees: BigDecimal("0.05"), status: "VALID")
+   174	      expect(SyncRun.last).to be_succeeded
+   175	      described_class.perform_now(account)
+   176	      expect(account.activities.count).to eq(4)
+   177	    end
+   178	
+   179	    it "fails the run on a rejected type so the cursor does not advance, but keeps the rows that arrived" do
+   180	      fake.enqueue(:transactions) { raise Schwab::RequestError.new("bad window", status: 400) }
+   181	      described_class.perform_now(account)
+   182	      expect(SyncRun.last).to be_failed
+   183	      expect(SyncRun.last.unmapped_values["activity_types_rejected"].first).to start_with("TRADE")
+   184	      expect(account.activities.where(kind: "dividend")).to exist
+   185	      expect(SyncRun.last_window_to(:activities, account)).to be_nil
+   186	    end
+   187	
+   188	    it "quarantines one malformed activity and keeps the rest of its type" do
+   189	      fake.enqueue(:transactions) { [ { "activityId" => 9 } ] + fake.transactions(hash, from: 1.day.ago, type: "TRADE") }
+   190	      described_class.perform_now(account)
+   191	      expect(account.activities.where(kind: "fill")).to exist
+   192	      expect(SyncRun.last).to be_partial
+   193	      expect(SyncRun.last.unmapped_values["activities_unmapped"].first).to include("time")
+   194	    end
+   195	
+   196	    it "counts an unclassifiable activity as partial rather than a quiet success" do
+   197	      fake.enqueue(:transactions) { [ { "activityId" => 5, "type" => "SMA_ADJUSTMENT", "tradeDate" => "2026-08-14T00:00:00+0000", "netAmount" => 1 } ] }
+   198	      described_class.perform_now(account)
+   199	      expect(account.activities.find_by(broker_activity_id: "5")).to be_other
+   200	      expect(SyncRun.last).to be_partial
+   201	    end
+   202	  end
+   203	end
+
+hook: PostToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'rg -n "valid_for_journal|status.*VALID|PENDING|INVALID|journaled_at|unjournal!" app spec -S | sed -n '"'1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+spec/jobs/sync/feeds_spec.rb:170:      expect(Activity.valid_for_journal.count).to eq(4)
+spec/jobs/sync/feeds_spec.rb:173:      expect(fill).to have_attributes(side: "BUY", quantity: 40, fees: BigDecimal("0.05"), status: "VALID")
+spec/support/journal.rb:3:  def fill(account, instrument, side, qty, price, at:, fees: 0, order: nil, status: "VALID")
+spec/support/journal.rb:11:                      executed_at: at, trade_date: at.to_date, status: "VALID")
+spec/support/journal.rb:16:                      executed_at: on.to_time, trade_date: on, status: "VALID")
+spec/models/journal/linker_spec.rb:111:    create(:activity, account: account, instrument: xyz, kind: "transfer", quantity: 40, price: nil, net_amount: 0, side: nil, executed_at: t0 + 5.days, trade_date: (t0 + 5.days).to_date, status: "VALID")
+spec/models/journal/linker_spec.rb:130:    create(:activity, account: account, instrument: xyz, kind: "corporate_action", quantity: nil, side: nil, net_amount: 0, executed_at: t0 + 6.days, trade_date: (t0 + 6.days).to_date, status: "VALID", raw: raw)
+spec/models/journal/linker_spec.rb:151:    pending = fill(account, xyz, "SELL", 40, 55, at: t0 + 1.day, status: "PENDING")
+spec/models/journal/linker_spec.rb:158:    entry.unjournal!
+spec/models/journal/linker_spec.rb:167:    create(:activity, account: account, instrument: create(:instrument, symbol: "SWVXX", asset_type: "CASH_EQUIVALENT"), kind: "sweep", net_amount: -500, executed_at: t0, trade_date: t0.to_date, status: "VALID")
+app/jobs/sync/activities_job.rb:48:        row.unjournal! if row.journaled? && changed && !new_record
+app/models/schwab/order.rb:8:    WORKING_STATUSES = %w[ WORKING ACCEPTED QUEUED PENDING_ACTIVATION AWAITING_PARENT_ORDER AWAITING_STOP_CONDITION
+app/models/schwab/order.rb:10:    LIVE_STATUSES = %w[ WORKING ACCEPTED QUEUED PENDING_ACTIVATION ].freeze # in the market, not awaiting a parent or condition
+app/models/schwab/activity.rb:45:    def valid? = status.nil? || status == "VALID"
+app/models/activity.rb:13:  scope :unjournaled, -> { where(journaled_at: nil) }
+app/models/activity.rb:14:  scope :valid_for_journal, -> { where(status: Schwab::Activity::VALID) }
+app/models/activity.rb:18:  def journaled? = journaled_at.present?
+app/models/activity.rb:29:  def unjournal!
+app/models/activity.rb:32:    update!(journaled_at: nil)
+app/models/journal/linker.rb:2:# recompute the trade from its legs, then stamp journaled_at last. A rerun finds the leg and recomputes.
+app/models/journal/linker.rb:9:    @account.activities.unjournaled.valid_for_journal.chronological.includes(:instrument, :order).each { |activity| link!(activity) }
+app/models/journal/linker.rb:10:    @account.activities.unjournaled.where.not(status: Schwab::Activity::VALID).update_all(journaled_at: Time.current)
+app/models/journal/linker.rb:21:      activity.update!(journaled_at: Time.current)
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "rg -n \"limits_concurrency|journal-#|BootstrapJob|LinkFillsJob|RecomputeSetupStatsJob|recompute_stats\" app spec -S | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+spec/jobs/journal/hooks_spec.rb:8:    expect { Sync::PositionsJob.perform_now(account) }.to have_enqueued_job(Journal::BootstrapJob).with(account)
+spec/jobs/journal/hooks_spec.rb:9:    Journal::BootstrapJob.perform_now(account)
+spec/jobs/journal/hooks_spec.rb:12:    expect { Sync::ActivitiesJob.perform_now(account) }.to have_enqueued_job(Journal::LinkFillsJob).with(account).and have_enqueued_job(Snapshots::RebuildJob)
+spec/jobs/journal/hooks_spec.rb:13:    Journal::LinkFillsJob.perform_now(account)
+spec/jobs/journal/hooks_spec.rb:22:    expect { Sync::PositionsJob.perform_now(account) }.not_to have_enqueued_job(Journal::BootstrapJob)
+spec/models/setup_stats_spec.rb:3:RSpec.describe Setup, "#recompute_stats!" do
+spec/models/setup_stats_spec.rb:14:    setup.recompute_stats!
+spec/models/journal/linker_spec.rb:66:    Journal::BootstrapJob.perform_now(account)
+spec/models/journal/linker_spec.rb:69:    Journal::LinkFillsJob.perform_now(account)
+spec/models/journal/linker_spec.rb:126:    Journal::BootstrapJob.perform_now(account)
+spec/models/journal/linker_spec.rb:169:    Journal::LinkFillsJob.perform_now(ira)
+app/jobs/journal/link_fills_job.rb:2:  class LinkFillsJob < ApplicationJob
+app/jobs/journal/link_fills_job.rb:3:    limits_concurrency to: 1, key: ->(account) { "journal-#{account.id}" }, on_conflict: :discard
+app/jobs/journal/link_fills_job.rb:11:      Setup.where(id: account.trades.where(status: :closed).select(:setup_id)).find_each(&:recompute_stats!)
+app/jobs/sync/positions_job.rb:5:    limits_concurrency to: 1, key: ->(account) { "positions-#{account.id}" }, on_conflict: :discard
+app/jobs/sync/positions_job.rb:36:          Journal::BootstrapJob.perform_later(account)
+app/models/setup.rb:10:  def recompute_stats!
+app/models/trade.rb:96:    Journal::RecomputeSetupStatsJob.perform_later(setup) if setup
+app/models/trade.rb:103:    Journal::RecomputeSetupStatsJob.perform_later(setup) if setup
+app/jobs/journal/recompute_setup_stats_job.rb:2:  class RecomputeSetupStatsJob < ApplicationJob
+app/jobs/journal/recompute_setup_stats_job.rb:3:    def perform(setup) = setup.recompute_stats!
+app/jobs/journal/bootstrap_job.rb:4:  class BootstrapJob < ApplicationJob
+app/jobs/journal/bootstrap_job.rb:5:    limits_concurrency to: 1, key: ->(account) { "journal-#{account.id}" }, on_conflict: :discard
+app/jobs/sync/activities_job.rb:8:    limits_concurrency to: 1, key: ->(account) { "activities-#{account.id}" }, on_conflict: :discard
+app/jobs/sync/activities_job.rb:24:        Journal::LinkFillsJob.perform_later(account) if account.trading_enabled?
+app/jobs/sync/orders_job.rb:10:    limits_concurrency to: 1, key: ->(account, **) { "orders-#{account.id}" }, on_conflict: :discard
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+I have enough for the main correctness review. I’m going to attempt the targeted specs once; if the read-only sandbox prevents Rails from writing test artifacts, I’ll report that explicitly and keep the review based on static analysis.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'bundle exec rspec spec/models/journal/linker_spec.rb spec/models/snapshot_spec.rb spec/models/setup_stats_spec.rb spec/jobs/journal/hooks_spec.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ exited 1 in 0ms:
+/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/2.6.0/rubygems.rb:283:in `find_spec_for_exe': Could not find 'bundler' (4.0.4) required by your /Users/jathayde/Development/Personal/desk.athayde/Gemfile.lock. (Gem::GemNotFoundException)
+To update to the latest version installed on your system, run `bundle update --bundler`.
+To install the missing version, run `gem install bundler:4.0.4`
+	from /System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/2.6.0/rubygems.rb:302:in `activate_bin_path'
+	from /usr/bin/bundle:23:in `<main>'
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+**Critical Findings**
+
+1. [app/models/schwab/activity.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/activity.rb:36) leaves `quantity` nil for non-TRADE activities, so real split/ACAT transfer rows will be stamped journaled with no leg.
+`Journal::Linker#link_transfer` requires `activity.quantity` ([linker.rb:76](/Users/jathayde/Development/Personal/desk.athayde/app/models/journal/linker.rb:76)), but the mapper only sets quantity for trades. The split spec bypasses the mapper by hand-building an activity with quantity, so it proves the wrong path. Result: 2:1 split still produces wrong journal quantity and later sells can drive the trade negative.
+
+2. [app/models/snapshot.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/snapshot.rb:40) sums raw `net_amount` for deposits/withdrawals instead of normalized `Activity#flow_amount`.
+The mapper classifies withdrawals by type first, but snapshot math still trusts Schwab’s sign. If an outbound type arrives positive, drawdown treats the withdrawal as a deposit. The correct helper exists at [activity.rb:23](/Users/jathayde/Development/Personal/desk.athayde/app/models/activity.rb:23) and is unused. The snapshot spec only covers negative withdrawals, so it misses this.
+
+3. Same-day out-of-order sell/buy is still broken.
+Activities sort by `executed_at, id` ([activity.rb:15](/Users/jathayde/Development/Personal/desk.athayde/app/models/activity.rb:15)), and ambiguity is flagged only when a new leg is strictly earlier than the latest existing leg ([linker.rb:38](/Users/jathayde/Development/Personal/desk.athayde/app/models/journal/linker.rb:38)). Equal date-only timestamps are not flagged. A sell row ingested before a same-day buy still creates a fake bootstrapped closed trade, then the buy opens a second trade.
+
+4. Sell exceeding the current journal quantity is not handled.
+`Trade#recompute!` allows running quantity to go negative and leaves the trade open with nonsense aggregates ([trade.rb:64](/Users/jathayde/Development/Personal/desk.athayde/app/models/trade.rb:64), [trade.rb:77](/Users/jathayde/Development/Personal/desk.athayde/app/models/trade.rb:77)). This will happen on missing exits/transfers, stale positions, or bad ordering. It should split/flag/quarantine, not produce an open trade with negative quantity.
+
+5. Transfer flow drawdown is still wrong.
+Even if transfer quantity were populated, [snapshot.rb:41](/Users/jathayde/Development/Personal/desk.athayde/app/models/snapshot.rb:41) values share transfers using the current position price and `net_amount` sign. Real share transfers often have zero cash amount, so direction is ambiguous, and rebuilds can change historical returns as current prices change.
+
+**Major Findings**
+
+6. Initial risk is wrong for partial fills with different prices.
+`initial_quantity_from` groups same-order fills, but `compute_initial_risk` uses only the first fill’s price ([trade.rb:124](/Users/jathayde/Development/Personal/desk.athayde/app/models/trade.rb:124)). A 25-share fill at 50 plus 15 at 50.20 should use weighted average initial entry price, not 50 for all 40 shares. The existing spec uses nearly this case but asserts the incorrect `80`.
+
+7. The orphan fallback for initial quantity does not match the design.
+The design says fallback to all entries before the first exit. Code falls back to `[first_fill]` when there is no broker order id ([trade.rb:111](/Users/jathayde/Development/Personal/desk.athayde/app/models/trade.rb:111)). Orphan partial fills without order linkage will understate risk and overstate R.
+
+8. Closed-before-review trades can pollute setup stats.
+`review!` computes risk and clears review on any trade ([trade.rb:92](/Users/jathayde/Development/Personal/desk.athayde/app/models/trade.rb:92)); `eligible_for_stats` only checks closed/reviewed/not excluded/positive risk ([trade.rb:22](/Users/jathayde/Development/Personal/desk.athayde/app/models/trade.rb:22)). There is no “stop known before exit” marker. Post-hoc stops on already-closed orphan trades can become stats-eligible.
+
+9. Fill quarantine is missing in the linker.
+`link_fill` returns on nil instrument/side/quantity ([linker.rb:29](/Users/jathayde/Development/Personal/desk.athayde/app/models/journal/linker.rb:29)), but `link!` still stamps `journaled_at` ([linker.rb:21](/Users/jathayde/Development/Personal/desk.athayde/app/models/journal/linker.rb:21)). That silently loses fills instead of quarantining them.
+
+10. Corporate-action fallback is too weak.
+If one side of succession is missing, `flag_orphans` only flags open trades it can resolve ([linker.rb:119](/Users/jathayde/Development/Personal/desk.athayde/app/models/journal/linker.rb:119)), then the activity is stamped journaled. It does not create fallback exit/entry rows, preserve the unresolved payload for review, or prevent one-sided corporate actions from disappearing.
+
+11. `stopped_out` can become stale.
+It is set after a stop exit closes a trade ([linker.rb:41](/Users/jathayde/Development/Personal/desk.athayde/app/models/journal/linker.rb:41)), but `recompute!` never recalculates or clears it. If the stop fill is corrected/invalidated and `unjournal!` removes the leg, the trade can remain marked stopped out.
+
+**Concerns Closed**
+
+The plug-leg design is mostly present: `reconcile_plug!` exists, plug legs sort first, the link job has a second reconcile pass, and bootstrap/link share the `"journal-#{account.id}"` concurrency key. P&L from leg `cash_amount` is also the right direction, and setup stats now exclude `needs_review`, `excluded_from_stats`, and non-positive risk.
+
+**Missing Specs**
+
+Add specs for mapper-produced split/transfer rows, positive-signed withdrawals, same-day sell-before-buy with equal timestamps, sell exceeding plug/current quantity, orphan partial fills with no order id, post-hoc review after close, one-sided corporate action fallback, invalidated stop fills clearing `stopped_out`, and share-transfer snapshot rebuilds.
+
+I attempted the targeted specs, but the local Ruby environment cannot run them: Bundler `4.0.4` from `Gemfile.lock` is not installed.
+hook: Stop
+hook: Stop Completed
+tokens used
+75,872

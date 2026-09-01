@@ -68,3 +68,4 @@ Everything the app assumes about Schwab that has not been checked against the po
 44. Whether `netAmount` on a buy fill equals −(quantity × price) − commission − fees exactly (the journal's realized P&L sums leg cash amounts; a mismatch on a real fill is quarantined rather than guessed).
 45. How cash-in-lieu for fractional shares arrives (CASH_RECEIPT reads as a deposit today and would distort the flow-adjusted series).
 46. Whether ACH_DISBURSEMENT amounts arrive negative (the snapshot classifies directional types by type, sign only for ELECTRONIC_FUND and JOURNAL).
+47. Whether the Hotwire Native user agent passes `allow_browser versions: :modern` when the iOS shell ships (Phase 2).

@@ -1385,7 +1385,13 @@ CREATE TABLE public.trades (
     followed_setup boolean,
     journal_completed_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    review_reason character varying,
+    excluded_from_stats boolean DEFAULT false NOT NULL,
+    stopped_out boolean DEFAULT false NOT NULL,
+    initial_quantity numeric(18,6),
+    total_risk numeric(18,4),
+    quantity numeric(18,6) DEFAULT 0.0 NOT NULL
 );
 
 
@@ -3069,6 +3075,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260901250001'),
 ('20260901240003'),
 ('20260901240002'),
 ('20260901240001'),

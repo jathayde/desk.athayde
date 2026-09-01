@@ -12,7 +12,10 @@ module Schwab
     CASH_ACCOUNT_TYPES = %w[ TRADE RECEIVE_AND_DELIVER DIVIDEND_OR_INTEREST ELECTRONIC_FUND ACH_RECEIPT ACH_DISBURSEMENT WIRE_IN WIRE_OUT
                              JOURNAL CASH_RECEIPT CASH_DISBURSEMENT MONEY_MARKET ].freeze
     VALID = "VALID"
-    CASH_MOVEMENT_TYPES = %w[ ELECTRONIC_FUND ACH_RECEIPT ACH_DISBURSEMENT WIRE_IN WIRE_OUT CASH_RECEIPT CASH_DISBURSEMENT ].freeze
+    SHARE_TYPES = %w[ TRADE RECEIVE_AND_DELIVER JOURNAL ].freeze # the security item's amount is a share count
+    INBOUND_TYPES = %w[ ACH_RECEIPT WIRE_IN CASH_RECEIPT ].freeze
+    OUTBOUND_TYPES = %w[ ACH_DISBURSEMENT WIRE_OUT CASH_DISBURSEMENT ].freeze
+    SIGNED_TYPES = %w[ ELECTRONIC_FUND ].freeze # direction only from the sign of netAmount
 
     def self.from(raw)
       activity_id = raw.fetch("activityId") { raise MappingError, "activity without activityId" }.to_s
@@ -31,7 +34,7 @@ module Schwab
           trade_date: Timestamp.parse_date(raw["tradeDate"]), settlement_date: Timestamp.parse_date(raw["settlementDate"]),
           executed_at: executed_at,
           instrument: primary&.instrument, securities: securities,
-          quantity: trade ? primary&.amount&.abs : nil,
+          quantity: SHARE_TYPES.include?(raw["type"]) && securities.one? ? primary.amount&.abs : nil, # shares on a trade or a single delivery; a dividend's amount is dollars
           price: trade ? primary&.price : nil,
           position_effect: primary&.position_effect,
           commission: fee_items.select { |i| i["feeType"] == "COMMISSION" }.sum(Decimal::ZERO) { |i| Decimal.parse_or_zero(i["amount"]).abs },
@@ -50,7 +53,9 @@ module Schwab
       when "TRADE" then cash_equivalent ? :sweep : :fill
       when "MONEY_MARKET" then :sweep
       when "DIVIDEND_OR_INTEREST" then instrument && !cash_equivalent ? :dividend : :interest
-      when *CASH_MOVEMENT_TYPES then net_amount&.negative? ? :withdrawal : :deposit
+      when *INBOUND_TYPES then :deposit
+      when *OUTBOUND_TYPES then :withdrawal
+      when *SIGNED_TYPES then net_amount&.negative? ? :withdrawal : :deposit
       when "JOURNAL", "RECEIVE_AND_DELIVER"
         if securities.size >= 2 then :corporate_action
         elsif securities.one? then :transfer

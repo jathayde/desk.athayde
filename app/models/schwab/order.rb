@@ -11,6 +11,7 @@ module Schwab
     STOP_TYPES = %w[ STOP STOP_LIMIT TRAILING_STOP TRAILING_STOP_LIMIT ].freeze
     WORKING = "WORKING"
     SELL = "SELL"
+    BUY = "BUY"
     GONE = "UNKNOWN_TO_SCHWAB" # local sentinel: Schwab no longer returns this order by id
 
     def self.from(raw, parent_order_id: nil, replaces_order_id: nil)

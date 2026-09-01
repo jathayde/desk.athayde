@@ -5,4 +5,13 @@ class Setup < ApplicationRecord
   validates :name, presence: true, uniqueness: true
 
   scope :active, -> { where(active: true) }
+
+  # Rolling stats over closed, reviewed, included trades with a positive initial risk. A win is R above zero.
+  def recompute_stats!
+    realized = trades.eligible_for_stats.pluck(:realized_r).compact
+    average = realized.sum / realized.size if realized.any?
+    update!(sample_size: realized.size, avg_r: average, expectancy: average,
+            win_rate: average && realized.count(&:positive?).to_d / realized.size,
+            stats_computed_at: Time.current)
+  end
 end

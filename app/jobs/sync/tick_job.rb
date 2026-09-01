@@ -4,6 +4,7 @@ module Sync
     INTRADAY = { positions: 15.minutes, orders: 5.minutes, activities: 5.minutes }.freeze
     OFF_HOURS = 60.minutes
     CALENDAR_DAYS = 7
+    SNAPSHOT_DELAY = 20.minutes
 
     def perform
       refresh_calendar
@@ -17,12 +18,22 @@ module Sync
           next unless SyncRun.due?(feed, account, every: every)
           job_for(feed).perform_later(account)
         end
+        Snapshots::DailyJob.perform_later(account, today) if snapshot_due?(account, today)
       end
     end
 
     private
+      # Once per Schwab-sourced market day, 20 minutes after the regular close, after a positions sync since the close.
+      def snapshot_due?(account, date)
+        day = MarketDay.find_by(date: date)
+        return false unless account.trading_enabled? && day&.schwab? && day.trading? && Time.current >= day.regular_closes_at + SNAPSHOT_DELAY
+        return false if account.snapshots.exists?(as_of: date)
+        SyncRun.for(:positions, account).advanced_cursor.where(started_at: day.regular_closes_at..).exists?
+      end
+
+      def today = MarketDay.today
+
       def refresh_calendar
-        today = MarketDay.today
         (today..today + CALENDAR_DAYS).each { |date| MarketDay.for(date) }
       end
 

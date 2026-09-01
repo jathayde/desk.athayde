@@ -1,0 +1,1924 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a05f5a-db69-7c61-9f46-00a493b7a47a
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788305713-review-request-question-before-build-st/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the referenced prompt first, then follow whatever workflow it specifies within the current read-only workspace constraints.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788305713-review-request-question-before-build-st/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Second Opinion Request
+
+## Question
+# Review Request
+
+## Question
+Before build step 7 (the Phase 1 web screens: dashboard with four banner states, system health, trade review and post-mortem, plus Playwright) is written, review the screen design against the PRD and the UI flows doc, and find what the screens need from the data model that Phase 1 does not produce.
+
+## Context
+
+### PRD, flows, and plan
+- @docs/artifacts/investment-copilot-prd.md §5.8 (UI), §5.8a (iOS later: keep screens mobile-responsive, no full-page JS routers, no hover-dependent modals), §5.9 (shadow mode indicator), §5.10 (health page shows token age and Sunday cadence)
+- @docs/artifacts/investment-copilot-ui-flows.md Flow 1 (dashboard states and content), Flow 4 (journal entry), Flow 8 (system health and kill switch), cross-cutting states (stale data marks, token expired read-only mode, empty states), the Monarch and Midday/Mercury/Origin reference notes (distance-to-stop as the primary number, unprotected inline warning, freshness stamps, orphan review modal with N-more-to-review, sparkle glyph on agent-authored content)
+- @docs/artifacts/investment-copilot-wireframes.html (Flow 1 frames, Flow 4 frame, Flow 8 frame)
+- @docs/phase-1-plan.md §7 (screens table, app mark, banner precedence), §8 (Playwright scenarios), §5 (protection states)
+
+### What exists
+Models and jobs from steps 2 through 6: Account (trading_enabled, account_type nullable), Position (#protection returning :protected/:partial/:oversized/:awaiting/:trailing_unknown/:unprotected, #distance_to_stop, #open_risk, synced_at), Balance (equity, settled_cash, unsettled_cash, as_of), Order, Activity, Trade (status, needs_review, review_reason enum, bootstrapped, excluded_from_stats, stopped_out, planned_stop, avg_entry/avg_exit, realized_pnl, realized_r, post_mortem, followed_setup, review!, exclude!), Setup (stats), Snapshot (equity, daily_return, index_value, high_water_index, drawdown, open_risk_amount, open_risk_ratio, unprotected_count), SchwabToken (usable?, refresh_expiring_soon?, revoked?, age via issued_at), SystemSettings (shadow_mode, manual_halt, manual_halt_reason, sync_paused_reason), SyncRun (per feed and account, status, started_at, finished_at, error), AgentRun (estimated_cost; table exists, populated in step 9), MarketDay, AuditEvent. Magic-link login with two users. Layout shell with the Athayde crest. Schwab::FakeClient with a scripted queue and a fake authorize page; a test-only scenario route is planned for Playwright.
+
+### Planned step 7 design
+- `DashboardController#show`: banner precedence halted > expired > expiring > healthy from SystemSettings.manual_halt, SchwabToken.usable?, and refresh_expiring_soon?; equity and flow-adjusted day change from the latest balance and prior snapshot; open risk with the unprotected count and reasons; settled/unsettled cash; positions list sorted by distance to stop with the protection state inline; "N trades need review" callout; pending proposals count fixed at 0; every number carries its as-of stamp from Balance.as_of/Position.synced_at with a stale mark when older than its cadence; empty state before the first sync; a "connect Schwab" call to action when no token exists.
+- `SystemController#show` plus `update` for the manual halt toggle (reason required, audited manual_halt_set/cleared): token age vs 7 days with next Sunday marked, last sync per feed with status, sync pause reason, job failures in 7 days (SyncRun failed + Solid Queue failed executions), API spend this month (AgentRun), shadow mode indicator, accounts needing operator setup (no account_type or trading disabled) with an inline form to classify and enable them.
+- `TradesController`: index (open and closed, filter needs_review), show (legs, planned vs actual stop, R), `review` form (setup, planned stop, thesis; Save / Not a trade / Skip; "N more to review"), post-mortem quick entry (one line plus followed/improvised).
+- All screens mobile-responsive, server-rendered ERB with Turbo, no JS beyond Stimulus for the confirm on the halt toggle.
+- Playwright via a test-only `/playwright/scenarios/:name` reseed route: healthy, expiring, expired, halted, MCP 401 page (step 8), re-auth success and failure, trade review flow.
+
+## Instructions
+You are providing an independent review. Be critical and thorough.
+- Check each dashboard element against Flow 1 and the wireframes: what is shown, what is the primary number, what states exist, and whether the data model produces it (name the missing field or query)
+- Check the banner rules for gaps: token missing versus expired versus revoked, sync paused for a non-token reason, a fallback calendar day, no trading account configured
+- Check staleness rules: what "stale" means per number given the cadences in plan §2, and how a paused sync shows
+- Check the review flow against Flow 4 and the Monarch note: what Skip means durably, what "Not a trade" does to the position's trade, how the queue is ordered, and what happens on the phone
+- Check the system page against Flow 8 and §5.10: which items Phase 1 can fill, which must show "not yet" honestly, and the halt toggle's audit and confirm
+- Check the account-setup path: the first login with a synced but unclassified account, and what the operator must do before anything journals
+- Check the Playwright plan: whether the scenario route can be kept out of production safely, what each scenario must seed, and what the four banner states need
+- Flag anything that fights a future Hotwire Native wrapper
+- Be direct and opinionated; do not hedge; order by severity
+
+## Instructions
+You are providing an independent second opinion. Be critical and thorough.
+- Analyze the question in the context provided
+- Identify risks, tradeoffs, and blind spots
+- Suggest alternatives if you see better approaches
+- Be direct and opinionated — don't hedge
+- Structure your response with clear headings
+- Keep your response focused and actionable
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The embedded request is a design/data-model review, so I’m going to read the PRD, flow doc, wireframes, and phase plan sections it cites before forming findings.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,320p' docs/artifacts/investment-copilot-ui-flows.md" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,260p' docs/artifacts/investment-copilot-prd.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Investment Copilot: UI Flows & Information Architecture
+
+Companion to the PRD (§5.8). This is what the UI must do, not how it looks. Screens, flows, states, and the data each screen owns. Mobile-first where marked; everything renders on a phone, but some screens only need to be *usable* there, not optimized.
+
+## Actors and entry points
+
+One user. Three ways in:
+
+1. **Push/email notification** → deep link to a specific proposal, trade, or health alert. This is the primary mobile entry.
+2. **Direct visit** → dashboard.
+3. **Sunday email** → re-auth link and edge review link.
+
+## Screen inventory
+
+| Screen | Priority surface | Purpose |
+|---|---|---|
+| Dashboard | Mobile + desktop | Glanceable state of the book |
+| Proposal detail | **Mobile-first** | The approve/reject decision |
+| Proposal queue | Mobile + desktop | List of pending/recent proposals |
+| New proposal (manual) | Mobile + desktop | Human-initiated order proposal |
+| Trade detail / journal entry | **Mobile-first** | Post-mortem quick entry |
+| Journal browser | Desktop-first | Filter, R-distribution, history |
+| Edge review | Desktop-first | Per-setup stats, deactivation |
+| Risk rule editor | Desktop-only | Edit guardrail parameters |
+| Watchlist | Mobile + desktop | Candidates + triggers |
+| System health | Mobile + desktop | Token age, sync status, jobs, kill switch |
+
+## Flow 1: Morning glance (mobile, read-only)
+
+07:00 brief email → tap through → **Dashboard**.
+
+Dashboard states (mutually exclusive banners, one at a time):
+- **Healthy:** no banner.
+- **Token expiring:** refresh token < 24h. Banner links to re-auth flow.
+- **Token expired:** sync paused. Everything shows "as of [timestamp]" staleness marks. Re-auth is the only call to action.
+- **Halted:** daily-loss or drawdown rule tripped. Banner states which rule and when it resets. New-proposal entry points disabled, exits still available.
+
+Dashboard content: equity + day change, open positions (each: symbol, size, unrealized P&L, distance to stop as the primary number), total open risk ($ and % of equity), settled vs unsettled cash, pending proposal count (links to queue).
+
+Design constraint: distance-to-stop is the number that matters per position, not P&L. P&L is emotional; stop distance is actionable.
+
+## Flow 2: Review and approve a proposal (mobile-first, the core flow)
+
+Notification: "Proposal: BUY 40 XYZ @ 51.20, stop 48.90" → **Proposal detail**.
+
+Proposal detail sections, in order:
+1. The order: side, symbol, qty, type, limit, stop, target. Computed: risk $ if stopped, % of equity, position value.
+2. Thesis: the agent's (or your) one-paragraph reasoning, plus which setup it's tagged as.
+3. Guardrail results: one row per rule, each pass / warn / fail with the actual numbers ("Risk per trade: 0.9% of equity — pass, limit 1.0%"). Collar shown as a range with the proposed stop plotted inside/outside it.
+4. Action area (see states below).
+
+Proposal states → action area:
+- **All pass:** Approve and Reject buttons. Approve requires a deliberate confirm step (second tap on a changed button, or slide-to-confirm; your call, but not one-tap). This confirm is the moment the order goes to Schwab.
+- **Warn(s) present** (e.g., wash-sale flag): approve is available but each warning must be individually acknowledged first (tap to expand and acknowledge).
+- **Stop outside collar:** approve gated behind a required typed reason (logged). Show the collar bounds and where the stop sits.
+- **Hard fail** (GFV, notional cap, halt active): no approve control at all. The failing rule is stated with its numbers. Only actions: reject, or edit-and-resubmit (which creates a new proposal through the same validation).
+- **Approved → submitted → filled/cancelled:** read-only timeline view. Fill pushes a notification and links to the new journal row.
+
+Reject: optional one-line reason, stored on the proposal.
+
+## Flow 3: Manual proposal (human-initiated)
+
+**New proposal** form: symbol → live quote loads → entry, stop, target fields.
+
+Live feedback as the stop is typed:
+- Collar computes and renders as a range with the typed stop plotted against it.
+- Position size auto-computes from the risk rule (size = risk$ / (entry − stop)) and updates live.
+- Settled-cash check runs against the computed position value.
+
+Submit → same validation path and proposal detail screen as Flow 2. Human and agent proposals are identical objects downstream; the only difference is the author field.
+
+## Flow 4: Post-trade journal entry (mobile-first, 30-second task)
+
+Fill detected → journal row auto-created from transactions (entry/exit, R-multiple computed). EOD email lists rows missing post-mortems → tap → **Trade detail**.
+
+Entry is deliberately minimal: one-line post-mortem text field + one binary control: "Followed the setup / Improvised." Save. Everything else on the screen is read-only computed data (setup, planned vs actual stop, R-multiple).
+
+Rationale: if the journal entry takes more than 30 seconds on a phone, it stops happening.
+
+## Flow 5: Sunday ritual
+
+Sunday email contains: edge review summary, system health summary, re-auth button.
+
+- **Re-auth:** button → Schwab OAuth (their hosted login) → callback → success screen showing new token expiry date. Failure state: retry with the error shown.
+- **Edge review** screen: per-setup table (win rate, avg R, expectancy, sample size, trailing-20 trend). Setups with negative expectancy flagged. Action per setup: deactivate (confirm dialog stating the effect: agent stops proposing this setup). Reactivation same path.
+
+## Flow 6: Risk rule editing (desktop, rare, deliberate)
+
+List of rules with current parameters → edit one → before save, an effect preview: "Max risk 1.0% → 1.5% changes max position size at current equity from $X to $Y." Confirm to save. Every change is versioned with a timestamp (guardrail evaluations reference the rule version they ran against).
+
+No bulk edit. No editing while a halt is active (prevents mood-driven loosening on a bad day; the halt banner says so).
+
+## Flow 7: Watchlist
+
+List: symbol, trigger note ("break above 52.10 on volume"), added date, current price vs trigger. Add/edit/remove. The agent reads triggers; a trigger being met surfaces in the morning brief, not as a push (v1).
+
+## Flow 8: System health & kill switch
+
+Token age (days:hours, with the Sunday cadence marked), last successful sync per feed, recent job failures, API spend this month. One control: **Pause system** (kill switch): stops all proposal creation and submission until unpaused. Unpause requires typed confirmation.
+
+## Cross-cutting states
+
+Every screen handles:
+- **Stale data:** any market number older than its cache window shows a staleness mark with timestamp. Never render a price without its age being discoverable.
+- **Token expired:** global banner, read-only mode for anything requiring fresh Schwab data.
+- **Empty states:** pre-first-sync dashboard, empty journal, empty queue each need a designed state (the queue's empty state is the normal state most of the time).
+
+## Notification inventory (revised: push in the iOS app for time-sensitive items, email for long-form)
+
+Push (deep-link only, no figures in the payload): new proposal, fill/cancel, halt tripped, unprotected position, token expiring. Email: morning brief, EOD summary, Sunday ritual, job-failure digests. Original list:
+
+- Morning brief (07:00), EOD summary (16:30), Sunday ritual
+- New proposal awaiting review
+- Fill / cancel on a submitted order
+- Guardrail halt tripped
+- Token expiring (T-24h), escalations Mon/Tue if Sunday re-auth missed
+- Job failure (collapsed: one email per failure type per day)
+
+## What's deliberately not designed
+
+- No live-updating tickers or streaming charts. Numbers refresh on load and on Turbo-stream events (fills, sync completions). This is a decision system, not a terminal.
+- No P&L celebration/loss states. The journal treats +2R and −1R rows identically.
+
+## Reference direction: Mercury (web)
+
+Mercury patterns that map directly onto our screens, from the Mobbin screen set:
+
+- **Home → Dashboard.** Balance hero with a 30-day sparkline, accounts card to the right, a paired "money in / money out" block below, and a quick-action pill row under the greeting. Our mapping: equity + equity curve as the hero, positions as the side card, "open risk / settled cash" as the pair, and "pending proposals" as the first pill.
+- **Transaction detail slide-over → Proposal detail.** Amount hero at top, then a vertical timeline (source → destination with timestamps), then metadata fields, then notes/attachments/comments. Our order is the same: order hero, thesis, guardrail rows where Mercury has GL code and notes, timeline once approved. On desktop the proposal opens as a right-hand panel over the queue, as Mercury does; on mobile it is the full screen.
+- **Transactions table → Journal browser.** Summary strip (net change / in / out) above a dense table with Data Views, Filters, Date, Keywords, Amount as inline dropdowns, group-by rows with expand chevrons. Direct lift for journal: R this month / wins / losses strip, then trades with setup filter as the first dropdown.
+- **Payment confirmation → the deliberate confirm.** Mercury puts an authorization sentence directly above a single primary button ("By clicking Schedule Payment, I authorize…"). That is our Approve pattern: a plain-language line stating exactly what will be sent to Schwab, then one primary button. Given the stakes, keep a second gesture, but model it on this rather than a modal.
+- **"A similar payment has been created" callout → duplicate and warn states.** Mercury surfaces a possible duplicate inline in the form with the prior item embedded. Same component serves the wash-sale warn-acknowledge and the `submission_unknown` reconciliation notice.
+- **Status pills in rows** (Pending, Failed) → proposal states in the queue and `unprotected` on positions.
+- **Reimbursement approval modal** (document left, status timeline right, one cancel action) → the post-approval timeline state, with the thesis panel where the invoice preview sits.
+
+Not lifting: Mercury's left-rail IA (we have five top-level areas, not fourteen), the multi-account structure, and the light-purple accent. Reference screens are on Mobbin under the Mercury web app.
+
+## Reference direction, revised: Midday shell + Mercury detail
+
+- **Midday (web) → app shell and dashboard.** Icon-only collapsed left rail (~40px) with a top search bar; dark theme; chart cards with a headline number, legend (current / previous / average), dashed average line, and a timeframe dropdown plus "Customize" at the card row's top right. Layout: one full-width primary chart, then a 2-up row of smaller chart cards. Our mapping: equity curve as the primary chart with HWM as the dashed line; the 2-up row is open risk over time and drawdown from HWM. The rail holds our five areas: dashboard, proposals, journal, watchlist, system.
+- **Mercury (web) → detail panel, journal table, confirm pattern.** Unchanged from the section above: right-hand slide-over for proposal detail, transactions table for the journal, authorization-line-above-one-button for Approve, inline "similar item exists" callout for warn and reconciliation states.
+- **Copilot Money (web), supplemental.** Three cards worth lifting: "Transactions to review" with its reviewed-everything empty state (our proposal queue on the dashboard), the range-chip row (1W / 1M / 3M / YTD / 1Y / ALL) on the net-worth chart, and "Next two weeks" as a dated upcoming list (our earnings/econ events touching the book).
+- **Mobile supplements (iOS).** Revolut Business approval detail for the proposal screen structure; Navan's in-policy / out-of-policy idiom for pass/warn/fail rows and the override-with-reason sentence; Life Reset's Quick Add for the journal entry.
+
+Open interaction with the earlier question: a dark shell makes "halt mutes the whole palette" a weaker signal than on a light UI; the halt banner probably has to carry the state on its own.
+
+## Reference addendum: Origin (web)
+
+Origin adds two things neither Midday nor Mercury has, and it surfaces a screen missing from the inventory above.
+
+- **Benchmark overlay on the performance chart.** Legend row of portfolio vs S&P 500 vs component ETFs, each with its return, and a hover tooltip comparing "your portfolio" against the benchmark on a given date. Lift for the dashboard equity curve (portfolio vs SPY), and it doubles as the visual for the allocation module's correlation check.
+- **Holding detail page.** Price chart with range chips, a "Your position" strip (balance, shares, cost basis, return, allocation), then a right-column card with News / About tabs and a stats row below. This is our **Position detail** screen, which the inventory above omits. Our version of the strip: shares, cost basis, unrealized P&L, working stop, distance to stop, this position's share of open risk. Right column tabs become Thesis (from the originating proposal) and History (journal legs for this instrument).
+- **"Allocation & risk" card** with Asset allocation / Risk assessment tabs over a stacked bar: the allocation module's targets-vs-actual drift view, with the risk tab showing guardrail status.
+- **"Market recap" summary card**: the morning brief rendered in-app, not only emailed.
+- **"Pro view" toggle** on the holdings table: a dense-mode switch for the journal browser.
+- Small-caps eyebrow section labels (PORTFOLIO, HOLDINGS, ALLOCATION & RISK) as the sectioning device across cards.
+
+Origin ships both light and dark screens; the dark Reports screen earlier in this doc's search set is the same product, so it can inform either palette decision.
+
+**Monarch** is not on Mobbin. Worth screenshotting directly for the board: its transactions "needs review" queue and the net worth / holdings views are the closest consumer analogues to our proposal queue and dashboard.
+
+Screen inventory addition: **Position detail** (mobile + desktop), reached from any position row on the dashboard.
+
+## Reference addendum: Monarch (web, John's screenshots)
+
+Monarch resolves two open questions and contributes more directly usable components than any of the Mobbin sources.
+
+**Resolves the collar question.** The credit-score band: a horizontal track segmented at labeled breakpoints (300 / 580 / 670 / 740 / 800 / 850) with the current value as a marker and the filled portion in a single color. That is the collar: breakpoints are the method outputs (percent floor, ATR, swing, Chandelier), the filled band is the acceptable range, the marker is the proposed stop. Horizontal track wins over the mini price axis.
+
+**Guardrail headroom as budget bars.** Budget card rows (label, planned amount right-aligned, progress bar, spent left / remaining right in green). Direct lift for a "Risk budget" card on the dashboard: risk-per-trade used, daily loss used vs halt threshold, sector exposure vs cap, concurrent positions vs max. Remaining headroom in green; the bar goes to the warn color as it approaches the cap. This makes the guardrail engine visible before a proposal trips it.
+
+**Review modal → orphan-fill and incomplete-journal review.** "Is this merchant recurring? There are 9 more to review": entity card with recent transactions, a few form fields, and three actions (Skip / Not recurring / Save as recurring). Ours: "Is this fill part of a setup? N more to review", recent fills for the instrument, setup dropdown and planned stop, actions Skip / Not a trade / Save. The orange top banner with "Review now" is the pending-review entry point; the nav badge count (Recurring 10) is the proposals count on the rail.
+
+**Positions list, from the Accounts screen.** Per row: logo, name, sub-line, inline warning ("Account disconnected") where relevant, a small horizontal bar, a mini sparkline, amount, and a freshness stamp ("4 hours ago"). Ours: symbol, position size, inline "unprotected" warning, distance-to-stop bar, price sparkline, unrealized P&L, synced-at stamp. Collapsible group headers with group-level change and total serve the allocation view (positions grouped by target class).
+
+**Benchmark comparison row, from Investments.** Four equal cards (Your Portfolio | S&P 500 | US Stocks | US Bonds), each with period return and today, radio-toggle to overlay on the chart below. Better than Origin's legend for our purpose: portfolio vs SPY, with the allocation module's "diversifier" instruments as the toggleable extras. Holdings table grouped by asset class with Weight and a period-change pill is the allocation drift table.
+
+**Cash Flow analytics → journal analytics.** Segmented Monthly / Quarterly / Yearly, paired positive/negative bars per period with a net line and a dashed projection for the current period, then four stat tiles. Ours: winning R / losing R bars per period, expectancy line, tiles for net R, win rate, avg winner, avg loser. Skip the Sankey.
+
+**AI-origin marker.** Monarch marks AI-generated content with a sparkle glyph next to the title (Weekly Recap, Budget, Spending). Adopt it: every agent-authored element (thesis, brief, review suggestion) carries the glyph, so human vs agent origin is legible at a glance. Ties to the origin field on proposals.
+
+**Also worth keeping:** "Your Weekly Recap · date range" card as the in-app entry to the Sunday review; "this month vs last year" comparison line for equity vs prior period; Recurring's "in 1 day" countdown for upcoming earnings/econ events and "settles Tue".
+
+Palette note: Monarch's near-black surfaces with slightly lighter cards, orange accent, green/red only for signed deltas, is close to where Midday sits; the two are compatible as a single direction.
+
+ succeeded in 0ms:
+# PRD: Investment Copilot (working title)
+
+**Owner:** John Athayde
+**Status:** Draft v9 (iOS app decided)
+**Date:** 2026-08-15
+
+## 1. Summary
+
+A personal investment operating system for a Schwab taxable brokerage account. A Rails application acts as the system of record and the sole gateway to Schwab's Trader API. Claude acts as the analysis and workflow agent on top of it, via an MCP server the Rails app exposes. The human approves every order.
+
+This replaces the "folder of markdown files + FMP connector" pattern with a real backend, while keeping the file-based memory layer as the strategy/context store the agent reads.
+
+## 2. Goals
+
+- Positions, balances, orders, and transactions synced from Schwab automatically. No hand-maintained portfolio.csv.
+- A trade journal with per-setup expectancy stats that is populated from actual fills, not memory.
+- A guardrail engine (risk rules as data, not vibes) that evaluates every proposed order before it can reach Schwab.
+- Daily pre-market and end-of-day briefs generated by the agent from live synced data.
+- Human-in-the-loop order flow: agent proposes, Rails validates, human approves, Rails submits.
+
+## 3. Non-Goals (v1)
+
+- Fully autonomous trading. No order reaches Schwab without explicit human approval.
+- Multi-user / multi-tenant. This is single-operator software.
+- Options strategies beyond the account's approved option level.
+- Real-time streaming / intraday tick monitoring. Polling cadence is minutes, not milliseconds.
+- Trading other linked accounts (read-only visibility into the IRA and any other accounts is in scope for wash-sale awareness; trading them is not).
+
+## 4. Architecture
+
+```
+┌─────────────┐     MCP (tools)      ┌──────────────────────────┐
+│   Claude     │◄────────────────────►│  Rails app ("Copilot")   │
+│  (agent)     │                      │                          │
+└─────────────┘                      │  - OAuth token lifecycle  │
+      │                              │  - Schwab API client      │
+      │ reads                        │  - Sync jobs (Solid Queue)│
+      ▼                              │  - Guardrail engine       │
+┌─────────────┐                      │  - Journal & analytics    │
+│ memory files │                      │  - Order proposal queue  │
+│ (git repo)   │                      │  - Approval UI (Hotwire)  │
+└─────────────┘                      └────────────┬─────────────┘
+                                                   │ HTTPS/OAuth2
+                                                   ▼
+                                     api.schwabapi.com/trader/v1
+                                     api.schwabapi.com/marketdata/v1
+```
+
+**Why Rails and not just an agent:** the agent cannot be trusted with credentials, token refresh timing, idempotent order submission, or rule enforcement. Those are deterministic jobs. The agent is good at synthesis, briefs, screening, and post-mortems. Split accordingly.
+
+**Why an MCP server and not the agent hitting Schwab directly:** one credential holder, one audit log, one place guardrails run. The MCP tool surface is the contract.
+
+## 5. Components
+
+### 5.1 Schwab Integration (Rails)
+
+- **App registration:** Schwab Developer Portal, Trader API - Individual product. Manual approval, 1-3 business days. Callback URL must be HTTPS and match exactly.
+- **OAuth:** three-legged OAuth 2.0. Access token ~30 min, refresh token hard-expires at 7 days with no programmatic renewal.
+  - Background job refreshes the access token every ~25 minutes while a valid refresh token exists.
+  - Re-auth flow: when the refresh token is within 24h of expiry, the app notifies (email/SMS/push) with a one-click link to redo the browser login. Track refresh-token age as a first-class health metric on the dashboard.
+  - All scheduled work checks token health first and degrades gracefully (queues, does not silently skip).
+- **Account numbers:** call `/accounts/accountNumbers` first; use encrypted account values for all subsequent calls. Never store or log plaintext account numbers.
+- **Client generation:** the api-evangelist OpenAPI specs turned out to be skeletal (minimal order schema, no response schemas for chains), so treat them as scaffolding only. Better references for the real shapes: the schwab-py order-builder docs and community client libraries that model the full schema; replace with Schwab's official schemas once portal access is approved. Wrap in a thin service layer with retry/backoff and rate-limit awareness.
+- **Secrets:** app key/secret in Rails credentials; tokens encrypted at rest (Active Record Encryption). Nothing broker-related in the memory files repo.
+- **Order submission idempotency:** the Schwab order POST has no client-supplied order id (per community clients; confirm post-approval), so dedupe is local. The approved → submitted transition runs under a row lock and is the only code path that can call the order endpoint. On an ambiguous outcome (timeout, 5xx, connection drop after send), the proposal enters `submission_unknown`; a reconciliation job queries the orders endpoint for a matching order (instrument, qty, side, price, time window) before any retry. No blind retries, ever.
+
+### 5.2 Data Model (core tables)
+
+- `accounts` (encrypted hash id, type: ira/taxable, trading_enabled boolean)
+- `instruments` (CUSIP as the stable key; current symbol, symbol history, asset type, leveraged flag). Every other table references instrument_id, never a raw ticker, so ticker changes cannot break linking.
+- `positions` (account, instrument, qty, cost basis, synced_at): always broker-derived
+- `orders` (broker order id, status, side, instrument, qty, type, limit/stop, placed_via, parent_order_id for bracket children; see 5.4.2)
+- `order_proposals` (agent- or human-initiated; status: proposed → validated/rejected → approved → submitted → filled/cancelled; stores guardrail evaluation results as JSON; carries a submission_attempt record for the ambiguous-outcome path in 5.1)
+- `transactions` (fills, dividends, corporate actions, fees)
+- `trades` (journal). A trade is one instrument's position lifecycle from zero back to zero; scale-ins and scale-outs are `trade_legs` linked to transactions. Fields: setup tag, thesis, planned stop/target, realized R-multiple, post_mortem. Fills with no originating proposal (orders placed at Schwab directly) create a trade in `incomplete` state with no planned stop; the EOD brief asks for the missing stop/setup rather than computing a bogus R.
+- `setups` (name, definition, rolling stats: win rate, avg R, expectancy, sample size, active boolean)
+- `risk_rules` (rule type, params, active, version): see 5.4
+- `snapshots` (daily equity, open risk $, open risk %, drawdown from HWM). Equity series is flow-adjusted: deposits/withdrawals (from transactions) are excluded from HWM/drawdown math so a deposit never resets a drawdown and a withdrawal never fakes one.
+- `audit_events` (append-only: approvals, rejections, collar overrides with reason, rule edits with before/after, kill-switch toggles, re-auths, shadow-mode toggles). Every mention of "logged" elsewhere in this doc means a row here.
+
+### 5.3 Sync Jobs
+
+- Positions + balances: every 15 min during market hours, hourly otherwise.
+- Orders + transactions: every 5 min during market hours (drives journal auto-population).
+- Corporate actions/dividends: from transactions feed; adjust journal cost basis automatically.
+- Market data (quotes for holdings + watchlist): on demand from agent tools, cached 1-5 min. Schwab Market Data API is primary; FMP optional secondary for fundamentals/screening not covered by Schwab.
+- **Market calendar:** "market hours" everywhere in this doc resolves through Schwab's market-hours endpoint (holidays, early closes), cached daily. Job schedules and blackout windows derive from it; nothing hardcodes 9:30-16:00.
+
+### 5.4 Guardrail Engine
+
+Rules stored as data, evaluated server-side against every `order_proposal`. Every evaluation is logged with pass/fail per rule. Starting set:
+
+1. Max risk per trade: X% of equity (size derived from entry-stop distance).
+2. Max concurrent positions; max single-position and single-sector exposure.
+3. Daily loss halt and max-drawdown halt (blocks new proposals, not exits).
+4. **Account-type specific (decided: cash account):** settled-cash check before any buy. Source of truth is the balances endpoint (settled cash / cash available for trading), not a local settlement ledger; the app only projects the effect of pending approved proposals on top of the broker figure. Rule is deliberately the conservative form: a buy must be fully covered by settled cash. (Buying with unsettled funds is legal if you don't sell before settlement; that path is intentionally not supported in v1 because it creates a second, time-dependent constraint on exits.) No shorting, no margin order types. PDT counter not needed.
+5. Earnings/econ blackout windows for entries.
+6. **Wash-sale awareness:** now a first-order tax concern, not just a flag. If a loss was realized in this account within 30 days, warn on repurchase of the same instrument in this account and in the linked IRA (an IRA repurchase disallows the loss permanently). Configurable warn vs block. Detection is instrument-match only; "substantially identical" (e.g., two ETFs on the same index) is not detected, and the doc and UI say so.
+   6a. **Tax-lot awareness:** surface short- vs long-term status of lots on every proposed sell; default lot-selection method configurable (verify what lot specification the Trader API order schema supports before committing to per-order lot selection in the UI).
+7. Notional cap per order and per day (fat-finger protection).
+
+8. **Stop collar (see 5.4.1):** every entry proposal must include a stop, and the stop must fall within the computed collar or the proposal is flagged for override.
+
+Hard rule: guardrails are enforced in Rails. The agent can read them and reason about them; it cannot bypass or edit them through MCP.
+
+#### 5.4.1 Stop Collar Engine
+
+Purpose: replace gut-feel stop placement with a computed acceptable range ("collar") derived from several standard methods, evaluated against price history from Schwab Market Data (FMP fallback).
+
+Candidate methods (each produces a stop price for a proposed long entry):
+
+- **ATR multiple:** entry − k × ATR(14), k configurable per setup (common range 2.0-3.0). The volatility-adjusted baseline.
+- **Swing structure:** most recent N-bar swing low minus a small buffer (e.g., 0.1-0.3 × ATR). The "invalidated thesis" stop.
+- **Percent stop:** entry − p%, p configurable (classic 7-8% max-loss discipline). The hard ceiling on distance.
+- **Chandelier exit:** highest high of last 22 bars − 3 × ATR(22). Used mainly for trailing, but computed at entry for reference.
+
+Collar computation:
+
+- Compute all enabled methods; discard any that fail data-quality checks (insufficient history, stale quote).
+- Collar = [tightest candidate, widest candidate], with the percent stop acting as an absolute floor (a stop wider than the percent method is never inside the collar).
+- Proposal evaluation returns each method's value, the collar bounds, where the proposed stop sits, and the resulting position size under the max-risk-per-trade rule for the chosen stop.
+- A stop outside the collar does not hard-block; it requires an explicit human override with a logged reason. (Guardrails 1-7 remain hard blocks where marked.)
+
+Trailing behavior:
+
+- Nightly job recomputes Chandelier/ATR trails for open positions. Where the recomputed trail is tighter than the working stop, the EOD brief surfaces a "tighten stop" suggestion with the numbers. Adjusting the actual stop order remains a human-approved action (Phase 3 candidate for auto-submit of tighten-only adjustments).
+
+Configuration lives in `risk_rules` (method on/off, k, p, N per setup). Method parameters are data, not code, so they can be tuned as the journal accumulates evidence about which stop style fits each setup.
+
+#### 5.4.2 Stop Order Placement (decided: real stops at Schwab)
+
+An app-only stop with 5-15 minute polling is not protection. Every approved entry is submitted as a bracket: the entry order with a one-triggers-another child stop order (Schwab order strategies support this; confirm exact strategy type names post-approval). Consequences:
+
+- `orders` carries `parent_order_id`; the child stop is tracked, synced, and shown on the dashboard as the working stop.
+- "Tighten stop" is a cancel/replace of the child order, which goes through the proposal pipeline as a stop-adjustment proposal (guardrails: new stop must be tighter than current for the Phase 3 auto-submit class; any loosening is human-only with a logged reason).
+- If the bracket child fails to place after the parent fills, the position is flagged `unprotected` on the dashboard and in a push/email immediately; this is a hard alert, not a brief item.
+- Working stops are reconciled against Schwab on every orders sync; a stop that disappears at the broker (cancelled out-of-band) flags the position `unprotected`.
+
+### 5.5 MCP Tool Surface (agent-facing)
+
+Read tools:
+- `get_portfolio` (positions with live marks, distance to stop, open risk)
+- `get_account_health` (equity, settled cash, drawdown, token status)
+- `get_quotes(symbols)`, `get_price_history(symbol, range)`
+- `get_journal(filters)`, `get_setup_stats`
+- `get_risk_rules`, `evaluate_hypothetical_order(params)` (dry-run guardrails)
+
+Write tools (all create records; none touch Schwab directly):
+- `propose_order(params, thesis, setup)` → creates order_proposal, runs guardrails, returns evaluation
+- `annotate_trade(trade_id, post_mortem)`
+- `add_watchlist_item(symbol, trigger)`
+
+Explicitly absent from MCP: submit_order, cancel_order, edit_risk_rules, token operations. Submission happens only in the Rails approval UI (or a signed confirmation link), by the human.
+
+### 5.5a Agent Runtime (where Claude actually runs)
+
+Two runtimes, split by whether a human is present:
+
+- **Interactive (human present):** the Claude app (desktop/Cowork/web) with the Rails MCP server registered as a remote connector. Rails exposes MCP over HTTPS with bearer-token auth (token in dokku config, rotatable). This is where ad hoc analysis, screening, and order proposals happen, billed through the Claude subscription seat.
+- **Scheduled (unattended):** Solid Queue jobs on the VPS call the Anthropic Messages API directly with an API key, passing tool definitions that map to the same internal service layer the MCP server uses (in-process, no MCP hop). Output is rendered to email. This covers the 07:00 brief, 16:30 EOD, and Sunday review. **Unattended runs get read-only tools only.** These runs ingest untrusted text (transcripts, news, fetched pages), so `propose_order`, `add_watchlist_item`, and `annotate_trade` are not in their tool set; anything a brief wants to suggest is rendered as text in the email, and the human creates the proposal interactively. Write tools exist only in the interactive runtime. Each scheduled job also has a hard cap on tool turns. Rationale: unattended runs can't depend on a desktop app being open, and keeping the scheduler in Rails means the VPS is the single ops surface (one place for cron, retries, failure alerts, and the token-health gate).
+
+Cowork Scheduled Tasks could run the unattended loops instead, but that couples automation to a second scheduler outside the VPS and to the attached-folder pattern; not used here.
+
+One tool surface, two transports: the MCP server (remote, for the app) and the API tool definitions (in-process, for jobs) both delegate to the same service objects, so guardrails and read models cannot diverge between runtimes.
+
+### 5.6 Memory Layer (git repo, read by agent)
+
+Keep the file pattern from the original concept, but only for things that are genuinely human-authored strategy/context:
+
+- `investor-profile.md`, `strategy.md`, `watchlist.md`, `prompts.md`, `instructions.md`, `edge.md` (narrative layer over setup stats)
+- Removed from files because Rails owns them now: portfolio.csv, trades.csv, risk.md (risk rules live in the DB and are surfaced read-only to the agent).
+- Repo is git-versioned with one writer: John. Rails never commits to it. Generated context (setup stats, edge summary) is served through the `get_setup_stats` MCP tool and injected into scheduled-run prompts at runtime, so `edge.md` stays a human-authored narrative and there is no second writer to conflict with. The VPS pulls the repo on a schedule (or post-receive hook) for the agent's read access.
+
+### 5.7 Scheduled Workflows (agent, via Rails-triggered runs)
+
+- 07:00 ET pre-market brief: overnight moves on holdings/watchlist, gaps, today's earnings/econ events touching the book, stops at risk, settled-cash status. Delivered by email.
+- 16:30 ET end-of-day: fills recap, journal rows created, missing post-mortems flagged, equity snapshot.
+- Sunday edge review: per-setup expectancy over trailing sample, flag negative-expectancy setups, propose deactivation (human confirms).
+- Token-health nag when refresh token < 24h from expiry.
+
+### 5.8 UI (Rails, Hotwire)
+
+Mobile is in scope: everything renders on a phone; proposal detail, dashboard glance, and journal quick-entry are mobile-first. Full screen inventory, flows, and per-screen states live in the companion doc `investment-copilot-ui-flows.md`; John designs against that. Summary:
+
+- Dashboard (glance, with healthy/expiring/expired/halted banner states)
+- Proposal queue + proposal detail (the approve/reject decision; deliberate-confirm on approve; warn-acknowledge, collar-override-with-reason, and hard-fail states)
+- Manual proposal form with live collar + auto-sizing feedback
+- Trade detail / 30-second journal entry
+- Journal browser, edge review (setup deactivation), watchlist
+- Risk rule editor (desktop-only, effect preview, versioned, locked during halts; override path exists: engage the kill switch, type a reason, then edit, so a misconfigured rule that caused a false halt can be fixed without waiting for reset)
+- System health + kill switch
+
+### 5.8a iOS App (decided: native, private, iOS only)
+
+- **Approach:** Hotwire Native for iOS. The Rails/Hotwire screens render inside a native shell; only the pieces that need native capability are Swift. This keeps one UI codebase and matches the house Rails conventions. No Android.
+- **What the native shell adds:** APNs push, Face ID / device passcode as the deliberate confirm on Approve (resolves the open question in the flows doc: the second gesture is biometric, not a slide), app icon and home-screen presence, native navigation stack. Path configuration marks proposal detail, dashboard, and journal entry as the mobile-first routes.
+- **Notifications, revised:** time-sensitive alerts move from email to push once the app exists: new proposal, fill/cancel, halt tripped, `unprotected` position, token expiring. Briefs and the Sunday ritual stay email (long-form, read on a desktop anyway). Push payloads carry no financial figures; they deep-link and the app fetches.
+- **Distribution:** TestFlight internal testing (no beta review for internal testers; builds expire after 90 days, so the CI pipeline produces a fresh build on a cadence) or direct dev-signed install from Xcode. TestFlight is the default; direct install is the fallback if the developer account state makes TestFlight awkward.
+- **Auth to the Rails app:** the native shell holds a session like the browser does; no separate API auth. The MCP bearer token is never on the phone.
+- **Timing:** Phase 2, alongside the approval UI, since approving from the phone is the reason the app exists. Phase 1 web screens are built mobile-responsive so the native wrapper has nothing to redo.
+
+### 5.9 Deployment (decided)
+
+- Host: Meticulous Greencloud VPS, Ubuntu 24, deployed via dokku (matches existing Meticulous infra).
+- HTTPS via dokku letsencrypt plugin; the app's OAuth callback URL is a stable route on the app's domain, registered exactly in the Schwab app config.
+- Postgres and Solid Queue as dokku services; daily DB dump to offsite storage.
+- Schwab app key/secret in dokku config vars; tokens encrypted at rest in Postgres.
+- The Sunday re-auth (see 5.10) happens from any browser; only the callback needs to reach the VPS.
+- **Shadow mode (Schwab has no sandbox):** a global flag, on by default in production until deliberately turned off. In shadow mode the entire pipeline runs, including human approval, but the submission step writes a `would_have_submitted` audit event and the order payload instead of calling Schwab. Playwright runs in shadow mode. Phase 2 ships with shadow mode on; it is turned off only after a stated number of shadowed approvals reconcile cleanly against what would have been sent. Toggling it is an audit event.
+
+### 5.10 Weekly Ritual (decided: Sundays, email)
+
+The 7-day refresh token becomes a scheduled habit instead of a surprise:
+
+- Sunday evening email bundles: (a) the weekly edge review, (b) a re-auth link to redo the Schwab browser login, (c) system health summary (last sync times, job failures, token age).
+- Re-authing every Sunday resets the 7-day clock so it never expires mid-week. Caveat: expiry is 7 days from issuance, so the email lands earlier than the prior week's auth time, and a daily health check escalates (Mon, then Tue) if the re-auth hasn't happened. On expiry, sync jobs pause and queue rather than erroring.
+
+### 5.11 Testing & CI (mirrors Talos / Patchvault conventions)
+
+- **RSpec** full suite: models, services, request specs. Priority coverage, in order:
+  1. Guardrail engine: exhaustive unit specs per rule, including the interaction cases (CSP-style cash reservation vs GFV check is Phase 3, but settled-cash math, wash-sale window, and stop-collar bounds are Phase 1-2). Table-driven specs so each rule's edge cases are enumerable.
+  2. Order proposal state machine: every legal and illegal transition (proposed → validated/rejected → approved → submitted → filled/cancelled), plus idempotency (double-submit of the same proposal must be impossible).
+  3. Token lifecycle: refresh-at-25-min, 7-day expiry, degrade-and-queue behavior. Use time travel (ActiveSupport::Testing::TimeHelpers); never sleep.
+  4. Schwab client service layer: VCR/WebMock cassettes only. The suite never touches the live API; cassettes get scrubbed of tokens and encrypted account values before commit.
+  5. Sync jobs: fixture payloads for positions/transactions, including corporate-action and dividend events, verifying journal linking.
+- **Playwright** for clickable UI: approval queue flow (approve/reject a proposal, override a stop outside the collar with a logged reason), dashboard renders with seeded data, risk-rule editor. These run against a seeded test DB with a fake Schwab adapter, not cassettes.
+- **bin/ci** as the single entry point, running in order: rubocop (per DHH skill conventions), rspec, brakeman, `bin/importmap audit`, `bundle exec bundle-audit check --update`, then Playwright. Fails fast; CI green is the merge gate.
+- **DHH skill** run on the codebase as a review pass: idiomatic Rails, thin controllers, no needless service-object ceremony, Hotwire-first UI. Applied at the end of each phase, not per-commit.
+
+### 5.12 Allocation Module (cycle-pattern mechanics)
+
+A second rule set alongside the trading guardrails, covering the book-level behaviors from post-crash market research (concentration of best days, lump-sum vs staged deployment, threshold rebalancing, correlation breakdown, leveraged-proxy discipline). Kept structurally separate from per-trade guardrails: trading rules judge one order, allocation rules judge the whole book. Both feed the same proposal → approval pipeline; nothing here auto-executes.
+
+**Data model additions:** `allocation_targets` (asset or class, target weight, drift band), `instrument_tags` (leveraged/amplified flag per symbol), `deployment_policies` (per cash-inflow handling).
+
+**Mechanics:**
+
+1. **Threshold rebalancing.** Nightly drift check against `allocation_targets`. When any weight drifts beyond its band (default 5 percentage points, per-target configurable), the agent generates rebalance proposals (sell overweight, buy underweight) through the normal pipeline with guardrail evaluation. The rule is mechanical; the approval is still human. A minimum trade notional (configurable, e.g., $100) suppresses churn on a small account; drift that would require a sub-minimum order is reported, not proposed. Fractional-share support in the order API is unverified; until confirmed, quantities round down to whole shares.
+2. **Leveraged-proxy exception.** Symbols tagged leveraged/amplified are excluded from mechanical rebalance proposals. Drift on those instead triggers a thesis-review task: the proposal renders the original thesis from the journal/watchlist next to current numbers, and the human decides deploy / hold / exit. Encodes "the discipline is the same, the decision is not mechanical."
+3. **Deployment policy for new cash.** Cash inflows (detected via transactions sync) trigger a deployment proposal per the policy John sets in `deployment_policies` (immediate, staged over N weeks, or ask-each-time). The proposal renders the relevant base rates (lump-sum vs staged historical win rates) as context; the policy itself is John's call, stored as data, and changeable only in the rule editor.
+4. **Cash-drag diagnostic.** The Sunday review computes time-in-cash vs the deployment policy and flags divergence ("policy says deployed; book is 40% cash for 3 weeks"). Informational, never a forced action.
+5. **Correlation stress check.** Weekly job computes rolling 60-day correlations between each holding (and tagged "diversifier" instruments) and SPY from price history. When a diversifier's correlation exceeds a threshold (default 0.6), the Sunday review flags that the diversification assumption is currently failing. Diagnostic only.
+6. **Flow/sentiment input.** Weekly fund-flow datapoint (ICI weekly long-term fund flows; source via FMP if available, else fetched from ICI's published release) rendered in the Sunday review as context alongside the edge stats. Data in, judgment human.
+
+**Boundary:** the module surfaces mechanics and base rates; it does not embed a market view. Which patterns become policy (rebalance bands, deployment policy, what counts as a diversifier) is authored by John in the rule editor and versioned like every other rule.
+
+**UI:** allocation targets + drift live on the dashboard below positions; rebalance and deployment proposals use the standard Flow-2 proposal detail; thesis-review proposals add the original-thesis panel. Rule authoring goes in the (desktop) rule editor.
+
+## 6. Phasing
+
+**Phase 1 (read-only):** Schwab OAuth + token lifecycle, account/position/transaction sync, dashboard, journal auto-population from fills, memory repo, MCP read tools, daily briefs.
+**Phase 2 (propose + approve):** guardrail engine, order proposals via MCP, approval UI, bracket submission (entry + child stop, 5.4.2) from UI, ambiguous-outcome reconciliation, settlement checks from broker balances, wash-sale checks against the linked IRA, Hotwire Native iOS app with push and Face ID confirm (5.8a). Ships with shadow mode on.
+**Phase 2.5 (allocation module):** targets, drift checks, rebalance/deployment proposals, correlation and cash-drag diagnostics in the Sunday review (§5.12).
+**Phase 3 (earned automation):** conditional auto-submit for a narrow class (e.g., pre-approved stop adjustments) only after the journal shows positive expectancy over a real sample; kill-switch; per-day order caps.
+
+## 7. Decisions Log
+
+- Account: taxable brokerage, **cash** (GFV check active; no PDT counter, no shorting/margin).
+- Hosting: Meticulous Greencloud VPS, Ubuntu 24 + dokku (see 5.9).
+- Notifications: email only for now; Sunday ritual bundles re-auth + edge review (see 5.10).
+
+exec
+/bin/zsh -lc "sed -n '1,260p' docs/phase-1-plan.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Phase 1 Plan: Investment Copilot (read-only)
+
+Source of truth: `docs/artifacts/investment-copilot-prd.md` (v9). Screen states from `docs/artifacts/investment-copilot-ui-flows.md` and the wireframes. This plan covers only PRD §6 Phase 1 as scoped in the kickoff brief. Revision 2 incorporates the counselors PRD review (codex-5.5-high, claude-fable; outputs in `agents/counselors/1788296923-*`).
+
+Sections: decisions, migrations, jobs, tool surface, journal builder, stops and open risk, snapshots, UI, testing, deploy, build order, deferred items, Schwab assumptions, working method.
+
+---
+
+## 0. Decisions (resolved 2026-09-01)
+
+1. **Secrets in Rails credentials**, production-only file (`config/credentials/production.yml.enc`), keys `schwab.app_key`, `schwab.app_secret`, `mcp.bearer_token`, `anthropic.api_key`, `resend.api_key`, plus Active Record Encryption keys. `SCHWAB_CALLBACK_URL` and `MEMORY_REPO_PATH` stay in dokku ENV (not secret). The dokku `SCHWAB_APP_KEY`/`SCHWAB_APP_SECRET` vars get unset once the credentials file is on the server. Rotating the MCP token is an edit to the credentials file plus a deploy.
+2. **Gems beyond defaults:** `rspec-rails`, `factory_bot_rails`, `vcr`, `webmock`, `bundler-audit`, `mcp` (official Ruby SDK), `anthropic` (official Ruby SDK). No claude-on-rails.
+3. **Web login is passwordless magic link**, built on the Rails 8 auth generator with `generates_token_for :magic_link` (15 min, single use). Users are seeded, not self-registered: john@athayde.com and whitney@athayde.com only. No gem. Because a second person can log in, `audit_events.user_id` exists from day one so Phase 2 approvals are attributable. Fallback when email is down: `bin/rails login:link[email]` prints a magic link to the console.
+4. **Email via Resend over SMTP**, no gem; API key in credentials. Production login and re-auth depend on it, so Resend DNS is a prerequisite for the first production deploy.
+5. **`evaluate_hypothetical_order` omitted** from Phase 1. `get_risk_rules` ships and returns the (empty) `risk_rules` rows.
+6. **§5.12 allocation tables deferred** to Phase 2.5.
+7. **Off-hours cadence** for orders/transactions sync: hourly.
+8. **MCP auth (open verification, not blocking):** the Claude app's custom-connector UI exposes static bearer headers only to orgs in a beta. John checks Settings → Connectors → Add custom connector for a "headers" option before step 8. If absent, the fallback is a minimal OAuth 2.1 authorization-code + PKCE endpoint on the app that issues the same bearer after magic-link login. `McpAuth` verifies the bearer either way, so the tool layer is unaffected.
+
+---
+
+## 1. Migrations (in creation order)
+
+All money columns `decimal(18,4)`, quantities `decimal(18,6)` (fractional shares unverified, PRD §5.12). All timestamps `timestamptz`. No table stores a bare ticker as a key; instrument references are `instrument_id`.
+
+| # | Table | Key columns | Phase 1 populated? |
+|---|---|---|---|
+| 1 | `users`, `sessions` | Rails 8 auth generator, password column removed; `email_address` unique. Magic-link tokens via `generates_token_for`, no table. | yes (two seeded users) |
+| 2 | `schwab_tokens` | `access_token` (encrypted), `refresh_token` (encrypted), `access_expires_at`, `refresh_expires_at` (= `issued_at` + 168 hours, never moved by access refreshes), `issued_at`, `last_refreshed_at`, `last_refresh_error`, `revoked_at`, `scope` | yes |
+| 3 | `accounts` | `schwab_hash` (Schwab's opaque hashValue, unique), `account_type` enum (taxable/ira, nullable: set by the operator since Schwab only reports CASH or MARGIN), `trading_enabled` bool, `nickname`, `last_synced_at`, `raw` jsonb. A plaintext account number is never a column. | yes |
+| 4 | `instruments` | `cusip` (nullable, unique where present), `schwab_instrument_id` (nullable, unique where present), `symbol`, `symbol_history` jsonb `[{symbol, until}]` (UTC), `asset_type`, `leveraged` bool default false, `description`, `predecessor_instrument_id` (self FK, set on CUSIP succession: reverse split, merger, spin-off). Identity resolution order: CUSIP, then Schwab instrument id, then symbol+asset_type as last resort with a `needs_review` audit. | yes |
+| 5 | `positions` | `account_id`, `instrument_id`, `quantity`, `average_price`, `cost_basis`, `market_value`, `last_price`, `working_stop_order_id` (FK orders, nullable), `synced_at`, `raw` jsonb. Unique on (account, instrument). Rows absent from the broker response are deleted on sync. | yes |
+| 6 | `balances` | Time series: `account_id`, `as_of`, `equity`, `cash_available_for_trading`, `unsettled_cash`, `settled_cash` (derived; mapping unverified), `buying_power`, `raw` jsonb. Current balance = latest row per account. | yes |
+| 7 | `orders` | `account_id`, `instrument_id`, `broker_order_id` (unique per account), `status` enum incl. Phase 2 states, `side`, `quantity`, `filled_quantity`, `order_type`, `limit_price`, `stop_price`, `remaining_quantity`, `strategy_type` (SINGLE/TRIGGER/OCO, reconciliation needs it), `duration`, `session`, `tax_lot_method`, `placed_via` enum (schwab_direct/app), `parent_order_id` (self FK, bracket child), `replaces_order_id` (self FK, cancel/replace chain), `order_proposal_id` (nullable), `entered_at`, `closed_at`, `raw` jsonb. `instrument_id` is nullable for container strategies with no legs. Index on (account, instrument, entered_at) for Phase 2 reconciliation. An upsert never nulls a lineage or proposal column that already has a value | yes (sync only) |
+| 8 | `order_proposals` | `account_id`, `instrument_id`, `kind` enum (entry, exit, stop_adjustment), `target_order_id` (nullable, for stop adjustments), `origin` enum (agent/human), `user_id` (nullable), `status` enum (proposed, validated, rejected, approved, submitted, submission_unknown, filled, cancelled), `side`, `quantity`, `order_type`, `limit_price`, `stop_price` (the order's own trigger), `planned_stop` (the protective stop that becomes the bracket child), `target_price`, `duration`, `session`, `tax_lot_method`, `thesis`, `setup_id`, `guardrail_results` jsonb (records `{rule_id, version}` pairs), `acknowledged_warnings` jsonb, `expires_at`, `override_reason`, `reject_reason`, `approved_at`, `submitted_at` | no |
+| 9 | `submission_attempts` | `order_proposal_id`, `attempted_at`, `payload` jsonb, `response` jsonb, `outcome` enum (submitted, unknown, failed, reconciled), `reconciled_order_id` (nullable) | no |
+| 10 | `activities` (the PRD's `transactions`; renamed because `transaction` is reserved by Active Record) | One row per Schwab activity. `account_id`, `instrument_id` (nullable for cash-only), `order_id` (FK, nullable), `broker_order_id` (nullable), `broker_activity_id` (unique per account), `kind` enum (fill, sweep, dividend, interest, fee, deposit, withdrawal, transfer, corporate_action, other), `status` (Schwab's VALID/INVALID/PENDING; only VALID is journaled), `sub_type` string (raw Schwab type), `side`, `quantity`, `price`, `commission`, `fees` (summed from the activity's fee transfer items), `net_amount`, `trade_date`, `settlement_date`, `executed_at`, `raw` jsonb, `journaled_at` | yes |
+| 11 | `setups` | `name` (unique), `definition`, `active` bool, `win_rate`, `avg_r`, `expectancy`, `sample_size`, `stats_computed_at`. Stats are stored here and recomputed by `Journal::RecomputeSetupStatsJob` whenever a trade closes; `get_setup_stats` reads them. | table yes, rows via seed |
+| 12 | `trades` | `account_id`, `instrument_id`, `setup_id` (nullable), `order_proposal_id` (nullable), `status` enum (open, closed) only, with a partial unique index allowing one open trade per account and instrument, `needs_review` bool, `review_reason`, `excluded_from_stats` bool, `stopped_out` bool, `initial_quantity`, `total_risk` (orphan or bootstrapped, missing setup/stop), `bootstrapped` bool (created from an existing position, entry history unavailable), `opened_at` (nullable when bootstrapped), `closed_at`, `avg_entry`, `avg_exit`, `peak_quantity`, `planned_stop`, `planned_target`, `initial_risk`, `realized_pnl`, `realized_r`, `thesis`, `post_mortem`, `followed_setup` (nullable bool), `journal_completed_at` | yes |
+| 13 | `trade_legs` | `trade_id`, `activity_id` (unique where present, nil on synthetic bootstrap legs), `kind` enum (entry, exit, adjustment, income), `quantity`, `price`, `ratio` (splits), `cash_amount`, `executed_at`, `note` | yes |
+| 14 | `risk_rules` | `rule_type`, `params` jsonb, `active`, `version`, `setup_id` (nullable), `superseded_by_id` | no |
+| 15 | `snapshots` | `account_id`, `as_of` date (unique per account), `equity`, `net_flows` (day), `daily_return` (net of flows), `index_value` (chain-linked, starts at 1.0), `high_water_index`, `drawdown` (fraction), `open_risk_amount`, `open_risk_ratio` (fraction of equity), `unprotected_count`. Fully rebuildable from `balances` + `transactions`. | yes |
+| 16 | `audit_events` | `kind` string, `actor` enum (human/system/agent), `user_id` (nullable), `subject` polymorphic (nullable), `data` jsonb, `reason`, `created_at` only. Postgres triggers reject UPDATE, DELETE, and TRUNCATE; `kind` is validated against `AuditEvent::KINDS`. Reserved for the PRD's "logged" list; not telemetry. | yes |
+| 17 | `market_days` | `date` (unique), `trading` bool, `session_opens_at` (pre-market), `regular_opens_at`, `regular_closes_at`, `session_closes_at` (post-market), `raw` jsonb, `fetched_at`, `source` enum (schwab, fallback) | yes |
+| 18 | `sync_runs` | `feed` enum (accounts, positions, orders, activities, market_hours, memory_repo, snapshots; balances ride with positions), `account_id` (nullable; cursors are per account and feed), `status` (running, succeeded, partial, failed, skipped_token), `started_at`, `finished_at`, `error`, `records_touched`, `unmapped_values` jsonb, `window_from`, `window_to` (captured before the request; the next window starts from it), `gap_from` (set when the computed window start is later than the last success: data Schwab can no longer return) | yes |
+| 19 | `agent_runs` | `kind` enum (morning_brief, eod, sunday_review), `status`, `degraded` bool (ran with expired token / stale data), `started_at`, `finished_at`, `tool_turns`, `input_tokens`, `output_tokens`, `estimated_cost`, `output_markdown`, `error`, `model` | yes |
+| 20 | `tool_calls` | `agent_run_id` (nullable), `transport` enum (mcp, scheduled), `tool_name`, `arguments` jsonb, `duration_ms`, `error`, `created_at`. This is where MCP and runtime tool telemetry goes, not `audit_events`. | yes |
+| 21 | `system_settings` | Singleton row (check constraint `id = 1`): `shadow_mode` bool default true, `manual_halt` bool default false, `manual_halt_reason`, `manual_halt_at`, `sync_paused_reason` (set while token expired) | yes |
+
+Solid Queue / Cache / Cable schemas already generated. Every datetime column is `timestamptz` (adapter default set in an initializer). Schema format is `structure.sql` for the audit triggers; the dump pins Postgres 17 settings, so dokku runs the postgres:17 image. Active Record Encryption: production keys live in `config/credentials/production.yml.enc`; development and test share `config/credentials.yml.enc` (dev keys) with fixed test keys in `config/environments/test.rb`.
+
+Phase 2 columns present now so `orders`/`order_proposals` never need a shape change: `parent_order_id`, `replaces_order_id`, `order_proposal_id`, `submission_unknown` state, `submission_attempts`, `guardrail_results`, `risk_rule_version`, `acknowledged_warnings`, `kind`/`target_order_id` for stop adjustments.
+
+---
+
+## 2. Jobs (Solid Queue, `config/recurring.yml`, all times America/New_York)
+
+**Token model (revised after the step 4 counselors review).** Pause state is *derived* from the current token, never written by a failure. `schwab_tokens` gains `revoked_at`; `SchwabToken.current` is the newest by `issued_at, id`; `usable?` = present, not refresh-expired (`issued_at + 168.hours`, elapsed time not calendar days), not revoked. `SchwabToken.issue!(response)` inserts the new row and clears `system_settings.sync_paused_reason` in one transaction, enqueuing `Sync::CatchUpJob` after commit. `SchwabToken#refresh!` takes the row lock, reloads, and returns early if the row is no longer current or was refreshed in the last minute (so two workers cannot double-refresh and a stale row cannot act); it builds the client inside the lock; `access_expires_at` = now + `expires_in` − 60 s; `refresh_token` = response value or the existing one; `refresh_expires_at` is never touched. On `ReauthRequired` it sets `revoked_at` on the current row only, records `last_refresh_error` outside the lock so a rollback cannot lose it, audits `token_refresh_failed`, and sets `sync_paused_reason`. On `ServerError`/`TransportError` it records the error and does nothing else. `ensure_fresh!(margin:)` refreshes proactively when the access token is near expiry, so a 401 is the safety net rather than the norm. `Schwab.client` raises `Schwab::NoUsableToken` rather than letting nil reach a request.
+
+**Token gating.** Only `Sync::TickJob` and the agent jobs are scheduled; everything else is enqueued by them. When `SchwabToken.current` is not usable, the tick job writes one `sync_runs` `skipped_token` row per hour, audits `sync_paused_token_expired` once per episode, and enqueues nothing. No self-re-enqueue, so the queue cannot grow. The re-auth callback (`issue!`) clears the pause, audits `sync_resumed`, and enqueues `Sync::CatchUpJob`, which runs all feeds with windows widened to cover the gap (capped at the 60-day limit). Agent jobs run degraded rather than wait: `degraded: true`, the prompt states the token is unusable and every number carries its as-of time, the email subject is prefixed, and the token status line sits at the top of every brief so a dead nag path is still visible daily. Snapshots are not written for days without a fresh balance.
+
+**Re-auth flow.** `SchwabController#authorize` (login required) stores a random `state` with a timestamp in the session and redirects to the authorize URL. `#callback` (login required; an unauthenticated hit is rejected without storing a return-to URL, so the code never lands in the session) reads and deletes the pending state; no pending state renders "nothing pending, start again" with no audit; a mismatch audits `re_auth_failed` as CSRF; `params[:error]` (user cancelled) renders the failure without calling the token endpoint. On success: `exchange_code`, then `/accounts/accountNumbers` must overlap the known `accounts` hashes (first auth accepts anything) or the token is not made current and `re_auth_failed` is audited; then `issue!`, audit `re_auth_succeeded`, and **redirect** to a clean success page so a browser refresh cannot resubmit the single-use code. A failed exchange never writes to `schwab_tokens`. The retry link goes to `authorize`. `code`, `state`, and `session` join `filter_parameters`. The callback URL comes only from `SCHWAB_CALLBACK_URL`, never from the request. `fake_authorize` 404s unless the adapter is fake and the environment is not production, and `?fail=1` redirects with a bad code for Playwright.
+
+**Health and nags.** `Schwab::TokenHealthJob` runs 08:00 and 20:00 ET. Nag when: no usable token (absent, revoked, or expired), sent at every run; or the 24-hour warning, sent once per token row (deduped on token id in the audit data). Monday/Tuesday escalation fires when `SchwabToken.current.issued_at` is before the most recent Sunday 18:00 ET, which is the PRD's literal "the Sunday re-auth hasn't happened"; no buffer, no comparison against the coming Sunday. Cron strings carry `America/New_York` explicitly. The refresh task gets a higher queue priority than sync.
+
+| Job | Schedule | Does |
+|---|---|---|
+| `Schwab::RefreshAccessTokenJob` | every 25 min, high priority | `SchwabToken.current&.refresh!`; no-op when there is no usable token |
+| `Schwab::TokenHealthJob` | daily 08:00 + 20:00 | See "Health and nags" above. Audits `token_nag_sent` with the token id and reason. |
+| `Sync::TickJob` | every 5 min | Sole scheduled sync entry point. Refreshes `market_days` for today (New York) plus 7 days when missing or `source: fallback` (one call per date; a market-hours failure never aborts the tick). Due checks compare against the last *started* run per account and feed with 1-minute slack, and a `running` run is never due; jobs also declare Solid Queue `limits_concurrency` keyed on account and feed so backlog cannot double-enqueue. Cadences apply to trading-enabled accounts: positions (15 min inside the session window pre-market through post-market, 60 min otherwise), orders and activities (5 min inside, 60 outside); read-only accounts sync hourly. `Snapshots::DailyJob` once per market day after `regular_closes_at` + 20 min, only when that day's calendar row came from Schwab. |
+| `Sync::AccountsJob` | daily 06:05, after every re-auth | `/accounts/accountNumbers` only; upsert by `schwab_hash`. New accounts land with `trading_enabled: false` and no `account_type`; the system screen shows accounts needing operator setup |
+| `Sync::PositionsJob(account)` | via tick | `/accounts/{hash}?fields=positions`; resolve instruments (§2 "Instrument identity"); upsert positions; append a `balances` row; delete positions absent from the response only when the run is complete (every position resolved) and the payload is sane (no positions with positive long market value is a `failed` run, not an empty account); then `Journal::BootstrapJob` for trading-enabled accounts |
+| `Sync::OrdersJob(account)` | via tick | Window: from = max(last `window_to` for this account − 1 day, now − 364 days), to = end of the current UTC day (bounds may be date-granular; verify item). First sync backfills a year (live probe confirmed the window). Flatten nested orders and upsert in two passes (rows, then lineage by broker id); container strategies are stored with no instrument; exactly 3000 rows means truncation and finishes `partial`. Any `positions.working_stop_order` not present in the response is re-fetched by id (covers old GTC stops, out-of-band cancels, and replacements outside the window). A daily `status: WORKING` pass. Then working-stop detection (§5) for every position, only on a complete run; a failed or partial run leaves stop assignments untouched |
+| `Sync::ActivitiesJob(account)` | via tick | One call per transaction type the cash account can produce (TRADE, RECEIVE_AND_DELIVER, DIVIDEND_OR_INTEREST, ELECTRONIC_FUND, ACH_RECEIPT, ACH_DISBURSEMENT, WIRE_IN, WIRE_OUT, JOURNAL, CASH_RECEIPT, CASH_DISBURSEMENT, MONEY_MARKET), cursor per account and feed: from = max(last `window_to` − 3 days, now − 364 days), to = end of the current UTC day. A `RequestError` on one type skips that type and finishes `partial`; 429, 5xx, and transport failures leave the cursor alone. Upsert by `broker_activity_id`, link `order_id` via the activity's orderId, classify `kind` (§2 "Activity kinds"); then `Journal::LinkFillsJob` |
+| `Sync::CatchUpJob` | after re-auth | Bypasses due checks: accounts, then per account positions, orders (with the WORKING pass), activities. Windows already derive from the last `window_to`, so a short pause needs nothing special; when the computed start is later than the last success, the run records `gap_from` and audits `sync_gap_unrecoverable` so nobody believes the catch-up was complete |
+| `Journal::BootstrapJob` | after positions sync | See §4 |
+| `Journal::LinkFillsJob` | after activities sync | See §4 |
+| `Journal::RecomputeSetupStatsJob` | after any trade closes | Rolling stats onto `setups` |
+| `Snapshots::DailyJob` | via tick | See §6 |
+| `Jobs::FailureDigestJob` | daily 17:00 | One email listing failed `sync_runs`, `agent_runs`, and Solid Queue failed executions since the last digest, grouped by kind |
+| `Memory::PullRepoJob` | every 30 min | `git -C $MEMORY_REPO_PATH pull --ff-only`; record `sync_runs` |
+| `Agent::MorningBriefJob` | 07:00 market days | See §3 |
+| `Agent::EndOfDayJob` | 16:30 market days | See §3 |
+| `Agent::SundayReviewJob` | Sunday 18:00 | Phase 1 stub, no API call: re-auth link, token age, sync health, job failures, setup stats table |
+
+**Sync runs.** `SyncRun.record(feed, account:, window:)` wraps every feed: creates the row, captures `window_to` before the request, rescues `NoUsableToken`, `AuthError`, and `ReauthRequired` into `skipped_token`, rescues other `Schwab::Error` into `failed`, counts quarantined records into `partial` with `unmapped_values` (raw type, description, subAccount, sign, item shape), and stamps `records_touched`. `partial` advances the cursor; `failed` does not. A cash-affecting `other` activity makes the run `partial`, never a quiet success.
+
+**Instrument identity** (`Instrument.resolve(ref)`): CUSIP, then Schwab instrument id, then symbol plus asset type **matching only rows with no CUSIP**, then an `instrument_by_symbol` lookup, then create a provisional row. A weaker-key match backfills a missing CUSIP or instrument id from the ref but never overwrites a differing one. A CUSIP match with a different symbol calls `rename!`. The `instrument_identity_fallback` audit fires once, when a provisional row is created, not on every resolve. `RecordNotUnique` is handled with a re-lookup because positions and activities race.
+
+**Activity kinds.** TRADE with an EQUITY security → `fill`; TRADE with a CASH_EQUIVALENT security or MONEY_MARKET → `sweep`; DIVIDEND_OR_INTEREST → `dividend` when a security is present, else `interest`; ELECTRONIC_FUND, ACH_*, WIRE_*, CASH_* and JOURNAL with only currency items → `deposit` or `withdrawal` by sign; JOURNAL or RECEIVE_AND_DELIVER with one security → `transfer` (ACAT deliveries are not corporate actions), with two securities → `corporate_action`; all items fees → `fee`; anything else → `other` and counted. Activities whose `status` is not VALID are stored and never journaled.
+
+**Market calendar.** `MarketDay.for(date)` reads the row or fetches it (source schwab). When the token is unusable or the call fails it writes a weekday-open 9:30 to 16:00 row with `source: fallback`, which drives cadence only: snapshots and market-day briefs require a Schwab-sourced row, and fallback rows are re-fetched on every tick until they flip. "Today" is computed in America/New_York.
+
+**Schwab client:** built to `docs/schwab-api-contract.md`. Net::HTTP; plaintext account numbers scrubbed inside the client before any body is returned; logs carry path templates (`/accounts/{hash}/orders`), never hashes, bodies, or headers; one time helper for the three input and three output formats; `BigDecimal` for every money and quantity value; a shared Solid Cache rate budget of 100 requests/minute across Puma and the worker; retries on 429, 5xx, and transport errors for GETs and the refresh grant only (1, 4, 16 s with jitter, `Retry-After` capped at 60 s), never on 4xx; one refresh-and-retry on a 401. Error classes: `AuthError`, `ReauthRequired`, `RateLimited`, `ServerError`, `RequestError`, `TransportError`, `UnknownOutcome` (non-idempotent calls only, chosen by HTTP method), `MappingError`. Interface adds `order(hash, order_id)` so working stops older than the lookback are re-fetched by id, and `instrument(symbol_or_cusip)` for identity fallback. Mappers return `Data` structs with a scrubbed `raw` member; jobs never see a Schwab field name. `Schwab::FakeClient` sits below the mappers and returns raw-shaped hashes with a scriptable per-call queue. Sync runs can finish `partial` with an `unmapped_values` count when individual records are quarantined.
+
+---
+
+## 3. Tool surface (one registry, two transports)
+
+`app/models/agent/tools/*` each defines `name`, `description`, `input_schema`, `call(**args)`, and permission metadata: `read_only`, `interactive_allowed`, `scheduled_allowed`. The MCP server registers tools where `interactive_allowed`; the scheduled runtime passes only tools where `scheduled_allowed && read_only`, enforced in one place so a Phase 2 write tool cannot reach an unattended run by omission. Phase 1 tools:
+
+| Tool | Returns |
+|---|---|
+| `get_portfolio` | Positions with last price, unrealized P&L, working stop, distance to stop, per-position open risk, `unprotected` flag, synced_at per row |
+| `get_account_health` | Equity, settled/unsettled cash, drawdown from HWM (index-based), unprotected count, token status and age, last sync per feed, shadow mode, halt state, sync pause reason |
+| `get_quotes(symbols)` | Schwab `/marketdata/v1/quotes`, cached 2 min in Solid Cache, each quote stamped with fetched_at; when the token is expired returns the cached value with `stale: true` or an explicit unavailable error |
+| `get_price_history(symbol, range)` | Schwab `/marketdata/v1/pricehistory`, cached 5 min |
+| `get_journal(filters)` | Trades with legs; filters: status, needs_review, setup, instrument, date range, missing_post_mortem |
+| `get_setup_stats` | Stored stats from `setups` |
+| `get_risk_rules` | Active `risk_rules` rows (empty in Phase 1) |
+
+Every call writes a `tool_calls` row. Nothing in this section writes to `audit_events`.
+
+**MCP server:** `POST /mcp` (Streamable HTTP, JSON-RPC 2.0). `McpAuth` extracts a bearer from `Authorization` and compares with `ActiveSupport::SecurityUtils.secure_compare`; 401 renders a plain "MCP auth failed" page (Playwright target). See decision 0.8 for the OAuth fallback.
+
+**Scheduled runtime:** `Agent::Run` wraps one Messages API conversation: system prompt = memory repo markdown files + setup stats + token health + as-of timestamps; tools = scheduled-allowed registry; hard cap `MAX_TOOL_TURNS = 12`; result stored in `agent_runs` and emailed via `BriefMailer`. Prompts live in `app/models/agent/prompts/*.md.erb`. The morning-brief prompt states that earnings and economic-calendar data are unavailable in Phase 1 and must not be inferred. Morning brief and EOD are real; Sunday review stub does not call the API.
+
+---
+
+## 4. Journal builder (zero-to-zero, trading-enabled accounts only; revised after the step 6 counselors review)
+
+IRA and other read-only accounts sync positions and activities (for Phase 2 wash-sale checks) but never create trades. `Journal::BootstrapJob` and `Journal::LinkFillsJob` share one Solid Queue concurrency key per account, and every activity is linked in its own transaction: insert or find the leg by `activity_id`, recompute the trade as a pure function of its legs, then stamp `journaled_at` last. A rerun finds the existing leg and recomputes; it never skips because the activity was marked.
+
+**Bootstrap** (`Journal::BootstrapJob`, after every complete positions sync). Every open position in a trading-enabled account has one open trade. Its synthetic `entry` leg is a **reconciling plug**: quantity = broker quantity − net quantity of the linked fill legs, priced at the broker average price, recomputed after every bootstrap and link run and deleted when it reaches zero. A trade whose plug is non-zero is `bootstrapped: true, needs_review: true, review_reason: bootstrapped`, with `opened_at` nil. Positions with zero quantity or no average price are skipped. After a complete positions sync, an open trade whose instrument has no position and no unjournaled fills is flagged `review_reason: position_missing`.
+
+**Link fills** (`Journal::LinkFillsJob`), per account and instrument, VALID unjournaled activities in `executed_at, id` order:
+- Buy fill, no open trade: open one. If `activity.order.order_proposal` resolves, copy setup, thesis, planned stop, and target; else `needs_review` with `review_reason: missing_setup`.
+- Sell fill, no open trade: open a bootstrapped trade whose plug covers the pre-sale holding (position quantity + sold quantity when the position exists, else the sold quantity with `review_reason: bootstrapped`), then apply the exit.
+- Every fill is an `entry` or `exit` leg carrying `cash_amount` = the activity's signed `net_amount` (which already includes commissions and fees). Running quantity, `avg_entry`, `avg_exit`, `peak_quantity` are recomputed from legs.
+- Running quantity reaches zero: `status: closed`, `closed_at`, `realized_pnl` = sum of leg cash amounts (entries negative, exits and income positive; fees are never subtracted again), `stopped_out` when the closing exit's order was a stop type.
+- Out-of-order arrival: when a newly linked activity precedes the latest leg on that instrument, the instrument's fills are replayed from scratch. Same-day fills with date-only timestamps are linked but flagged `review_reason: ordering_ambiguous`.
+- A re-synced activity whose quantity, price, or status changed after journaling has its leg dropped and `journaled_at` cleared, then the instrument replays.
+- Dividend or interest on an instrument with an open trade: `income` leg (feeds realized P&L, not basis). After close, attach to the most recent closed trade on that instrument within 90 days and recompute; otherwise journal with no leg. Return of capital is treated as income in Phase 1.
+- Instrument-bearing `transfer` with an open trade (forward split, stock dividend, ACAT delivery): `adjustment` leg with ratio derived as (running + delivered) / running; quantity × ratio, prices ÷ ratio, `initial_risk` unchanged. Ratios that are not clean are flagged `review_reason: corporate_action`.
+- `corporate_action` with two securities (CUSIP succession): both securities are read from the activity's `securities`; set `predecessor_instrument_id` on the new instrument and move the open trade to it with an adjustment leg. An unreviewed bootstrapped trade already on the new instrument is absorbed by the moved trade. Unmatched halves fall back to exit/entry with `review_reason: corporate_action`.
+- Symbol change on a known CUSIP: `rename!` only.
+- Sweeps, deposits, withdrawals, fees, and cash-only transfers: `journaled_at` set, no leg.
+- A fill with no side or an unresolved instrument is quarantined on the sync run, never raised.
+
+**R math.** `initial_quantity` = every entry fill sharing the first entry's `order_id` (fallback: all entries before the first exit), so a partial fill does not understate risk. `initial_risk` = `initial_quantity` × (average initial entry price − `planned_stop`), fixed once the stop is known; at or below zero it is nil and so is R. `realized_r` = `realized_pnl` / `initial_risk`. `total_risk` = sum over entry legs of quantity × (price − stop at that time), stored for the journal browser, never used as the R denominator. A bootstrapped trade closed before review takes setup and thesis only; its R stays nil.
+
+**Review path.** `review_reason` enum (missing_setup, missing_stop, bootstrapped, ordering_ambiguous, corporate_action, position_missing) drives the Monarch-style queue with Skip / Not a trade / Save. Save takes setup, planned stop, and thesis, clears `needs_review`, computes `initial_risk`, and audits `trade_reviewed`. Not a trade sets `excluded_from_stats`. The post-mortem quick entry (one line plus followed/improvised) is separate and available on any closed trade.
+
+**Setup stats** (`Journal::RecomputeSetupStatsJob`, after a trade closes, is reviewed, or is excluded): over closed trades with a positive `initial_risk`, not `needs_review`, not `excluded_from_stats`, and not bootstrapped-without-stop-at-entry: win rate (R > 0), average R, expectancy (mean R), sample size. Trailing-20 trend is deferred to the edge-review screen in Phase 2 and the plan says so.
+
+---
+
+## 5. Stops and open risk in Phase 1
+
+No stop is not zero risk. On every complete orders sync, for each position the working stop is chosen from sell stop orders (STOP, STOP_LIMIT, TRAILING_STOP, TRAILING_STOP_LIMIT) on the same account and instrument that are the terminal order of their replacement chain and in a working status, preferring live statuses (WORKING, ACCEPTED, QUEUED, PENDING_ACTIVATION) over AWAITING_* so a new bracket child cannot displace the stop on an existing lot. The newest such order is assigned regardless of whether it carries a readable price; the model decides what that means. A stop missing from the list response is re-fetched by id before it is considered gone.
+
+- Protected: a working stop with a readable price whose remaining quantity covers the position. Distance to stop = (last − stop) / last, signed; open risk = max(quantity × (last − stop), 0).
+- Partially protected: remaining stop quantity below the position quantity. Shown as such, counted as unprotected in the portfolio total.
+- Oversized: remaining stop quantity above the position quantity. Schwab will reject the whole order at activation in a cash account, so this is flagged unprotected with its own reason (PRD §5.4.2 hard-alert case).
+- Trailing stop without a price: unknown risk, labelled "trailing stop, price unknown".
+- No stop, or a stop no longer working: unprotected.
+- Portfolio open risk sums protected positions only, and the dashboard and `get_account_health` state how many positions are excluded and why.
+
+---
+
+## 6. Snapshots (per account, chain-linked; revised after the step 6 counselors review)
+
+For each trading-enabled account and each market day with a Schwab-sourced calendar row:
+- `equity` = the latest balance at or after the regular close on that day, else the day's latest balance, else **no snapshot** (a stale balance is never smeared across days). The first snapshot is the first day with positive equity, with return 0 and index 1.
+- `net_flows` = every deposit and withdrawal with `trade_date` after the prior snapshot's date and up to this one, so a flow that lands on a paused or missing day is still neutralized. Deposits positive, withdrawals negative, classified by type for the directional types (ACH_RECEIPT, WIRE_IN, CASH_RECEIPT in; ACH_DISBURSEMENT, WIRE_OUT, CASH_DISBURSEMENT out) and by sign only for ELECTRONIC_FUND and JOURNAL, with a disagreement quarantined. Share transfers are valued at quantity × that day's position price when known, else the day is flagged.
+- `daily_return` = (equity − net_flows − prior equity) / prior equity; `index_value` = prior index × (1 + daily_return); `high_water_index` = max to date; `drawdown` = 1 − index / high_water_index.
+- `open_risk_amount`, `open_risk_ratio`, `unprotected_count` from §5 at snapshot time.
+- Rebuildable: `Snapshots::RebuildJob(account, from:)` recomputes forward. The activities sync captures `new_record?` before each upsert and enqueues a rebuild from the earliest new or changed cash-affecting activity date; the positions sync enqueues one from any balance row it inserts for a day that already has a snapshot.
+
+Dashboard day change is flow-adjusted (equity − flows − prior snapshot equity) and reads "no prior snapshot" on a gap day. The EOD fills recap reads activities journaled today; the missing-post-mortem list excludes `needs_review` and `excluded_from_stats` trades.
+
+---
+
+## 7. UI (Hotwire, mobile-responsive, no JS routers, no hover-dependent modals)
+
+| Screen | Route | Phase 1 content |
+|---|---|---|
+| Dashboard | `/` | Banner (healthy / expiring / expired / halted), equity + day change, open risk with unprotected count, settled/unsettled cash, positions list with distance-to-stop as the primary number and inline `unprotected` where applicable, "N trades need review" callout, pending proposals count (0), staleness stamps on every number, empty state before first sync |
+| Trade review | `/trades/:id/review` | Setup, planned stop, thesis for `needs_review` trades; "N more to review" progression |
+| Trade detail / post-mortem | `/trades`, `/trades/:id` | List and detail; Flow 4 quick entry (one line + followed/improvised) |
+| System health | `/system` | Token age vs 7d with next Sunday marked, last sync per feed, sync pause reason, job failures (7d), API spend (month, from `agent_runs`), shadow mode indicator, manual halt toggle with reason (audited) |
+| Re-auth | `/schwab/authorize` → Schwab → `/schwab/callback` | Requires login; success page with new expiry and catch-up sync enqueued; failure page with error and retry |
+| Login | `/session/new` → email → `/session/magic/:token` | Passwordless; unknown emails get the same "check your inbox" response |
+
+**App mark:** the Athayde (Ataíde) family arms, azure, four bends argent running top-left to bottom-right, from the Portuguese Ataíde family (https://en.wikipedia.org/wiki/Ata%C3%ADde_family); the crest animal is a lion, reserved for later use. It sits top-left of the shell on every screen and serves as favicon and PWA icon. Vector at `app/assets/images/brand/crest.svg`, drawn from the athayde.com reference PNG kept in `docs/artifacts/brand/`.
+
+Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 comes only from `system_settings.manual_halt`.
+
+---
+
+## 8. Testing
+
+- **RSpec**, in the kickoff's priority order: token lifecycle with `travel_to` (25-minute refresh, 7-day expiry unaffected by refreshes, pause and catch-up, Mon/Tue escalation rule); sync jobs with fixture payloads (positions incl. removal, orders incl. cancel/replace and working stops, transactions incl. cash dividend, split, return of capital, CUSIP succession, fee items); journal linking (scale-in/out, orphan fill, sell-first legacy holding, bootstrap, ticker change on same CUSIP, R math); snapshot math (flows, late-landing deposit rebuild); MCP tool contracts (auth, each tool's schema and output, permission metadata excludes non-scheduled tools); scheduled runtime with a stubbed Messages API (turn cap, degraded mode).
+- **VCR cassettes** in `spec/cassettes`, recorded against Schwab only once the app is Ready For Use, with a scrubber that replaces bearer tokens, refresh tokens, and account hash values before write. Until then, cassettes are hand-built from community-client response shapes and marked `# SCHWAB_SHAPE_UNVERIFIED`.
+- **`Schwab::FakeClient`** implements the same interface as `Schwab::Client`, returns canned payloads, selected by `config.x.schwab.adapter`. Used by dev seeds and Playwright.
+- **Playwright** (`e2e/`, `@playwright/test` via npm, the only Node dependency): dashboard in four banner states via a test-env-only `/playwright/scenarios/:name` reseed route, MCP 401 page, re-auth success and failure (FakeClient scripted), trade review flow.
+- **`bin/ci`**: Rails 8.1 `ActiveSupport::ContinuousIntegration` with steps in `config/ci.rb`, the pattern borrowed from Patchvault. Kickoff order: rubocop → rspec → brakeman (strict, warnings fail) → `bin/importmap audit` → `bundle exec bundle-audit check --update` → Playwright (`bin/playwright`, which boots a test-env server with the FakeClient, runs `npx playwright test`, and tears down). Fails on the first red step.
+
+---
+
+## 9. Deploy
+
+- `Procfile`: `web: bundle exec puma -C config/puma.rb`, `worker: bin/jobs`, `release: bin/rails db:prepare`. One Postgres 17 service and one database: Solid Queue, Solid Cache, and Solid Cable tables live in the primary schema (migration `InstallSolidTables`), so `db:prepare` on `DATABASE_URL` is the whole database setup.
+- `app.json` for the release phase.
+- `bin/dokku-setup`: documents postgres plugin, letsencrypt, config vars (`RAILS_MASTER_KEY`, `SCHWAB_CALLBACK_URL`, `MEMORY_REPO_PATH`), storage mount for the memory repo, `ps:scale worker=1`, and the daily offsite DB dump from PRD §5.9 (postgres plugin backup to object storage on a cron).
+- App time zone `Eastern Time (US & Canada)`; Solid Queue recurring schedules use the same.
+
+---
+
+## 10. Build order (green `bin/ci` at each step)
+
+1. Tooling: RSpec, rubocop config, brakeman, bundler-audit, `bin/ci` (without Playwright), authentication generator adapted to magic link, AR encryption keys, credentials layout, crest in the layout.
+2. Migrations 1–21, models with validations/enums, `AuditEvent` append-only trigger, `SystemSettings` singleton.
+3. Schwab adapter: `Schwab::Client` (OAuth, accounts, positions, orders, transactions, market hours, quotes, price history) with retry/backoff/limiter, `Schwab::FakeClient`, response mappers, `docs/verify-on-approval.md` started from §12.
+4. OAuth controller + token model + refresh job + token health job + re-auth pages + pause/catch-up + audit events.
+5. Sync jobs, market calendar, tick scheduler, `sync_runs`, working-stop detection.
+6. Journal builder (bootstrap, link, review path) + setup stats + snapshots.
+7. Dashboard, system health, trade screens; Playwright added to `bin/ci`.
+8. MCP server + tool registry with permission metadata (after decision 0.8 is verified).
+9. Scheduled runtime + mailers (briefs, nags, failure digest) + memory repo pull.
+10. Seeds for dev via FakeClient; `Procfile`, `app.json`, `bin/dokku-setup`; DHH-skill review pass.
+
+---
+
+## 11. Explicitly not built in Phase 1
+
+Guardrail engine, order proposals (tables only), approval UI, submission, brackets, reconciliation job, allocation module, FMP, earnings/econ calendar, watchlist screen (watchlist.md in the memory repo is read as text), push notifications, iOS shell.
+
+---
+
+## 12. Schwab assumptions to verify on approval
+
+Maintained in `docs/verify-on-approval.md` (30 items as of the step 3 contract review). The original seed list:
+
+From PRD §9: exact `TaxLotMethod` enum values; order-endpoint rate limits. Added by this plan:
+- `/accounts/{hash}?fields=positions` returns balances in the same payload (`currentBalances`, `initialBalances`).
+- Which balance fields map to settled cash vs unsettled cash for a cash account.
+- Orders endpoint supports `fromEnteredTime`/`toEnteredTime` and a `status` filter; maximum lookback window.
+- Transactions endpoint: 60-day start-date limit, `activityId` uniqueness, `orderId` presence on trade activities, transfer-item structure with fee items, CUSIP presence on every instrument (cash equivalents, sweeps, options).
+- Corporate-action activity shapes for splits, mergers, spin-offs, return of capital, and whether old and new CUSIPs arrive in one activity.
+- Market-hours endpoint takes one date per call and returns pre/regular/post session times.
+- Order status enum values for "working" stops; cancel/replace produces a new order id and marks the old one REPLACED.
+- Fractional-share quantities in positions and orders.
+- Refresh token expiry is 7 days from issuance and is not extended by access-token refreshes.
+- Claude app custom connectors: static bearer header availability for this org (decision 0.8).
+
+---
+
+## 13. Working method, per phase and per build step
+
+Each numbered step in §10 that ships a feature runs this loop:
+
+1. **PRD review with counselors** (`counselors run`, agents `codex-5.5-high` and `claude-fable`): the relevant PRD sections plus this plan's section for the step. Findings are folded into the plan before code.
+2. **Build** the feature vertically per §10.
+3. **RSpec green** and reviewed for coverage against the §8 priority list, not just passing.
+4. **DHH skill review pass** (`dhh-code-reviewer` agent) on the step's diff; fix what it flags.
+5. **Counselors review of the build** (same two agents) on the diff; fix or explicitly decline each finding in the commit message.
+6. **`bin/ci` green.** Commit.
+
+Counselors runs are long (10 to 20 minutes) and run in the background while unrelated work continues. Whole-phase gates: the counselors PRD review before step 1 (done, revision 2 of this plan is the result), and a DHH pass plus counselors review over the full Phase 1 diff after step 10.
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+I have the main requirements. The phase plan is longer than the first read returned, so I’m narrowing now to the UI, cadence, journal, stop-risk, and test-route parts where design/model mismatches are most likely.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'rg -n "Flow 1|Flow 4|Flow 8|dashboard|System health|kill|stale|token|halt|review|Skip|Not a trade|distance|unprotected|pending|proposal|Sunday|as of" docs/artifacts/investment-copilot-wireframes.html' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+57:  .timeline li.pending::before{background:#fff; border:1px solid var(--line);}
+133:    <p class="note">Dot plotted outside band. Typed reason gates approval and is stored on the proposal.</p>
+145:      <a class="btn ghost">Edit &amp; resubmit → new proposal</a>
+160:        <li class="pending">Post-mortem pending <span>EOD nag if empty</span></li>
+171:<h2>Flow 1 — Dashboard, banner states</h2>
+187:      <div class="kv" style="margin-top:8px;"><span>Pending proposals</span><b>1 →</b></div>
+203:      <a class="btn disabled">New proposal (halted)</a>
+215:        <div><div class="num">$10,180</div><div class="lbl">Equity · as of Sun 6:12p</div></div>
+217:      <div class="pos"><div class="top"><span>XYZ · 40</span><span>as of Sun 6:12p</span></div><div class="sub"><span>every number carries its age</span><span></span></div></div>
+220:    <p class="note">Single call to action. All data stamped stale. App is read-only for anything needing fresh Schwab data.</p>
+226:<h2>Flows 3 &amp; 4 — Manual proposal · Journal quick entry</h2>
+233:      <div class="hd"><b>New proposal</b><span>you</span></div>
+243:      <a class="btn primary">Create proposal</a>
+245:    <p class="cap">3 · Manual proposal</p>
+282:<h2>Flows 5 &amp; 8 — Edge review (desktop) · System health</h2>
+283:<p class="flowdesc">Edge review is the Sunday screen and can assume desktop width. Health is the ops page with the kill switch.</p>
+289:      <div class="hd"><b>Edge review</b><span>Sun 8/16 · trailing 20 per setup</span></div>
+298:    <p class="cap">5 · Edge review</p>
+304:      <div class="kv"><span>Refresh token age</span><b>4d 02h / 7d</b></div>
+312:    <p class="cap">8 · Health + kill switch</p>
+313:    <p class="note">Pause stops proposal creation and submission. Unpause requires typed confirmation.</p>
+318:<p class="footer-note">Not wireframed yet (lower stakes, design directly): journal browser, watchlist, risk-rule editor with effect preview, re-auth success/failure, pre-first-sync empty states. Open design questions these frames surface: (1) what the deliberate confirm on Approve physically is; (2) whether the collar band is a horizontal track (as here) or plotted on a mini price axis; (3) whether the halted state should mute the whole palette or just banner it.</p>
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '260,620p' docs/phase-1-plan.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+Counselors runs are long (10 to 20 minutes) and run in the background while unrelated work continues. Whole-phase gates: the counselors PRD review before step 1 (done, revision 2 of this plan is the result), and a DHH pass plus counselors review over the full Phase 1 diff after step 10.
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc 'rg -n "cadence|stale|15 min|5 min|hourly|sync_paused|manual_halt|revoked|expired|expiring|token|trading_enabled|account_type|Playwright|scenario|production" docs/phase-1-plan.md docs/artifacts/investment-copilot-prd.md docs/artifacts/investment-copilot-ui-flows.md' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+docs/artifacts/investment-copilot-ui-flows.md:34:- **Token expiring:** refresh token < 24h. Banner links to re-auth flow.
+docs/artifacts/investment-copilot-ui-flows.md:35:- **Token expired:** sync paused. Everything shows "as of [timestamp]" staleness marks. Re-auth is the only call to action.
+docs/artifacts/investment-copilot-ui-flows.md:84:- **Re-auth:** button → Schwab OAuth (their hosted login) → callback → success screen showing new token expiry date. Failure state: retry with the error shown.
+docs/artifacts/investment-copilot-ui-flows.md:99:Token age (days:hours, with the Sunday cadence marked), last successful sync per feed, recent job failures, API spend this month. One control: **Pause system** (kill switch): stops all proposal creation and submission until unpaused. Unpause requires typed confirmation.
+docs/artifacts/investment-copilot-ui-flows.md:104:- **Stale data:** any market number older than its cache window shows a staleness mark with timestamp. Never render a price without its age being discoverable.
+docs/artifacts/investment-copilot-ui-flows.md:105:- **Token expired:** global banner, read-only mode for anything requiring fresh Schwab data.
+docs/artifacts/investment-copilot-ui-flows.md:110:Push (deep-link only, no figures in the payload): new proposal, fill/cancel, halt tripped, unprotected position, token expiring. Email: morning brief, EOD summary, Sunday ritual, job-failure digests. Original list:
+docs/artifacts/investment-copilot-ui-flows.md:116:- Token expiring (T-24h), escalations Mon/Tue if Sunday re-auth missed
+docs/artifacts/investment-copilot-prd.md:26:- Real-time streaming / intraday tick monitoring. Polling cadence is minutes, not milliseconds.
+docs/artifacts/investment-copilot-prd.md:35:└─────────────┘                      │  - OAuth token lifecycle  │
+docs/artifacts/investment-copilot-prd.md:49:**Why Rails and not just an agent:** the agent cannot be trusted with credentials, token refresh timing, idempotent order submission, or rule enforcement. Those are deterministic jobs. The agent is good at synthesis, briefs, screening, and post-mortems. Split accordingly.
+docs/artifacts/investment-copilot-prd.md:58:- **OAuth:** three-legged OAuth 2.0. Access token ~30 min, refresh token hard-expires at 7 days with no programmatic renewal.
+docs/artifacts/investment-copilot-prd.md:59:  - Background job refreshes the access token every ~25 minutes while a valid refresh token exists.
+docs/artifacts/investment-copilot-prd.md:60:  - Re-auth flow: when the refresh token is within 24h of expiry, the app notifies (email/SMS/push) with a one-click link to redo the browser login. Track refresh-token age as a first-class health metric on the dashboard.
+docs/artifacts/investment-copilot-prd.md:61:  - All scheduled work checks token health first and degrades gracefully (queues, does not silently skip).
+docs/artifacts/investment-copilot-prd.md:64:- **Secrets:** app key/secret in Rails credentials; tokens encrypted at rest (Active Record Encryption). Nothing broker-related in the memory files repo.
+docs/artifacts/investment-copilot-prd.md:69:- `accounts` (encrypted hash id, type: ira/taxable, trading_enabled boolean)
+docs/artifacts/investment-copilot-prd.md:83:- Positions + balances: every 15 min during market hours, hourly otherwise.
+docs/artifacts/investment-copilot-prd.md:84:- Orders + transactions: every 5 min during market hours (drives journal auto-population).
+docs/artifacts/investment-copilot-prd.md:86:- Market data (quotes for holdings + watchlist): on demand from agent tools, cached 1-5 min. Schwab Market Data API is primary; FMP optional secondary for fundamentals/screening not covered by Schwab.
+docs/artifacts/investment-copilot-prd.md:119:- Compute all enabled methods; discard any that fail data-quality checks (insufficient history, stale quote).
+docs/artifacts/investment-copilot-prd.md:132:An app-only stop with 5-15 minute polling is not protection. Every approved entry is submitted as a bracket: the entry order with a one-triggers-another child stop order (Schwab order strategies support this; confirm exact strategy type names post-approval). Consequences:
+docs/artifacts/investment-copilot-prd.md:143:- `get_account_health` (equity, settled cash, drawdown, token status)
+docs/artifacts/investment-copilot-prd.md:153:Explicitly absent from MCP: submit_order, cancel_order, edit_risk_rules, token operations. Submission happens only in the Rails approval UI (or a signed confirmation link), by the human.
+docs/artifacts/investment-copilot-prd.md:159:- **Interactive (human present):** the Claude app (desktop/Cowork/web) with the Rails MCP server registered as a remote connector. Rails exposes MCP over HTTPS with bearer-token auth (token in dokku config, rotatable). This is where ad hoc analysis, screening, and order proposals happen, billed through the Claude subscription seat.
+docs/artifacts/investment-copilot-prd.md:160:- **Scheduled (unattended):** Solid Queue jobs on the VPS call the Anthropic Messages API directly with an API key, passing tool definitions that map to the same internal service layer the MCP server uses (in-process, no MCP hop). Output is rendered to email. This covers the 07:00 brief, 16:30 EOD, and Sunday review. **Unattended runs get read-only tools only.** These runs ingest untrusted text (transcripts, news, fetched pages), so `propose_order`, `add_watchlist_item`, and `annotate_trade` are not in their tool set; anything a brief wants to suggest is rendered as text in the email, and the human creates the proposal interactively. Write tools exist only in the interactive runtime. Each scheduled job also has a hard cap on tool turns. Rationale: unattended runs can't depend on a desktop app being open, and keeping the scheduler in Rails means the VPS is the single ops surface (one place for cron, retries, failure alerts, and the token-health gate).
+docs/artifacts/investment-copilot-prd.md:179:- Token-health nag when refresh token < 24h from expiry.
+docs/artifacts/investment-copilot-prd.md:185:- Dashboard (glance, with healthy/expiring/expired/halted banner states)
+docs/artifacts/investment-copilot-prd.md:197:- **Notifications, revised:** time-sensitive alerts move from email to push once the app exists: new proposal, fill/cancel, halt tripped, `unprotected` position, token expiring. Briefs and the Sunday ritual stay email (long-form, read on a desktop anyway). Push payloads carry no financial figures; they deep-link and the app fetches.
+docs/artifacts/investment-copilot-prd.md:198:- **Distribution:** TestFlight internal testing (no beta review for internal testers; builds expire after 90 days, so the CI pipeline produces a fresh build on a cadence) or direct dev-signed install from Xcode. TestFlight is the default; direct install is the fallback if the developer account state makes TestFlight awkward.
+docs/artifacts/investment-copilot-prd.md:199:- **Auth to the Rails app:** the native shell holds a session like the browser does; no separate API auth. The MCP bearer token is never on the phone.
+docs/artifacts/investment-copilot-prd.md:207:- Schwab app key/secret in dokku config vars; tokens encrypted at rest in Postgres.
+docs/artifacts/investment-copilot-prd.md:209:- **Shadow mode (Schwab has no sandbox):** a global flag, on by default in production until deliberately turned off. In shadow mode the entire pipeline runs, including human approval, but the submission step writes a `would_have_submitted` audit event and the order payload instead of calling Schwab. Playwright runs in shadow mode. Phase 2 ships with shadow mode on; it is turned off only after a stated number of shadowed approvals reconcile cleanly against what would have been sent. Toggling it is an audit event.
+docs/artifacts/investment-copilot-prd.md:213:The 7-day refresh token becomes a scheduled habit instead of a surprise:
+docs/artifacts/investment-copilot-prd.md:215:- Sunday evening email bundles: (a) the weekly edge review, (b) a re-auth link to redo the Schwab browser login, (c) system health summary (last sync times, job failures, token age).
+docs/artifacts/investment-copilot-prd.md:224:  4. Schwab client service layer: VCR/WebMock cassettes only. The suite never touches the live API; cassettes get scrubbed of tokens and encrypted account values before commit.
+docs/artifacts/investment-copilot-prd.md:226:- **Playwright** for clickable UI: approval queue flow (approve/reject a proposal, override a stop outside the collar with a logged reason), dashboard renders with seeded data, risk-rule editor. These run against a seeded test DB with a fake Schwab adapter, not cassettes.
+docs/artifacts/investment-copilot-prd.md:227:- **bin/ci** as the single entry point, running in order: rubocop (per DHH skill conventions), rspec, brakeman, `bin/importmap audit`, `bundle exec bundle-audit check --update`, then Playwright. Fails fast; CI green is the merge gate.
+docs/artifacts/investment-copilot-prd.md:251:**Phase 1 (read-only):** Schwab OAuth + token lifecycle, account/position/transaction sync, dashboard, journal auto-population from fills, memory repo, MCP read tools, daily briefs.
+docs/artifacts/investment-copilot-prd.md:266:- Tax lots: order schema includes a per-order TaxLotMethod field (confirmed via community client libraries modeling the production schema); default FIFO, expose method selection on sells in the UI. Confirm exact enum values against official docs post-approval.
+docs/artifacts/investment-copilot-prd.md:296:- **7-day refresh token** is the top operational risk; a missed re-auth silently kills all automation. Mitigated by health checks and nags, but it cannot be engineered away.
+docs/phase-1-plan.md:11:1. **Secrets in Rails credentials**, production-only file (`config/credentials/production.yml.enc`), keys `schwab.app_key`, `schwab.app_secret`, `mcp.bearer_token`, `anthropic.api_key`, `resend.api_key`, plus Active Record Encryption keys. `SCHWAB_CALLBACK_URL` and `MEMORY_REPO_PATH` stay in dokku ENV (not secret). The dokku `SCHWAB_APP_KEY`/`SCHWAB_APP_SECRET` vars get unset once the credentials file is on the server. Rotating the MCP token is an edit to the credentials file plus a deploy.
+docs/phase-1-plan.md:13:3. **Web login is passwordless magic link**, built on the Rails 8 auth generator with `generates_token_for :magic_link` (15 min, single use). Users are seeded, not self-registered: john@athayde.com and whitney@athayde.com only. No gem. Because a second person can log in, `audit_events.user_id` exists from day one so Phase 2 approvals are attributable. Fallback when email is down: `bin/rails login:link[email]` prints a magic link to the console.
+docs/phase-1-plan.md:14:4. **Email via Resend over SMTP**, no gem; API key in credentials. Production login and re-auth depend on it, so Resend DNS is a prerequisite for the first production deploy.
+docs/phase-1-plan.md:17:7. **Off-hours cadence** for orders/transactions sync: hourly.
+docs/phase-1-plan.md:28:| 1 | `users`, `sessions` | Rails 8 auth generator, password column removed; `email_address` unique. Magic-link tokens via `generates_token_for`, no table. | yes (two seeded users) |
+docs/phase-1-plan.md:29:| 2 | `schwab_tokens` | `access_token` (encrypted), `refresh_token` (encrypted), `access_expires_at`, `refresh_expires_at` (= `issued_at` + 168 hours, never moved by access refreshes), `issued_at`, `last_refreshed_at`, `last_refresh_error`, `revoked_at`, `scope` | yes |
+docs/phase-1-plan.md:30:| 3 | `accounts` | `schwab_hash` (Schwab's opaque hashValue, unique), `account_type` enum (taxable/ira, nullable: set by the operator since Schwab only reports CASH or MARGIN), `trading_enabled` bool, `nickname`, `last_synced_at`, `raw` jsonb. A plaintext account number is never a column. | yes |
+docs/phase-1-plan.md:45:| 18 | `sync_runs` | `feed` enum (accounts, positions, orders, activities, market_hours, memory_repo, snapshots; balances ride with positions), `account_id` (nullable; cursors are per account and feed), `status` (running, succeeded, partial, failed, skipped_token), `started_at`, `finished_at`, `error`, `records_touched`, `unmapped_values` jsonb, `window_from`, `window_to` (captured before the request; the next window starts from it), `gap_from` (set when the computed window start is later than the last success: data Schwab can no longer return) | yes |
+docs/phase-1-plan.md:46:| 19 | `agent_runs` | `kind` enum (morning_brief, eod, sunday_review), `status`, `degraded` bool (ran with expired token / stale data), `started_at`, `finished_at`, `tool_turns`, `input_tokens`, `output_tokens`, `estimated_cost`, `output_markdown`, `error`, `model` | yes |
+docs/phase-1-plan.md:48:| 21 | `system_settings` | Singleton row (check constraint `id = 1`): `shadow_mode` bool default true, `manual_halt` bool default false, `manual_halt_reason`, `manual_halt_at`, `sync_paused_reason` (set while token expired) | yes |
+docs/phase-1-plan.md:50:Solid Queue / Cache / Cable schemas already generated. Every datetime column is `timestamptz` (adapter default set in an initializer). Schema format is `structure.sql` for the audit triggers; the dump pins Postgres 17 settings, so dokku runs the postgres:17 image. Active Record Encryption: production keys live in `config/credentials/production.yml.enc`; development and test share `config/credentials.yml.enc` (dev keys) with fixed test keys in `config/environments/test.rb`.
+docs/phase-1-plan.md:58:**Token model (revised after the step 4 counselors review).** Pause state is *derived* from the current token, never written by a failure. `schwab_tokens` gains `revoked_at`; `SchwabToken.current` is the newest by `issued_at, id`; `usable?` = present, not refresh-expired (`issued_at + 168.hours`, elapsed time not calendar days), not revoked. `SchwabToken.issue!(response)` inserts the new row and clears `system_settings.sync_paused_reason` in one transaction, enqueuing `Sync::CatchUpJob` after commit. `SchwabToken#refresh!` takes the row lock, reloads, and returns early if the row is no longer current or was refreshed in the last minute (so two workers cannot double-refresh and a stale row cannot act); it builds the client inside the lock; `access_expires_at` = now + `expires_in` − 60 s; `refresh_token` = response value or the existing one; `refresh_expires_at` is never touched. On `ReauthRequired` it sets `revoked_at` on the current row only, records `last_refresh_error` outside the lock so a rollback cannot lose it, audits `token_refresh_failed`, and sets `sync_paused_reason`. On `ServerError`/`TransportError` it records the error and does nothing else. `ensure_fresh!(margin:)` refreshes proactively when the access token is near expiry, so a 401 is the safety net rather than the norm. `Schwab.client` raises `Schwab::NoUsableToken` rather than letting nil reach a request.
+docs/phase-1-plan.md:60:**Token gating.** Only `Sync::TickJob` and the agent jobs are scheduled; everything else is enqueued by them. When `SchwabToken.current` is not usable, the tick job writes one `sync_runs` `skipped_token` row per hour, audits `sync_paused_token_expired` once per episode, and enqueues nothing. No self-re-enqueue, so the queue cannot grow. The re-auth callback (`issue!`) clears the pause, audits `sync_resumed`, and enqueues `Sync::CatchUpJob`, which runs all feeds with windows widened to cover the gap (capped at the 60-day limit). Agent jobs run degraded rather than wait: `degraded: true`, the prompt states the token is unusable and every number carries its as-of time, the email subject is prefixed, and the token status line sits at the top of every brief so a dead nag path is still visible daily. Snapshots are not written for days without a fresh balance.
+docs/phase-1-plan.md:62:**Re-auth flow.** `SchwabController#authorize` (login required) stores a random `state` with a timestamp in the session and redirects to the authorize URL. `#callback` (login required; an unauthenticated hit is rejected without storing a return-to URL, so the code never lands in the session) reads and deletes the pending state; no pending state renders "nothing pending, start again" with no audit; a mismatch audits `re_auth_failed` as CSRF; `params[:error]` (user cancelled) renders the failure without calling the token endpoint. On success: `exchange_code`, then `/accounts/accountNumbers` must overlap the known `accounts` hashes (first auth accepts anything) or the token is not made current and `re_auth_failed` is audited; then `issue!`, audit `re_auth_succeeded`, and **redirect** to a clean success page so a browser refresh cannot resubmit the single-use code. A failed exchange never writes to `schwab_tokens`. The retry link goes to `authorize`. `code`, `state`, and `session` join `filter_parameters`. The callback URL comes only from `SCHWAB_CALLBACK_URL`, never from the request. `fake_authorize` 404s unless the adapter is fake and the environment is not production, and `?fail=1` redirects with a bad code for Playwright.
+docs/phase-1-plan.md:64:**Health and nags.** `Schwab::TokenHealthJob` runs 08:00 and 20:00 ET. Nag when: no usable token (absent, revoked, or expired), sent at every run; or the 24-hour warning, sent once per token row (deduped on token id in the audit data). Monday/Tuesday escalation fires when `SchwabToken.current.issued_at` is before the most recent Sunday 18:00 ET, which is the PRD's literal "the Sunday re-auth hasn't happened"; no buffer, no comparison against the coming Sunday. Cron strings carry `America/New_York` explicitly. The refresh task gets a higher queue priority than sync.
+docs/phase-1-plan.md:68:| `Schwab::RefreshAccessTokenJob` | every 25 min, high priority | `SchwabToken.current&.refresh!`; no-op when there is no usable token |
+docs/phase-1-plan.md:69:| `Schwab::TokenHealthJob` | daily 08:00 + 20:00 | See "Health and nags" above. Audits `token_nag_sent` with the token id and reason. |
+docs/phase-1-plan.md:70:| `Sync::TickJob` | every 5 min | Sole scheduled sync entry point. Refreshes `market_days` for today (New York) plus 7 days when missing or `source: fallback` (one call per date; a market-hours failure never aborts the tick). Due checks compare against the last *started* run per account and feed with 1-minute slack, and a `running` run is never due; jobs also declare Solid Queue `limits_concurrency` keyed on account and feed so backlog cannot double-enqueue. Cadences apply to trading-enabled accounts: positions (15 min inside the session window pre-market through post-market, 60 min otherwise), orders and activities (5 min inside, 60 outside); read-only accounts sync hourly. `Snapshots::DailyJob` once per market day after `regular_closes_at` + 20 min, only when that day's calendar row came from Schwab. |
+docs/phase-1-plan.md:71:| `Sync::AccountsJob` | daily 06:05, after every re-auth | `/accounts/accountNumbers` only; upsert by `schwab_hash`. New accounts land with `trading_enabled: false` and no `account_type`; the system screen shows accounts needing operator setup |
+docs/phase-1-plan.md:84:| `Agent::SundayReviewJob` | Sunday 18:00 | Phase 1 stub, no API call: re-auth link, token age, sync health, job failures, setup stats table |
+docs/phase-1-plan.md:86:**Sync runs.** `SyncRun.record(feed, account:, window:)` wraps every feed: creates the row, captures `window_to` before the request, rescues `NoUsableToken`, `AuthError`, and `ReauthRequired` into `skipped_token`, rescues other `Schwab::Error` into `failed`, counts quarantined records into `partial` with `unmapped_values` (raw type, description, subAccount, sign, item shape), and stamps `records_touched`. `partial` advances the cursor; `failed` does not. A cash-affecting `other` activity makes the run `partial`, never a quiet success.
+docs/phase-1-plan.md:92:**Market calendar.** `MarketDay.for(date)` reads the row or fetches it (source schwab). When the token is unusable or the call fails it writes a weekday-open 9:30 to 16:00 row with `source: fallback`, which drives cadence only: snapshots and market-day briefs require a Schwab-sourced row, and fallback rows are re-fetched on every tick until they flip. "Today" is computed in America/New_York.
+docs/phase-1-plan.md:105:| `get_account_health` | Equity, settled/unsettled cash, drawdown from HWM (index-based), unprotected count, token status and age, last sync per feed, shadow mode, halt state, sync pause reason |
+docs/phase-1-plan.md:106:| `get_quotes(symbols)` | Schwab `/marketdata/v1/quotes`, cached 2 min in Solid Cache, each quote stamped with fetched_at; when the token is expired returns the cached value with `stale: true` or an explicit unavailable error |
+docs/phase-1-plan.md:107:| `get_price_history(symbol, range)` | Schwab `/marketdata/v1/pricehistory`, cached 5 min |
+docs/phase-1-plan.md:114:**MCP server:** `POST /mcp` (Streamable HTTP, JSON-RPC 2.0). `McpAuth` extracts a bearer from `Authorization` and compares with `ActiveSupport::SecurityUtils.secure_compare`; 401 renders a plain "MCP auth failed" page (Playwright target). See decision 0.8 for the OAuth fallback.
+docs/phase-1-plan.md:116:**Scheduled runtime:** `Agent::Run` wraps one Messages API conversation: system prompt = memory repo markdown files + setup stats + token health + as-of timestamps; tools = scheduled-allowed registry; hard cap `MAX_TOOL_TURNS = 12`; result stored in `agent_runs` and emailed via `BriefMailer`. Prompts live in `app/models/agent/prompts/*.md.erb`. The morning-brief prompt states that earnings and economic-calendar data are unavailable in Phase 1 and must not be inferred. Morning brief and EOD are real; Sunday review stub does not call the API.
+docs/phase-1-plan.md:164:- `equity` = the latest balance at or after the regular close on that day, else the day's latest balance, else **no snapshot** (a stale balance is never smeared across days). The first snapshot is the first day with positive equity, with return 0 and index 1.
+docs/phase-1-plan.md:178:| Dashboard | `/` | Banner (healthy / expiring / expired / halted), equity + day change, open risk with unprotected count, settled/unsettled cash, positions list with distance-to-stop as the primary number and inline `unprotected` where applicable, "N trades need review" callout, pending proposals count (0), staleness stamps on every number, empty state before first sync |
+docs/phase-1-plan.md:183:| Login | `/session/new` → email → `/session/magic/:token` | Passwordless; unknown emails get the same "check your inbox" response |
+docs/phase-1-plan.md:187:Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 comes only from `system_settings.manual_halt`.
+docs/phase-1-plan.md:193:- **RSpec**, in the kickoff's priority order: token lifecycle with `travel_to` (25-minute refresh, 7-day expiry unaffected by refreshes, pause and catch-up, Mon/Tue escalation rule); sync jobs with fixture payloads (positions incl. removal, orders incl. cancel/replace and working stops, transactions incl. cash dividend, split, return of capital, CUSIP succession, fee items); journal linking (scale-in/out, orphan fill, sell-first legacy holding, bootstrap, ticker change on same CUSIP, R math); snapshot math (flows, late-landing deposit rebuild); MCP tool contracts (auth, each tool's schema and output, permission metadata excludes non-scheduled tools); scheduled runtime with a stubbed Messages API (turn cap, degraded mode).
+docs/phase-1-plan.md:194:- **VCR cassettes** in `spec/cassettes`, recorded against Schwab only once the app is Ready For Use, with a scrubber that replaces bearer tokens, refresh tokens, and account hash values before write. Until then, cassettes are hand-built from community-client response shapes and marked `# SCHWAB_SHAPE_UNVERIFIED`.
+docs/phase-1-plan.md:195:- **`Schwab::FakeClient`** implements the same interface as `Schwab::Client`, returns canned payloads, selected by `config.x.schwab.adapter`. Used by dev seeds and Playwright.
+docs/phase-1-plan.md:196:- **Playwright** (`e2e/`, `@playwright/test` via npm, the only Node dependency): dashboard in four banner states via a test-env-only `/playwright/scenarios/:name` reseed route, MCP 401 page, re-auth success and failure (FakeClient scripted), trade review flow.
+docs/phase-1-plan.md:197:- **`bin/ci`**: Rails 8.1 `ActiveSupport::ContinuousIntegration` with steps in `config/ci.rb`, the pattern borrowed from Patchvault. Kickoff order: rubocop → rspec → brakeman (strict, warnings fail) → `bin/importmap audit` → `bundle exec bundle-audit check --update` → Playwright (`bin/playwright`, which boots a test-env server with the FakeClient, runs `npx playwright test`, and tears down). Fails on the first red step.
+docs/phase-1-plan.md:212:1. Tooling: RSpec, rubocop config, brakeman, bundler-audit, `bin/ci` (without Playwright), authentication generator adapted to magic link, AR encryption keys, credentials layout, crest in the layout.
+docs/phase-1-plan.md:215:4. OAuth controller + token model + refresh job + token health job + re-auth pages + pause/catch-up + audit events.
+docs/phase-1-plan.md:218:7. Dashboard, system health, trade screens; Playwright added to `bin/ci`.
+docs/phase-1-plan.md:244:- Refresh token expiry is 7 days from issuance and is not extended by access-token refreshes.
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '160,325p' docs/artifacts/investment-copilot-wireframes.html" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+        <li class="pending">Post-mortem pending <span>EOD nag if empty</span></li>
+      </ul>
+      <a class="btn ghost">View journal row</a>
+    </div>
+    <p class="cap">2e · Post-approval timeline</p>
+    <p class="note">Read-only. Rule version stamped at validation. Fill links forward to the journal.</p>
+  </div>
+
+</div>
+
+<!-- ============ FLOW 1: DASHBOARD ============ -->
+<h2>Flow 1 — Dashboard, banner states</h2>
+<p class="flowdesc">Glance screen. One banner max. Distance-to-stop is the primary per-position number; P&amp;L is secondary.</p>
+
+<div class="row">
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Dashboard</b><span>live · 10:04a</span></div>
+      <div style="display:flex; gap:18px; margin:6px 0 10px;">
+        <div><div class="num">$10,240</div><div class="lbl">Equity · +0.6% today</div></div>
+        <div><div class="num">2.4%</div><div class="lbl">Open risk</div></div>
+      </div>
+      <div class="kv"><span>Settled / unsettled</span><b>$2,110 / $980</b></div>
+      <div class="sec">Positions</div>
+      <div class="pos"><div class="top"><span>XYZ · 40</span><span>4.4% to stop</span></div><div class="sub"><span>in @ 51.18</span><span>+$38</span></div></div>
+      <div class="pos"><div class="top"><span>DEF · 15</span><span>1.1% to stop</span></div><div class="sub"><span>in @ 88.02</span><span>−$21</span></div></div>
+      <div class="kv" style="margin-top:8px;"><span>Pending proposals</span><b>1 →</b></div>
+    </div>
+    <p class="cap">1a · Healthy</p>
+    <p class="note">No banner. DEF's 1.1%-to-stop is the loudest number on screen by design.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Dashboard</b><span>paused</span></div>
+      <div class="banner"><b>Halted:</b> daily loss −2.1% tripped 11:14a. New entries resume tomorrow. Exits remain available.</div>
+      <div style="display:flex; gap:18px; margin:6px 0 10px;">
+        <div><div class="num">$9,905</div><div class="lbl">Equity · −2.1% today</div></div>
+        <div><div class="num">1.0%</div><div class="lbl">Open risk</div></div>
+      </div>
+      <div class="sec">Positions</div>
+      <div class="pos"><div class="top"><span>XYZ · 40</span><span>3.0% to stop</span></div><div class="sub"><span>in @ 51.18</span><span>−$64</span></div></div>
+      <a class="btn disabled">New proposal (halted)</a>
+    </div>
+    <p class="cap">1b · Halted</p>
+    <p class="note">Banner names the rule and the reset time. Entry points disabled, exits untouched. Rule editor also locks.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Dashboard</b><span>read-only</span></div>
+      <div class="banner"><b>Token expired.</b> Sync paused Sun 6:12p. Re-auth to resume.</div>
+      <a class="btn primary">Re-authenticate with Schwab</a>
+      <div style="display:flex; gap:18px; margin:10px 0;">
+        <div><div class="num">$10,180</div><div class="lbl">Equity · as of Sun 6:12p</div></div>
+      </div>
+      <div class="pos"><div class="top"><span>XYZ · 40</span><span>as of Sun 6:12p</span></div><div class="sub"><span>every number carries its age</span><span></span></div></div>
+    </div>
+    <p class="cap">1c · Token expired</p>
+    <p class="note">Single call to action. All data stamped stale. App is read-only for anything needing fresh Schwab data.</p>
+  </div>
+
+</div>
+
+<!-- ============ FLOW 3 + 4 ============ -->
+<h2>Flows 3 &amp; 4 — Manual proposal · Journal quick entry</h2>
+<p class="flowdesc">Left: the form computes collar and size live as the stop is typed. Right: the 30-second phone task.</p>
+
+<div class="row">
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>New proposal</b><span>you</span></div>
+      <div class="field">Symbol — QRS · 18.42 live</div>
+      <div class="field">Entry — 18.45</div>
+      <div class="field">Stop — 17.20 ▍</div>
+      <div class="collar"><div class="track"><div class="band"></div><div class="dot" style="left:52%"></div></div><div class="ends"><span>16.90</span><span>17.80</span></div></div>
+      <div class="kv"><span>Size (from 1% risk rule)</span><b>81 shares</b></div>
+      <div class="kv"><span>Position value</span><b>$1,494</b></div>
+      <div class="kv"><span>Settled cash check</span><b>ok</b></div>
+      <div class="field">Target — optional</div>
+      <div class="field">Setup — pick list</div>
+      <a class="btn primary">Create proposal</a>
+    </div>
+    <p class="cap">3 · Manual proposal</p>
+    <p class="note">Collar band + dot update per keystroke on stop. Size is computed, not typed. Submits into the same Flow-2 pipeline.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Trade #67 · XYZ</b><span>closed +1.8R</span></div>
+      <div class="kv"><span>Setup</span><b>breakout-A</b></div>
+      <div class="kv"><span>Planned / actual stop</span><b>48.90 / 48.90</b></div>
+      <div class="kv"><span>Entry → exit</span><b>51.18 → 55.31</b></div>
+      <div class="sec">Post-mortem (one line)</div>
+      <div class="field">What actually happened…</div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <a class="btn" style="margin:0;">Followed setup</a>
+        <a class="btn" style="margin:0;">Improvised</a>
+      </div>
+      <a class="btn primary">Save</a>
+    </div>
+    <p class="cap">4 · Journal entry</p>
+    <p class="note">Two inputs total. Everything else read-only. +1.8R and −1R get identical visual treatment.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Proposals</b><span>queue</span></div>
+      <div class="empty">Nothing waiting on you.<br>Next scheduled brief: 4:30p.</div>
+      <div class="sec">Recent</div>
+      <div class="kv"><span>#241 XYZ · filled</span><b>10:03a</b></div>
+      <div class="kv"><span>#240 DEF · rejected</span><b>yesterday</b></div>
+    </div>
+    <p class="cap">Queue · empty state</p>
+    <p class="note">Empty is the normal state; it should feel calm, not broken. Recent history keeps the screen useful.</p>
+  </div>
+
+</div>
+
+<!-- ============ FLOW 5 + 8 ============ -->
+<h2>Flows 5 &amp; 8 — Edge review (desktop) · System health</h2>
+<p class="flowdesc">Edge review is the Sunday screen and can assume desktop width. Health is the ops page with the kill switch.</p>
+
+<div class="row">
+
+  <div class="cell wide">
+    <div class="frame">
+      <div class="hd"><b>Edge review</b><span>Sun 8/16 · trailing 20 per setup</span></div>
+      <table class="wt">
+        <tr><th>Setup</th><th>N</th><th>Win%</th><th>Avg R</th><th>Expectancy</th><th></th></tr>
+        <tr><td>breakout-A</td><td>14</td><td>57%</td><td>+0.62</td><td>+0.35R</td><td>active</td></tr>
+        <tr><td>pullback-B</td><td>11</td><td>45%</td><td>+0.20</td><td>+0.09R</td><td>active</td></tr>
+        <tr class="flag"><td>gap-fade-C</td><td>9</td><td>22%</td><td>−0.48</td><td>−0.31R ⚑</td><td><a class="btn ghost" style="display:inline-block; width:auto; padding:2px 8px; margin:0;">Deactivate…</a></td></tr>
+      </table>
+      <p class="note" style="margin-top:8px;">Deactivate confirm states the effect: "Agent stops proposing gap-fade-C." Small N gets an insufficient-sample mark rather than a verdict.</p>
+    </div>
+    <p class="cap">5 · Edge review</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>System</b><span>health</span></div>
+      <div class="kv"><span>Refresh token age</span><b>4d 02h / 7d</b></div>
+      <div class="kv"><span>Next re-auth</span><b>Sun (email)</b></div>
+      <div class="kv"><span>Positions sync</span><b>2m ago</b></div>
+      <div class="kv"><span>Transactions sync</span><b>4m ago</b></div>
+      <div class="kv"><span>Job failures (7d)</span><b>0</b></div>
+      <div class="kv"><span>API spend (Aug)</span><b>$6.40</b></div>
+      <a class="btn">Pause system…</a>
+    </div>
+    <p class="cap">8 · Health + kill switch</p>
+    <p class="note">Pause stops proposal creation and submission. Unpause requires typed confirmation.</p>
+  </div>
+
+</div>
+
+<p class="footer-note">Not wireframed yet (lower stakes, design directly): journal browser, watchlist, risk-rule editor with effect preview, re-auth success/failure, pre-first-sync empty states. Open design questions these frames surface: (1) what the deliberate confirm on Approve physically is; (2) whether the collar band is a horizontal track (as here) or plotted on a mini price axis; (3) whether the halted state should mute the whole palette or just banner it.</p>
+
+</body>
+</html>
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The docs make one pattern clear: the planned screens are trying to show several proposal/guardrail/benchmark concepts before Phase 1 produces them. I’m checking the current app shape now so the findings distinguish “model exists but empty” from “field/query missing.”
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "rg --files app db config spec e2e docs | sed -n '1,240p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+rg: e2e: No such file or directory (os error 2)
+spec/rails_helper.rb
+docs/phase-1-plan.md
+docs/schwab-api-contract.md
+docs/verify-on-approval.md
+db/migrate/20260901220007_create_positions.rb
+db/migrate/20260901220013_create_snapshots.rb
+db/migrate/20260901220004_create_orders.rb
+db/migrate/20260901220014_create_audit_events.rb
+db/migrate/20260901220011_create_trade_legs.rb
+db/migrate/20260901220005_create_order_proposals.rb
+db/migrate/20260901240003_install_solid_tables.rb
+db/migrate/20260901240001_prepare_sync_columns.rb
+db/migrate/20260901220017_create_agent_runs.rb
+db/migrate/20260901220002_create_instruments.rb
+db/migrate/20260901220015_create_market_days.rb
+db/migrate/20260901220012_create_risk_rules.rb
+db/migrate/20260901220003_create_setups.rb
+db/migrate/20260901250001_prepare_journal_columns.rb
+db/migrate/20260901220009_create_activities.rb
+db/migrate/20260901212453_create_users.rb
+db/migrate/20260901212454_create_sessions.rb
+db/migrate/20260901220001_create_accounts.rb
+db/migrate/20260901230001_add_revoked_at_to_schwab_tokens.rb
+db/migrate/20260901220018_create_tool_calls.rb
+db/migrate/20260901220006_create_submission_attempts.rb
+db/migrate/20260901220019_create_system_settings.rb
+db/migrate/20260901220008_create_balances.rb
+db/migrate/20260901220020_create_schwab_tokens.rb
+db/migrate/20260901220010_create_trades.rb
+db/migrate/20260901220016_create_sync_runs.rb
+db/migrate/20260901240002_add_provisional_instrument_index.rb
+db/seeds.rb
+db/structure.sql
+config/credentials/production.yml.enc
+app/channels/application_cable/connection.rb
+docs/artifacts/investment-copilot-wireframes.html
+docs/artifacts/investment-copilot-ui-flows.md
+docs/artifacts/investment-copilot-prd.md
+app/jobs/application_job.rb
+app/helpers/application_helper.rb
+spec/jobs/sync/feeds_spec.rb
+config/initializers/inflections.rb
+config/initializers/active_record.rb
+config/initializers/content_security_policy.rb
+config/initializers/default_url_options.rb
+config/initializers/schwab.rb
+config/initializers/assets.rb
+config/initializers/filter_parameter_logging.rb
+config/importmap.rb
+config/queue.yml
+config/boot.rb
+spec/jobs/sync/tick_job_spec.rb
+config/ci.rb
+config/cache.yml
+config/database.yml
+config/credentials.yml.enc
+config/bundler-audit.yml
+config/puma.rb
+config/application.rb
+config/storage.yml
+config/environment.rb
+config/recurring.yml
+docs/artifacts/brand/athayde-crest-reference.png
+docs/artifacts/claude-code-kickoff.md
+app/jobs/sync/positions_job.rb
+app/jobs/sync/feed_job.rb
+app/jobs/sync/tick_job.rb
+app/jobs/sync/activities_job.rb
+app/jobs/sync/accounts_job.rb
+app/jobs/sync/catch_up_job.rb
+app/jobs/sync/orders_job.rb
+spec/jobs/schwab/refresh_access_token_job_spec.rb
+spec/jobs/schwab/token_health_job_spec.rb
+config/environments/test.rb
+config/environments/development.rb
+config/environments/production.rb
+config/cable.yml
+app/assets/stylesheets/application.css
+app/jobs/schwab/token_health_job.rb
+app/jobs/schwab/refresh_access_token_job.rb
+spec/requests/sessions_spec.rb
+spec/requests/schwab_spec.rb
+spec/requests/dashboard_spec.rb
+spec/requests/magic_links_spec.rb
+config/locales/en.yml
+config/routes.rb
+spec/jobs/journal/hooks_spec.rb
+app/jobs/snapshots/daily_job.rb
+app/jobs/snapshots/rebuild_job.rb
+app/assets/images/brand/crest.svg
+spec/db/seeds_spec.rb
+spec/models/user_spec.rb
+spec/models/instrument_spec.rb
+spec/models/trade_spec.rb
+spec/models/order_spec.rb
+app/jobs/journal/link_fills_job.rb
+app/models/user.rb
+app/jobs/journal/recompute_setup_stats_job.rb
+app/jobs/journal/bootstrap_job.rb
+spec/factories/activities.rb
+app/models/application_record.rb
+spec/factories/users.rb
+spec/factories/accounts.rb
+spec/factories/positions.rb
+spec/factories/orders.rb
+spec/factories/instruments.rb
+spec/factories/trades.rb
+spec/factories/sync_runs.rb
+spec/factories/balances.rb
+spec/factories/schwab_tokens.rb
+spec/factories/setups.rb
+spec/models/schwab/market_data_spec.rb
+spec/models/schwab/fake_client_spec.rb
+spec/models/schwab/order_spec.rb
+spec/models/schwab/activity_spec.rb
+spec/models/schwab/timestamp_spec.rb
+spec/models/schwab/account_summary_spec.rb
+spec/models/schwab/scrub_spec.rb
+spec/models/schwab/rate_budget_spec.rb
+spec/models/schwab/activity_kind_spec.rb
+spec/models/schwab/client_spec.rb
+spec/models/schwab/error_spec.rb
+spec/models/trade_leg_spec.rb
+spec/models/schwab_spec.rb
+spec/models/position_protection_spec.rb
+app/models/sync_run.rb
+spec/models/audit_event_spec.rb
+app/models/agent_run.rb
+spec/models/position_spec.rb
+app/models/trade.rb
+app/models/submission_attempt.rb
+spec/models/snapshot_spec.rb
+app/models/order.rb
+spec/models/setup_stats_spec.rb
+spec/models/instrument_resolve_spec.rb
+spec/models/market_day_spec.rb
+spec/models/system_settings_spec.rb
+spec/models/sync_run_spec.rb
+spec/models/schwab_token_spec.rb
+app/views/token_mailer/nag.text.erb
+app/views/token_mailer/nag.html.erb
+app/javascript/controllers/application.js
+app/javascript/controllers/index.js
+app/javascript/controllers/hello_controller.js
+app/javascript/application.js
+spec/support/journal.rb
+spec/support/sign_in.rb
+spec/support/vcr.rb
+spec/support/schwab.rb
+spec/schwab_isolation_spec.rb
+app/models/position.rb
+app/models/instrument.rb
+app/models/schwab_token.rb
+app/models/system_settings.rb
+app/models/tool_call.rb
+app/models/snapshot.rb
+app/models/account.rb
+app/models/balance.rb
+app/models/audit_event.rb
+spec/models/journal/linker_spec.rb
+app/models/schwab/error.rb
+app/models/schwab/client.rb
+app/models/schwab/order.rb
+app/models/schwab/quote.rb
+app/models/schwab/fake_client.rb
+app/models/schwab/instrument_ref.rb
+app/models/schwab/activity.rb
+app/models/schwab/decimal.rb
+app/models/schwab/rate_budget.rb
+app/models/schwab/position.rb
+app/models/schwab/scrub.rb
+app/models/schwab/price_history.rb
+app/models/schwab/timestamp.rb
+app/models/schwab/market_hours.rb
+app/models/schwab/balances.rb
+app/models/schwab/account_summary.rb
+app/views/magic_links/show.html.erb
+app/models/activity.rb
+app/models/risk_rule.rb
+app/models/session.rb
+app/models/market_day.rb
+app/models/trade_leg.rb
+app/models/order_proposal.rb
+app/models/current.rb
+app/models/setup.rb
+app/views/token_mailer/nag/_missed_sunday.text.erb
+app/views/token_mailer/nag/_missed_sunday.html.erb
+app/views/token_mailer/nag/_revoked.html.erb
+app/views/token_mailer/nag/_expiring.html.erb
+app/views/token_mailer/nag/_missing.text.erb
+app/views/token_mailer/nag/_expired.html.erb
+app/views/token_mailer/nag/_expiring.text.erb
+app/views/token_mailer/nag/_missing.html.erb
+app/views/token_mailer/nag/_expired.text.erb
+app/views/token_mailer/nag/_revoked.text.erb
+app/models/journal/linker.rb
+app/views/dashboard/show.html.erb
+app/models/schwab.rb
+app/models/schwab_token/reauth.rb
+spec/config/recurring_spec.rb
+spec/spec_helper.rb
+app/views/schwab/failed.html.erb
+app/views/schwab/nothing_pending.html.erb
+app/views/schwab/connected.html.erb
+app/mailers/application_mailer.rb
+app/mailers/token_mailer.rb
+app/mailers/magic_link_mailer.rb
+app/views/magic_link_mailer/sign_in.html.erb
+app/views/magic_link_mailer/sign_in.text.erb
+spec/mailers/magic_link_mailer_spec.rb
+app/views/pwa/service-worker.js
+app/views/pwa/manifest.json.erb
+app/views/sessions/new.html.erb
+app/views/layouts/application.html.erb
+app/views/layouts/mailer.html.erb
+app/controllers/schwab_controller.rb
+app/controllers/sessions_controller.rb
+app/views/layouts/mailer.text.erb
+spec/tasks/login_spec.rb
+app/controllers/magic_links_controller.rb
+app/controllers/dashboard_controller.rb
+app/controllers/application_controller.rb
+app/controllers/concerns/authentication.rb
+
+exec
+/bin/zsh -lc "rg -n \"class (Account|Position|Balance|Order|Activity|Trade|Setup|Snapshot|SchwabToken|SystemSettings|SyncRun|AgentRun|MarketDay|AuditEvent)|enum|protection|distance_to_stop|open_risk|needs_review|review_reason|manual_halt|sync_paused|estimated_cost|trading_enabled|account_type\" app db -g '"'!tmp'"'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+db/migrate/20260901220013_create_snapshots.rb:12:      t.decimal :open_risk_amount, precision: 18, scale: 4
+db/migrate/20260901220013_create_snapshots.rb:13:      t.decimal :open_risk_ratio, precision: 10, scale: 6 # fraction of equity
+db/migrate/20260901220001_create_accounts.rb:5:      t.string :account_type # taxable/ira, set by the operator; Schwab only says CASH or MARGIN
+db/migrate/20260901220001_create_accounts.rb:6:      t.boolean :trading_enabled, null: false, default: false
+db/migrate/20260901220017_create_agent_runs.rb:12:      t.decimal :estimated_cost, precision: 18, scale: 4
+app/models/setup.rb:1:class Setup < ApplicationRecord
+db/migrate/20260901220019_create_system_settings.rb:5:      t.boolean :manual_halt, null: false, default: false
+db/migrate/20260901220019_create_system_settings.rb:6:      t.text :manual_halt_reason
+db/migrate/20260901220019_create_system_settings.rb:7:      t.datetime :manual_halt_at
+db/migrate/20260901220019_create_system_settings.rb:8:      t.string :sync_paused_reason
+db/migrate/20260901250001_prepare_journal_columns.rb:3:    add_column :trades, :review_reason, :string
+app/models/schwab_token/reauth.rb:3:class SchwabToken::Reauth
+app/jobs/sync/positions_job.rb:4:  class PositionsJob < FeedJob
+app/jobs/sync/positions_job.rb:35:        if complete && account.trading_enabled?
+app/models/sync_run.rb:3:class SyncRun < ApplicationRecord
+app/models/sync_run.rb:8:  enum :feed, {
+app/models/sync_run.rb:12:  enum :status, { running: "running", succeeded: "succeeded", partial: "partial", failed: "failed", skipped_token: "skipped_token" }
+app/models/agent_run.rb:1:class AgentRun < ApplicationRecord
+app/models/agent_run.rb:4:  enum :kind, { morning_brief: "morning_brief", eod: "eod", sunday_review: "sunday_review" }
+app/models/agent_run.rb:5:  enum :status, { running: "running", succeeded: "succeeded", failed: "failed" }
+db/migrate/20260901220010_create_trades.rb:9:      t.boolean :needs_review, null: false, default: false
+db/migrate/20260901220010_create_trades.rb:30:    add_index :trades, :id, where: "needs_review", name: "index_trades_needing_review"
+app/models/snapshot.rb:2:class Snapshot < ApplicationRecord
+app/models/snapshot.rb:21:    open_risk = protected_positions.sum(&:open_risk)
+app/models/snapshot.rb:25:                     drawdown: 1 - index / high_water, open_risk_amount: open_risk, open_risk_ratio: open_risk / balance.equity,
+app/models/audit_event.rb:3:class AuditEvent < ApplicationRecord
+app/models/audit_event.rb:5:    re_auth_succeeded re_auth_failed token_refresh_failed sync_paused_token_expired sync_resumed
+app/models/audit_event.rb:6:    token_nag_sent shadow_mode_toggled manual_halt_set manual_halt_cleared
+app/models/audit_event.rb:13:  enum :actor, { human: "human", system: "system", agent: "agent" }, prefix: true
+app/jobs/sync/tick_job.rb:15:        intraday = in_session && account.trading_enabled?
+app/jobs/sync/tick_job.rb:29:        return false unless account.trading_enabled? && day&.schwab? && day.trading? && Time.current >= day.regular_closes_at + SNAPSHOT_DELAY
+app/jobs/sync/tick_job.rb:48:          unless settings.sync_paused_reason
+app/jobs/sync/tick_job.rb:49:            settings.update!(sync_paused_reason: "Schwab token unusable; re-authenticate")
+app/jobs/sync/tick_job.rb:50:            AuditEvent.log("sync_paused_token_expired", actor: :system)
+app/jobs/sync/tick_job.rb:52:          settings.sync_paused_reason
+app/models/trade.rb:3:class Trade < ApplicationRecord
+app/models/trade.rb:12:  enum :status, { open: "open", closed: "closed" }
+app/models/trade.rb:13:  enum :review_reason, {
+app/models/trade.rb:20:  scope :needing_review, -> { where(needs_review: true) }
+app/models/trade.rb:21:  scope :missing_post_mortem, -> { closed.where(post_mortem: nil, needs_review: false, excluded_from_stats: false) }
+app/models/trade.rb:22:  scope :eligible_for_stats, -> { closed.where(needs_review: false, excluded_from_stats: false).where("initial_risk > 0") }
+app/models/trade.rb:31:    return if needs_review? && review_reason.present? && REVIEW_PRIORITY.index(review_reason) <= REVIEW_PRIORITY.index(reason)
+app/models/trade.rb:32:    update!(needs_review: true, review_reason: reason)
+app/models/trade.rb:93:    update!(setup: setup, planned_stop: planned_stop, thesis: thesis, needs_review: false, review_reason: nil, journal_completed_at: Time.current)
+app/models/trade.rb:101:    update!(excluded_from_stats: true, needs_review: false, review_reason: nil)
+app/models/tool_call.rb:4:  enum :transport, { mcp: "mcp", scheduled: "scheduled" }
+app/models/position.rb:1:class Position < ApplicationRecord
+app/models/position.rb:23:  def protection
+app/models/position.rb:32:  def protected? = protection == :protected
+app/models/position.rb:36:  def distance_to_stop
+app/models/position.rb:43:  def open_risk
+app/models/position.rb:49:  # new bracket child cannot displace the stop on an existing lot. Assigned regardless of price; #protection decides.
+app/models/schwab_token.rb:3:class SchwabToken < ApplicationRecord
+app/models/schwab_token.rb:22:      AuditEvent.log("sync_resumed", actor: :system, reason: settings.sync_paused_reason) if settings.sync_paused_reason
+app/models/schwab_token.rb:23:      settings.update!(sync_paused_reason: nil)
+app/models/schwab_token.rb:81:        settings.update!(sync_paused_reason: PAUSE_REASON)
+app/models/journal/linker.rb:103:        if (bootstrapped = open_trade_for(new)) && bootstrapped.bootstrapped? && bootstrapped.needs_review?
+app/models/submission_attempt.rb:5:  enum :outcome, { submitted: "submitted", unknown: "unknown", failed: "failed", reconciled: "reconciled", shadowed: "shadowed" }
+db/structure.sql:37:    account_type character varying,
+db/structure.sql:38:    trading_enabled boolean DEFAULT false NOT NULL,
+db/structure.sql:129:    estimated_cost numeric(18,4),
+db/structure.sql:637:    open_risk_amount numeric(18,4),
+db/structure.sql:638:    open_risk_ratio numeric(10,6),
+db/structure.sql:1256:    manual_halt boolean DEFAULT false NOT NULL,
+db/structure.sql:1257:    manual_halt_reason text,
+db/structure.sql:1258:    manual_halt_at timestamp(6) with time zone,
+db/structure.sql:1259:    sync_paused_reason character varying,
+db/structure.sql:1371:    needs_review boolean DEFAULT false NOT NULL,
+db/structure.sql:1389:    review_reason character varying,
+db/structure.sql:2677:CREATE INDEX index_trades_needing_review ON public.trades USING btree (id) WHERE needs_review;
+app/jobs/sync/activities_job.rb:24:        Journal::LinkFillsJob.perform_later(account) if account.trading_enabled?
+app/jobs/sync/activities_job.rb:25:        Snapshots::RebuildJob.perform_later(account, from: @earliest_flow) if @earliest_flow && account.trading_enabled?
+app/models/system_settings.rb:3:class SystemSettings < ApplicationRecord
+app/models/system_settings.rb:6:  def halted? = manual_halt
+app/models/trade_leg.rb:1:class TradeLeg < ApplicationRecord
+app/models/trade_leg.rb:5:  enum :kind, { entry: "entry", exit: "exit", adjustment: "adjustment", income: "income" }, prefix: true
+app/models/balance.rb:1:class Balance < ApplicationRecord
+app/models/account.rb:1:class Account < ApplicationRecord
+app/models/account.rb:11:  enum :account_type, { taxable: "taxable", ira: "ira" }
+app/models/account.rb:15:  scope :trading, -> { where(trading_enabled: true) }
+app/models/market_day.rb:3:class MarketDay < ApplicationRecord
+app/models/market_day.rb:6:  enum :source, { schwab: "schwab", fallback: "fallback" }
+app/models/order_proposal.rb:1:class OrderProposal < ApplicationRecord
+app/models/order_proposal.rb:11:  enum :kind, { entry: "entry", exit: "exit", stop_adjustment: "stop_adjustment" }, prefix: true
+app/models/order_proposal.rb:12:  enum :origin, { agent: "agent", human: "human" }
+app/models/order_proposal.rb:13:  enum :status, {
+app/models/order.rb:1:class Order < ApplicationRecord
+app/models/order.rb:11:  enum :placed_via, { schwab_direct: "schwab_direct", app: "app" }
+app/jobs/sync/accounts_job.rb:3:  class AccountsJob < FeedJob
+app/models/schwab/activity.rb:6:  class Activity < Data.define(:activity_id, :type, :activity_type, :status, :sub_account, :description, :order_id,
+app/models/schwab/order.rb:4:  class Order < Data.define(:order_id, :status, :order_type, :session, :duration, :strategy_type, :instruction, :quantity,
+app/models/activity.rb:2:class Activity < ApplicationRecord
+app/models/activity.rb:8:  enum :kind, {
+app/models/schwab/account_summary.rb:3:  AccountSummary = Data.define(:account_type, :positions, :balances, :raw) do
+app/models/schwab/account_summary.rb:6:      new(account_type: account["type"],
+app/jobs/sync/orders_job.rb:6:  class OrdersJob < FeedJob
+app/jobs/journal/bootstrap_job.rb:8:      return unless account.trading_enabled?
+app/jobs/journal/link_fills_job.rb:6:      return unless account.trading_enabled?
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,260p' db/schema.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ exited 1 in 0ms:
+sed: db/schema.rb: No such file or directory
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The current repo confirms steps 2-6 are partly present, with `structure.sql` rather than `schema.rb`. I’m reading the model methods and the existing dashboard request spec so I can be precise about missing queries versus missing storage.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,160p' app/models/schwab_token.rb" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,180p' app/models/trade.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# One row per authorization-code grant. The newest row is current; older rows are history.
+# Pause state is derived from the current token (usable?), never written by a failure.
+class SchwabToken < ApplicationRecord
+  REFRESH_LIFETIME = 168.hours # elapsed time, not calendar days; never extended by a refresh
+  ACCESS_MARGIN = 60.seconds
+  REFRESH_DEBOUNCE = 1.minute
+  REFRESH_AHEAD = 5.minutes
+  EXPIRING_SOON = 24.hours
+  PAUSE_REASON = "Schwab refresh token rejected; re-authenticate"
+
+  encrypts :access_token, :refresh_token
+
+  def self.current = order(issued_at: :desc, id: :desc).first
+
+  def self.usable? = current&.usable? || false
+
+  # A successful code exchange. The new row and the cleared pause commit together (the settings row lock
+  # serializes this against a stale refresh trying to pause), then sync catches up.
+  def self.issue!(response, now: Time.current)
+    token = transaction do
+      settings = SystemSettings.instance.lock!
+      AuditEvent.log("sync_resumed", actor: :system, reason: settings.sync_paused_reason) if settings.sync_paused_reason
+      settings.update!(sync_paused_reason: nil)
+      create!(access_token: response.fetch("access_token"), refresh_token: response.fetch("refresh_token"),
+              access_expires_at: now + response.fetch("expires_in").to_i.seconds - ACCESS_MARGIN,
+              refresh_expires_at: now + REFRESH_LIFETIME, issued_at: now, scope: response["scope"])
+    end
+    Sync::CatchUpJob.perform_later
+    token
+  end
+
+  def current? = self.class.current&.id == id
+  def revoked? = revoked_at.present?
+  def refresh_expired? = refresh_expires_at <= Time.current
+  def access_expired? = access_expires_at <= Time.current
+  def refresh_expiring_soon? = refresh_expires_at <= EXPIRING_SOON.from_now
+  def usable? = !revoked? && !refresh_expired?
+
+  # Refreshes the access token under the row lock. Reloads first, so a stale row does nothing and two
+  # workers holding the same 401 refresh once. Must run outside any caller transaction: the failure record
+  # below has to survive whatever the caller rolls back.
+  def refresh!(wait: true)
+    raise "SchwabToken#refresh! must not run inside a transaction" if self.class.connection.open_transactions > (Rails.env.test? ? 1 : 0)
+
+    with_lock do
+      next unless current? && usable?
+      next if last_refreshed_at && last_refreshed_at > REFRESH_DEBOUNCE.ago
+      apply_refresh(Schwab.oauth_client(wait: wait).refresh(refresh_token))
+    end
+  rescue Schwab::ReauthRequired => e
+    record_failure(e, revoke: true)
+    raise
+  rescue Schwab::Error => e
+    record_failure(e, revoke: false)
+    raise
+  end
+
+  # Refresh ahead of expiry so a 401 is the safety net, not the routine path.
+  def ensure_fresh!
+    refresh! if access_expires_at <= REFRESH_AHEAD.from_now
+    self
+  end
+
+  private
+    def apply_refresh(response, now: Time.current)
+      update!(access_token: response.fetch("access_token") { raise Schwab::MappingError, "token response without access_token" },
+              refresh_token: response["refresh_token"].presence || refresh_token,
+              access_expires_at: now + response.fetch("expires_in") { raise Schwab::MappingError, "token response without expires_in" }.to_i.seconds - ACCESS_MARGIN,
+              last_refreshed_at: now, last_refresh_error: nil)
+    end
+
+    # The revoke-and-pause write is atomic with the currentness check: it holds the settings row lock,
+    # which issue! also takes, so a token issued during the failed call cannot end up paused.
+    def record_failure(error, revoke:)
+      update_columns(last_refresh_error: error.message.truncate(500), updated_at: Time.current)
+      return unless revoke
+      SystemSettings.transaction do
+        settings = SystemSettings.instance.lock!
+        next unless current?
+        update_columns(revoked_at: Time.current)
+        settings.update!(sync_paused_reason: PAUSE_REASON)
+        AuditEvent.log("token_refresh_failed", actor: :system, subject: self, reason: error.message.truncate(200), data: { status: error.status })
+      end
+    end
+end
+
+ succeeded in 0ms:
+# One instrument's position lifecycle from zero back to zero. Every aggregate here is a pure function of
+# the legs, recomputed after any leg changes; nothing is updated incrementally.
+class Trade < ApplicationRecord
+  DIVIDEND_AFTER_CLOSE_WINDOW = 90.days
+
+  belongs_to :account
+  belongs_to :instrument
+  belongs_to :setup, optional: true
+  belongs_to :order_proposal, optional: true
+  has_many :trade_legs, dependent: :destroy
+
+  enum :status, { open: "open", closed: "closed" }
+  enum :review_reason, {
+    missing_setup: "missing_setup", missing_stop: "missing_stop", bootstrapped: "bootstrapped",
+    ordering_ambiguous: "ordering_ambiguous", corporate_action: "corporate_action", position_missing: "position_missing"
+  }, prefix: :review, validate: { allow_nil: true }
+
+  normalizes :post_mortem, with: ->(text) { text.presence }
+
+  scope :needing_review, -> { where(needs_review: true) }
+  scope :missing_post_mortem, -> { closed.where(post_mortem: nil, needs_review: false, excluded_from_stats: false) }
+  scope :eligible_for_stats, -> { closed.where(needs_review: false, excluded_from_stats: false).where("initial_risk > 0") }
+
+  def realized_r_available? = initial_risk.present? && initial_risk.positive?
+
+  # Reasons in order of seriousness; a more serious reason replaces a lesser one, never the reverse.
+  REVIEW_PRIORITY = %w[ corporate_action ordering_ambiguous position_missing bootstrapped missing_stop missing_setup ].freeze
+
+  def flag!(reason)
+    reason = reason.to_s
+    return if needs_review? && review_reason.present? && REVIEW_PRIORITY.index(review_reason) <= REVIEW_PRIORITY.index(reason)
+    update!(needs_review: true, review_reason: reason)
+  end
+
+  # The synthetic entry leg that reconciles the journal to the broker: quantity = broker quantity minus the net
+  # of the linked fill legs. Recomputed after every bootstrap and link run, deleted when it reaches zero.
+  def reconcile_plug!(broker_quantity, average_price:)
+    linked = trade_legs.where.not(activity_id: nil)
+    net = linked.kind_entry.sum(:quantity) - linked.kind_exit.sum(:quantity)
+    plug_quantity = broker_quantity - net
+    plug = trade_legs.find_by(activity_id: nil, kind: :entry)
+    if plug_quantity.positive?
+      (plug || trade_legs.build(kind: :entry, note: "plug")).update!(quantity: plug_quantity, price: average_price, cash_amount: -(plug_quantity * (average_price || 0)))
+      update!(bootstrapped: true) unless bootstrapped?
+      flag!(:bootstrapped)
+    else
+      plug&.destroy!
+    end
+    recompute!
+  end
+
+  # Legs in execution order; the plug (no time) sorts first.
+  def ordered_legs = trade_legs.order(Arel.sql("executed_at ASC NULLS FIRST"), :id)
+
+  def recompute!
+    running = BigDecimal("0"); peak = BigDecimal("0")
+    entry_qty = BigDecimal("0"); entry_cost = BigDecimal("0"); exit_qty = BigDecimal("0"); exit_proceeds = BigDecimal("0")
+    cash = BigDecimal("0"); closing_leg = nil; first_fill = nil
+    ordered_legs.each do |leg|
+      case leg.kind.to_sym
+      when :entry
+        running += leg.quantity; entry_qty += leg.quantity; entry_cost += leg.quantity * (leg.price || 0)
+        first_fill ||= leg if leg.activity_id
+      when :exit
+        running -= leg.quantity; exit_qty += leg.quantity; exit_proceeds += leg.quantity * (leg.price || 0)
+        closing_leg = leg if running.zero?
+      when :adjustment
+        if leg.ratio.present?
+          running *= leg.ratio; entry_qty *= leg.ratio; exit_qty *= leg.ratio
+        elsif leg.quantity.present?
+          running += leg.quantity
+        end
+      end
+      cash += leg.cash_amount || 0
+      peak = running if running > peak
+    end
+    closed = running.zero? && closing_leg.present?
+    assign_attributes(
+      quantity: running, peak_quantity: peak, status: closed ? :closed : :open, closed_at: closed ? closing_leg.executed_at : nil,
+      avg_entry: entry_qty.positive? ? entry_cost / entry_qty : nil, avg_exit: exit_qty.positive? ? exit_proceeds / exit_qty : nil,
+      opened_at: opened_at || first_fill&.executed_at,
+      initial_quantity: initial_quantity_from(first_fill),
+      realized_pnl: closed ? cash : nil
+    )
+    self.initial_risk = compute_initial_risk
+    self.total_risk = compute_total_risk
+    self.realized_r = closed && realized_r_available? ? realized_pnl / initial_risk : nil
+    save!
+  end
+
+  # Called by the review form: the stop and setup are known now, so risk and R can be computed.
+  def review!(setup:, planned_stop:, thesis:, user:)
+    update!(setup: setup, planned_stop: planned_stop, thesis: thesis, needs_review: false, review_reason: nil, journal_completed_at: Time.current)
+    recompute!
+    AuditEvent.log("trade_reviewed", actor: :human, user: user, subject: self, data: { setup: setup&.name, planned_stop: planned_stop&.to_s })
+    Journal::RecomputeSetupStatsJob.perform_later(setup) if setup
+    self
+  end
+
+  def exclude!(user:)
+    update!(excluded_from_stats: true, needs_review: false, review_reason: nil)
+    AuditEvent.log("trade_reviewed", actor: :human, user: user, subject: self, data: { excluded: true })
+    Journal::RecomputeSetupStatsJob.perform_later(setup) if setup
+  end
+
+  private
+    # Every entry fill from the first fill's order (a partial fill is still one entry); without an order id, the first fill alone.
+    def initial_quantity_from(first_fill)
+      return nil unless first_fill
+      legs = ordered_legs.to_a.select(&:activity_id)
+      same_order = first_fill.activity&.broker_order_id
+      group = same_order ? legs.select { |l| l.kind_entry? && l.activity&.broker_order_id == same_order } : [ first_fill ]
+      group.sum(&:quantity)
+    end
+
+    # Splits after a leg scale its quantity up and its price down; risk in dollars is unchanged.
+    def split_factor_after(leg)
+      ordered_legs.to_a.drop_while { |l| l.id != leg.id }.drop(1).select { |l| l.kind_adjustment? && l.ratio }.reduce(BigDecimal("1")) { |f, l| f * l.ratio }
+    end
+
+    # Fixed to the initial entry. Nil, never a number, when the stop is unknown, above the entry, or the entry is synthetic.
+    def compute_initial_risk
+      return nil if planned_stop.blank? || initial_quantity.blank? || initial_quantity.zero?
+      first = ordered_legs.find { |l| l.kind_entry? && l.activity_id } or return nil
+      factor = split_factor_after(first)
+      risk = initial_quantity * ((first.price || 0) - planned_stop * factor)
+      risk.positive? ? risk : nil
+    end
+
+    def compute_total_risk
+      return nil if planned_stop.blank?
+      ordered_legs.select { |l| l.kind_entry? && l.price }.sum { |l| [ l.quantity * (l.price - planned_stop * split_factor_after(l)), 0 ].max }
+    end
+end
+
+exec
+/bin/zsh -lc "sed -n '1,180p' app/models/position.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+class Position < ApplicationRecord
+  belongs_to :account
+  belongs_to :instrument
+  belongs_to :working_stop_order, class_name: "Order", optional: true
+
+  validates :instrument_id, uniqueness: { scope: :account_id }
+
+  scope :protected_by_stop, -> { where.not(working_stop_order_id: nil) }
+  scope :unprotected, -> { where(working_stop_order_id: nil) }
+
+  def stop_price = working_stop_order&.stop_price
+
+  # Every live terminal sell stop on this instrument, so a scale-in covered by two stops reads as covered.
+  def live_stops = account.orders.where(instrument: instrument).stops.sells.live.terminal
+
+  def covered_quantity
+    return nil unless working_stop_order
+    live_stops.filter_map(&:remaining).sum
+  end
+
+  # Why this position is or is not protected. Only :protected counts; every other state is unknown or
+  # insufficient risk, and the dashboard says which.
+  def protection
+    return :unprotected unless working_stop_order&.working?
+    return :awaiting if !working_stop_order.live?
+    return :trailing_unknown if stop_price.blank?
+    return :oversized if covered_quantity > quantity
+    return :partial if covered_quantity < quantity
+    :protected
+  end
+
+  def protected? = protection == :protected
+  def unprotected? = !protected?
+
+  # Signed fraction of price between here and the stop; negative once price has gapped through it.
+  def distance_to_stop
+    return unless protected? && last_price.present? && last_price.nonzero?
+    (last_price - stop_price) / last_price
+  end
+
+  # Dollars still at risk if the stop fills. Unknown (nil) without a usable stop, never zero for that reason,
+  # and never negative: a position already through its stop has nothing left to protect.
+  def open_risk
+    return unless protected? && last_price.present?
+    [ quantity * (last_price - stop_price), 0 ].max
+  end
+
+  # The newest terminal working sell stop on this instrument, preferring live statuses over AWAITING_* so a
+  # new bracket child cannot displace the stop on an existing lot. Assigned regardless of price; #protection decides.
+  def assign_working_stop!
+    candidates = account.orders.where(instrument: instrument).stops.sells.working.terminal.to_a
+    pick = newest(candidates.select(&:live?)) || newest(candidates)
+    update!(working_stop_order: pick)
+  end
+
+  private
+    def newest(orders) = orders.max_by { |o| o.entered_at || Time.at(0) }
+end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,140p' app/models/system_settings.rb && sed -n '1,140p' app/models/account.rb && sed -n '1,180p' app/controllers/dashboard_controller.rb && sed -n '1,220p' app/views/dashboard/show.html.erb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# One row, enforced by a check constraint on id = 1. Holds the global flags the PRD calls out:
+# shadow mode (on by default), the manual halt, and why sync is paused.
+class SystemSettings < ApplicationRecord
+  def self.instance = find_or_create_by!(id: 1)
+
+  def halted? = manual_halt
+end
+class Account < ApplicationRecord
+  has_many :positions, dependent: :destroy
+  has_many :balances, dependent: :destroy
+  has_one :current_balance, -> { order(as_of: :desc) }, class_name: "Balance"
+  has_many :orders, dependent: :restrict_with_exception
+  has_many :activities, dependent: :restrict_with_exception
+  has_many :trades, dependent: :restrict_with_exception
+  has_many :snapshots, dependent: :restrict_with_exception
+  has_many :order_proposals, dependent: :restrict_with_exception
+
+  enum :account_type, { taxable: "taxable", ira: "ira" }
+
+  validates :schwab_hash, uniqueness: true
+
+  scope :trading, -> { where(trading_enabled: true) }
+end
+class DashboardController < ApplicationController
+  def show
+  end
+end
+<% content_for :title, "Dashboard" %>
+<section class="empty-state">
+  <h1>Nothing synced yet</h1>
+  <p>Connect Schwab to start syncing positions, balances, orders, and transactions.</p>
+</section>
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,240p' spec/requests/dashboard_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe "Dashboard" do
+  it "requires sign-in" do
+    get root_path
+    expect(response).to redirect_to(new_session_path)
+  end
+
+  it "shows the pre-sync empty state" do
+    sign_in create(:user)
+    get root_path
+    expect(response.body).to include("Nothing synced yet")
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+**High Severity**
+
+1. **The halted dashboard banner is over-designed for Phase 1.**  
+   Flow 1’s halted state is a rule-driven halt: rule name, trip time, reset time, exits allowed. Phase 1 only has `SystemSettings.manual_halt`, `manual_halt_reason`, and `manual_halt_at`. It cannot honestly render “daily loss tripped” or “resumes tomorrow.”  
+   Action: Phase 1 banner copy must say “Paused manually” with reason/time. Defer rule-halt copy until a halt model or fields like `halt_source`, `halt_rule`, `halt_resets_at` exist.
+
+2. **Banner precedence is missing operational states.**  
+   `halted > expired > expiring > healthy` is not enough. The screen must distinguish:
+   - no Schwab token yet: connect CTA
+   - expired token: re-auth CTA
+   - revoked token: re-auth CTA, but different cause
+   - sync paused for non-token reason: show pause reason even if token is usable
+   - no trading account configured: operator setup CTA
+   - fallback market calendar: cadence uncertainty warning  
+   Action: make banner/state derivation explicit. Do not collapse all `!SchwabToken.usable?` into “expired.”
+
+3. **System health wants API spend before Phase 1 produces it.**  
+   `AgentRun.estimated_cost` exists, but the plan says scheduled agent runs are populated in step 9. Step 7 cannot show a meaningful “API spend this month.”  
+   Action: render “not yet: scheduled runs ship in step 9,” not `$0.00`, which implies real measurement.
+
+4. **The dashboard day-change number needs a real read model/query.**  
+   “Equity + flow-adjusted day change” is not just latest `Balance` plus prior `Snapshot`. Intraday, it needs net cash flows between the prior snapshot date and the current balance `as_of`.  
+   Action: add a dashboard query object that returns current equity, prior snapshot, net flows since prior snapshot, day change amount, day change percent, and “no prior snapshot” state.
+
+5. **Risk-budget UI from the Monarch note cannot ship in Phase 1.**  
+   Guardrail headroom bars need active `risk_rules`, max risk per trade, daily loss limit, sector exposure, and max positions. Phase 1 explicitly has no guardrail engine and empty `risk_rules`.  
+   Action: omit risk-budget cards in step 7 or label them “not yet.” Do not fake limits.
+
+**Medium Severity**
+
+6. **Position rows mostly have data, but need presentation rules.**  
+   Phase 1 can produce symbol, quantity, cost basis, market value, last price, `protection`, `distance_to_stop`, `open_risk`, and `synced_at`. Missing or unstated:
+   - `unrealized_pnl` helper/query
+   - sort order when `distance_to_stop` is nil
+   - grouped counts by protection state/reason
+   - copy for `partial`, `oversized`, `awaiting`, `trailing_unknown`, `unprotected`  
+   Action: sort protected positions by ascending distance, then unknown/unprotected states by severity.
+
+7. **Open risk must say what it excludes.**  
+   The model intentionally sums protected positions only. That is correct, but the dashboard must not imply unprotected positions are zero risk.  
+   Action: render open risk as “known protected risk” plus “N excluded: partial/oversized/trailing/no stop.”
+
+8. **Staleness rules need exact cadences per value.**  
+   Use these thresholds:
+   - balances/positions for trading accounts: stale after 15 min during session, 60 min off-hours
+   - orders/activities: stale after 5 min during session, 60 min off-hours
+   - read-only accounts: 60 min
+   - quotes: 2 min
+   - price history: 5 min
+   - snapshots: daily close artifact, not intraday freshness  
+   If sync is paused, mark broker-derived values stale regardless of age.  
+   Action: centralize freshness calculation using `MarketDay`, latest successful `SyncRun`, and each row’s `as_of`/`synced_at`.
+
+9. **`sync_paused_reason` needs a timestamp.**  
+   The expired banner and health page want “sync paused Sun 6:12p.” `SystemSettings.sync_paused_reason` stores why, not when. You can infer from audit events or skipped runs, but that is brittle.  
+   Action: add `sync_paused_at`, or define the query as latest `AuditEvent.sync_paused_token_expired` / first `SyncRun.skipped_token`.
+
+10. **Trade review needs durable Skip semantics.**  
+   Current `Trade#review!` and `#exclude!` cover Save and Not a trade. There is no durable Skip.  
+   Action: define Skip as “leave `needs_review = true`, set `review_skipped_at`, and push behind unskipped items.” Add `review_skipped_at` if the UI has a Skip button.
+
+11. **Review queue ordering must be explicit.**  
+   `Trade::REVIEW_PRIORITY` exists, but the UI needs a query: priority order, then oldest actionable trade/fill, then id.  
+   Action: implement `Trade.review_queue` with a SQL `CASE` matching `REVIEW_PRIORITY`.
+
+12. **“Not a trade” should preserve the journal object.**  
+   `exclude!` should keep the trade and legs for reconciliation, set `excluded_from_stats`, clear review, and audit distinctly. It should not delete or unlink the position lifecycle.  
+   Action: use a dedicated audit payload or kind so “reviewed” and “excluded as not a trade” are distinguishable later.
+
+**System Page**
+
+13. Phase 1 can fill token age, next Sunday cadence, last sync per feed, sync pause reason, failed `SyncRun`/`AgentRun`, Solid Queue failures, shadow mode, and manual halt state.
+
+14. Phase 1 cannot honestly fill API spend until step 9 agent runs exist.
+
+15. The halt toggle must require a reason on pause and typed confirmation on unpause. Audit both with user, reason, previous reason, and timestamp.
+
+16. Account setup must be a blocking operator path. New accounts arrive with `account_type = nil` and `trading_enabled = false`; nothing journals until the operator classifies the taxable account and enables it. Add an audit event for this change.
+
+**Playwright**
+
+17. The scenario reseed route must be test-only at both route and controller level. Do not expose destructive scenario seeding in development or production.
+
+18. Four banner scenarios need these seeds:
+   - healthy: usable token, recent syncs, trading account, balance, prior snapshot, positions
+   - expiring: usable token with `refresh_expires_at < 24.hours.from_now`
+   - expired: expired token, paused reason/time, stale balance/positions
+   - halted: healthy token plus `manual_halt`, reason, timestamp
+
+19. Add separate scenarios or request specs for no token, revoked token, no trading account, and fallback calendar. Those are more likely to regress than the happy banner states.
+
+**Hotwire Native Risks**
+
+20. Avoid hover-only slideovers and modal-only flows. Trade review and system halt confirmation must be normal server-rendered routes on mobile.
+
+21. Do not make Stimulus `confirm()` the only safety mechanism for the halt toggle. A typed confirmation form will survive the future native wrapper better.
+
+Bottom line: Step 7 should build the screens, but with honest Phase 1 data boundaries. The biggest correction is to stop rendering future guardrail/proposal/halt concepts as if the data already exists.
+hook: Stop
+hook: Stop Completed
+tokens used
+52,781

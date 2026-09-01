@@ -16,4 +16,29 @@ class Activity < ApplicationRecord
   scope :flows, -> { where(kind: [ :deposit, :withdrawal ]) }
 
   def journaled? = journaled_at.present?
+  def buy? = side == Schwab::Order::BUY
+  def cash_flow? = deposit? || withdrawal? || (transfer? && instrument_id.present?)
+
+  # Deposits positive, withdrawals negative, whatever sign Schwab used.
+  def flow_amount
+    return nil unless deposit? || withdrawal?
+    deposit? ? net_amount.abs : -net_amount.abs
+  end
+
+  # Shares delivered in are positive, delivered out negative, read from the security item itself
+  # because the cash amount on a share delivery is zero.
+  def delivered_quantity
+    return nil unless instrument_id && quantity
+    Schwab::Activity.from(raw).securities.first&.amount&.negative? ? -quantity : quantity
+  end
+
+  # A re-synced activity whose economics changed after journaling drops its leg so the trade is rebuilt.
+  def unjournal!
+    transaction do
+      trade = trade_leg&.trade
+      trade_leg&.destroy!
+      update!(journaled_at: nil)
+      trade&.recompute!
+    end
+  end
 end
