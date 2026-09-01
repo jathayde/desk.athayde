@@ -1,0 +1,35 @@
+[
+  {
+    "activityId": 95012345678, "time": "2026-08-14T14:03:11+0000", "user": { "cdDomainId": "x", "login": "john", "type": "ADVISOR_USER", "userId": 1, "firstName": "John", "lastName": "A" },
+    "description": "TRADE", "accountNumber": "12345678", "type": "TRADE", "status": "VALID", "subAccount": "CASH",
+    "tradeDate": "2026-08-14T00:00:00+0000", "settlementDate": "2026-08-15T00:00:00+0000", "positionId": 5551, "orderId": 1004055538123,
+    "netAmount": -2047.25, "activityType": "EXECUTION",
+    "transferItems": [
+      { "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 }, "amount": 40, "cost": -2047.2, "price": 51.18, "positionEffect": "OPENING" },
+      { "instrument": { "assetType": "CURRENCY", "symbol": "CURRENCY_USD" }, "amount": -0.03, "cost": -0.03, "feeType": "SEC_FEE" },
+      { "instrument": { "assetType": "CURRENCY", "symbol": "CURRENCY_USD" }, "amount": -0.02, "cost": -0.02, "feeType": "TAF_FEE" }
+    ]
+  },
+  {
+    "activityId": 95012345700, "time": "2026-08-21T10:00:00+0000", "description": "QUALIFIED DIVIDEND", "accountNumber": "12345678",
+    "type": "DIVIDEND_OR_INTEREST", "status": "VALID", "subAccount": "CASH", "tradeDate": "2026-08-21T00:00:00+0000",
+    "netAmount": 9.6, "activityType": "TRANSFER",
+    "transferItems": [
+      { "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 }, "amount": 9.6, "cost": 0 }
+    ]
+  },
+  {
+    "activityId": 95012345800, "time": "2026-08-22T12:00:00+0000", "description": "ACH DEPOSIT", "accountNumber": "12345678",
+    "type": "ELECTRONIC_FUND", "status": "VALID", "subAccount": "CASH", "tradeDate": "2026-08-22T00:00:00+0000",
+    "netAmount": 1000.0, "activityType": "TRANSFER",
+    "transferItems": [ { "instrument": { "assetType": "CURRENCY", "symbol": "CURRENCY_USD" }, "amount": 1000.0, "cost": 0 } ]
+  },
+  {
+    "activityId": 95012345900, "description": "MONEY MARKET PURCHASE", "accountNumber": "12345678",
+    "type": "TRADE", "status": "VALID", "subAccount": "CASH", "tradeDate": "2026-08-23T00:00:00+0000",
+    "netAmount": -500.0, "activityType": "EXECUTION",
+    "transferItems": [
+      { "instrument": { "assetType": "CASH_EQUIVALENT", "symbol": "SWVXX", "description": "SCHWAB VALUE ADVANTAGE MONEY" }, "amount": 500, "cost": -500.0, "price": 1.0, "positionEffect": "OPENING" }
+    ]
+  }
+]

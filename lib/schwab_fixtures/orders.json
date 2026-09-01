@@ -1,0 +1,48 @@
+[
+  {
+    "session": "NORMAL", "duration": "GOOD_TILL_CANCEL", "orderType": "LIMIT", "complexOrderStrategyType": "NONE",
+    "quantity": 40, "filledQuantity": 40, "remainingQuantity": 0, "requestedDestination": "AUTO",
+    "destinationLinkName": "AutoRoute", "price": 51.2, "orderLegCollection": [
+      { "orderLegType": "EQUITY", "legId": 1, "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 },
+        "instruction": "BUY", "positionEffect": "OPENING", "quantity": 40 }
+    ],
+    "orderStrategyType": "TRIGGER", "orderId": 1004055538123, "cancelable": false, "editable": false,
+    "status": "FILLED", "enteredTime": "2026-08-14T13:31:02+0000", "closeTime": "2026-08-14T14:03:11+0000",
+    "accountNumber": 12345678, "taxLotMethod": "FIFO",
+    "orderActivityCollection": [
+      { "activityType": "EXECUTION", "executionType": "FILL", "quantity": 40, "orderRemainingQuantity": 0,
+        "executionLegs": [ { "legId": 1, "price": 51.18, "quantity": 40, "mismarkedQuantity": 0, "instrumentId": 1001, "time": "2026-08-14T14:03:11+0000" } ] }
+    ],
+    "childOrderStrategies": [
+      {
+        "session": "NORMAL", "duration": "GOOD_TILL_CANCEL", "orderType": "STOP", "complexOrderStrategyType": "NONE",
+        "quantity": 40, "filledQuantity": 0, "remainingQuantity": 40, "stopPrice": 48.9, "stopType": "STANDARD",
+        "orderLegCollection": [
+          { "orderLegType": "EQUITY", "legId": 1, "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 },
+            "instruction": "SELL", "positionEffect": "CLOSING", "quantity": 40 }
+        ],
+        "orderStrategyType": "SINGLE", "orderId": 1004055538124, "cancelable": true, "editable": true,
+        "status": "WORKING", "enteredTime": "2026-08-14T13:31:02+0000", "accountNumber": 12345678
+      }
+    ]
+  },
+  {
+    "session": "NORMAL", "duration": "GOOD_TILL_CANCEL", "orderType": "STOP", "quantity": 15, "filledQuantity": 0, "remainingQuantity": 15,
+    "stopPrice": 84.0, "orderLegCollection": [
+      { "orderLegType": "EQUITY", "legId": 1, "instrument": { "assetType": "EQUITY", "cusip": "594918104", "symbol": "DEF", "instrumentId": 1002 },
+        "instruction": "SELL", "positionEffect": "CLOSING", "quantity": 15 }
+    ],
+    "orderStrategyType": "SINGLE", "orderId": 1004055538200, "status": "REPLACED", "enteredTime": "2026-08-20T15:00:00+0000",
+    "closeTime": "2026-08-25T15:10:00+0000", "accountNumber": 12345678,
+    "replacingOrderCollection": [
+      {
+        "session": "NORMAL", "duration": "GOOD_TILL_CANCEL", "orderType": "STOP", "quantity": 15, "filledQuantity": 0, "remainingQuantity": 15,
+        "stopPrice": 86.5, "orderLegCollection": [
+          { "orderLegType": "EQUITY", "legId": 1, "instrument": { "assetType": "EQUITY", "cusip": "594918104", "symbol": "DEF", "instrumentId": 1002 },
+            "instruction": "SELL", "positionEffect": "CLOSING", "quantity": 15 }
+        ],
+        "orderStrategyType": "SINGLE", "orderId": 1004055538201, "status": "WORKING", "enteredTime": "2026-08-25T15:10:00+0000", "accountNumber": 12345678
+      }
+    ]
+  }
+]

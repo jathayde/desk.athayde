@@ -1,0 +1,2804 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a05efc-6843-7d80-b78a-20db6289330f
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788299995-review-request-question-review-build-st/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the requested prompt first, then I’ll follow its instructions exactly as far as this read-only workspace allows.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788299995-review-request-question-review-build-st/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Second Opinion Request
+
+## Question
+# Review Request
+
+## Question
+Review build step 3 of Phase 1: the Schwab adapter layer (HTTP client, OAuth calls, error taxonomy, scrubbing, rate budget, typed mappers, fake client, fixtures). Check it against the contract it was built to, and look for bugs that would only show up against the real API or under concurrency.
+
+## Context
+
+### Files to Review
+Uncommitted on top of the step 2 commit; `git status --porcelain` lists them.
+- @app/models/schwab.rb @app/models/schwab/client.rb @app/models/schwab/error.rb @app/models/schwab/timestamp.rb @app/models/schwab/scrub.rb @app/models/schwab/decimal.rb @app/models/schwab/rate_budget.rb
+- Mappers: @app/models/schwab/instrument_ref.rb @app/models/schwab/position.rb @app/models/schwab/balances.rb @app/models/schwab/account_summary.rb @app/models/schwab/order.rb @app/models/schwab/activity.rb @app/models/schwab/market_hours.rb @app/models/schwab/quote.rb @app/models/schwab/price_history.rb
+- @app/models/schwab/fake_client.rb and fixtures under @lib/schwab_fixtures/
+- @config/initializers/schwab.rb
+- Specs: @spec/models/schwab/client_spec.rb @spec/models/schwab/mappers_spec.rb @spec/models/schwab/fake_client_spec.rb @spec/models/schwab/timestamp_spec.rb @spec/models/schwab/scrub_spec.rb @spec/models/schwab/error_spec.rb @spec/models/schwab/rate_budget_spec.rb @spec/schwab_isolation_spec.rb
+
+### The contract it implements
+- @docs/schwab-api-contract.md (compiled from your previous review; the adapter should match it)
+- @docs/verify-on-approval.md
+- @docs/phase-1-plan.md §2 "Schwab client" paragraph
+
+## Instructions
+You are providing an independent review. Be critical and thorough.
+- Check every endpoint method against the contract: path, params, formats, headers, response handling
+- Check the OAuth methods: Basic auth, form encoding, the `@` in the code, `id_token` dropped, 4xx from the token endpoint as ReauthRequired
+- Check the retry loop for correctness: which statuses retry, backoff and jitter, Retry-After cap, no retry on 4xx, transport errors, the idempotent/non-idempotent split, attempt counting, and whether the 401 refresh-and-retry can loop or double-refresh under concurrent jobs
+- Check that the rate budget is actually shared across processes given Rails.cache (Solid Cache in production, memory store in test/dev) and that increment semantics are right
+- Check scrubbing: is any plaintext account number path missed (error bodies, exceptions, log lines, the FakeClient fixtures)
+- Check each mapper against the contract shapes and the failure modes: missing CUSIP, missing time, unknown enums, nested orders lineage, fee summation and side derivation on activities, closed-day market hours, quotes errors key, candle dates
+- Check the FakeClient: interface parity, scenario scripting sufficiency for steps 4 through 7 (re-auth success/failure, expired token, rate limit, server error, timeout, removed position, closed market)
+- Flag missing specs, and anything the isolation spec would not catch
+- Be direct and opinionated; do not hedge; order findings by severity with file paths
+
+## Instructions
+You are providing an independent second opinion. Be critical and thorough.
+- Analyze the question in the context provided
+- Identify risks, tradeoffs, and blind spots
+- Suggest alternatives if you see better approaches
+- Be direct and opinionated — don't hedge
+- Structure your response with clear headings
+- Keep your response focused and actionable
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The prompt asks for an independent code review, so I’m switching into review mode: findings first, severity ordered, grounded in the local files and contract. Next I’m gathering the changed file list and the contract text before comparing implementation details.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' docs/verify-on-approval.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Verify on approval
+
+Everything the app assumes about Schwab that has not been checked against the portal. Each item maps to a `# SCHWAB_SHAPE_UNVERIFIED` marker in the adapter or a note in `docs/schwab-api-contract.md`. Work through this list the day the app is Ready For Use, then record real cassettes.
+
+## From PRD §9
+1. Exact `TaxLotMethod` enum values (community: FIFO, LIFO, HIGH_COST, LOW_COST, AVERAGE_COST, SPECIFIC_LOT, LOSS_HARVESTER).
+2. Order-endpoint rate limits for the app config (community: 120/min and 4000/day for writes; 120/min reads per app).
+
+## OAuth
+3. Whether `state` is echoed on the callback. The app sends it and treats a missing echo as failure.
+4. Which token-endpoint `error` value and HTTP status Schwab sends for a 7-day-expired refresh token.
+5. Whether the refresh grant returns a new `refresh_token` string or the same one.
+6. That refreshing never extends the 7-day refresh-token window.
+7. Whether a `scope` parameter is required on authorize, and accepted values.
+
+## Accounts and balances
+8. Exact wrapper nesting of `/accounts/{hash}` (`securitiesAccount`, `aggregatedBalance`) and that `hashValue` is absent from `/accounts`.
+9. `instrumentId` presence per asset type; which positions arrive without a CUSIP (cash equivalents, options, sweeps).
+10. `settled_cash` derivation: `cashAvailableForTrading - unsettledCash` (A) versus `cashAvailableForWithdrawal` (B), checked against the Schwab website on a day with unsettled proceeds. The app uses `min(A, B)`.
+11. Whether `fields=positions` includes closed-out zero-quantity positions from the current day.
+12. Fractional quantities in positions, orders, and transactions.
+13. Whether `/trader/v1/userPreference` returns a per-account nickname (it also carries plaintext numbers; scrub).
+
+## Orders
+14. Orders lookback: 60 days (schwab-py) or one year (Schwabdev). Probe 61+ days.
+15. Whether `status` accepts a comma list (assumed not).
+16. `orderId` presence and status on an unactivated bracket child (assumed AWAITING_PARENT_ORDER).
+17. Cancel/replace: new `orderId` with the old marked REPLACED, and `replacingOrderCollection` nesting.
+18. Working-status set for stop detection (WORKING, ACCEPTED, QUEUED, PENDING_ACTIVATION, AWAITING_PARENT_ORDER, AWAITING_STOP_CONDITION, AWAITING_CONDITION, NEW, AWAITING_RELEASE_TIME).
+
+## Transactions
+19. Transactions lookback (60 days versus one year and 3000 rows) and whether `startDate` beyond it returns 400.
+20. Whether omitting `types` returns all types, and whether `types` accepts a comma list or must be repeated.
+21. `activityId` uniqueness (assumed global) and `orderId` presence on TRADE executions.
+22. Sign conventions of `amount`, `cost`, and `netAmount` on buys, sells, fees, dividends, deposits, withdrawals.
+23. Shapes for cash dividend, dividend reinvestment, split, reverse split, return of capital, merger, spin-off, and symbol change; whether old and new CUSIPs share one `activityId`.
+24. Timestamp offsets per field: `+0000` versus `Z` versus `-04:00`.
+
+## Market data
+25. Market-hours closed-day shape (`equity.equity`, no `sessionHours`) and behavior for past dates.
+26. Quotes: placement of the `errors`/`invalidSymbols` key, whether a partially invalid batch still returns 200, and the symbol maximum per call (assumed 100).
+27. Price history: response for an unknown symbol (400 or 404), and `datetime` timezone for daily candles (assumed midnight Eastern).
+
+## Platform
+28. Whether `Retry-After` is sent on 429, and the 429 body (community: `errors[].status="429"`, codes 429-001 and 429-005).
+29. Actual per-minute read limit, and whether it is per app, per token, or per account.
+30. Claude app custom connector: static bearer header availability for this org (plan decision 0.8).
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,260p' docs/schwab-api-contract.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Schwab API contract (working reference for `Schwab::Client`)
+
+Compiled 2026-09-01 from schwab-py, Schwabdev, the sudowealth TypeScript schemas, schwab-client-js, the R `charlesschwabapi` package, and QuantConnect, via the counselors review in `agents/counselors/1788298377-*`. The api-evangelist OpenAPI files are skeletal and are not used for shapes. Nothing here has been confirmed against Schwab's portal; `docs/verify-on-approval.md` lists what to check once the app is Ready For Use. Adapter code marks each assumption `# SCHWAB_SHAPE_UNVERIFIED`.
+
+Hosts: `https://api.schwabapi.com/trader/v1` and `https://api.schwabapi.com/marketdata/v1`. Every API call sends `Authorization: Bearer <access_token>` and `Accept: application/json`. Responses are bare arrays or objects, no envelope.
+
+## Rules the client enforces
+
+1. **Plaintext account numbers are scrubbed in the client**, before anything else sees a body: `accountNumber` appears on `/accounts/accountNumbers`, `securitiesAccount.accountNumber`, `order.accountNumber` (integer), and `transaction.accountNumber`. Scrubbing here covers `raw` jsonb, cassettes, and logs in one place.
+2. **Logs carry path templates**, e.g. `/accounts/{hash}/orders`, never the hash. Never bodies, headers, or query values.
+3. **All money and quantities parse through `BigDecimal(value.to_s)`.** `price` may arrive as a number or a string.
+4. **One time helper** handles `+0000`, `Z`, `-04:00`, and epoch milliseconds in, and produces `yyyy-MM-dd'T'HH:mm:ss.SSSZ` (UTC), `YYYY-MM-DD`, and epoch ms out.
+5. **Callers pass `Time` objects.** Formatting is the client's job.
+6. **Rate budget is shared** across Puma and the Solid Queue worker: a Solid Cache counter, 100 requests/minute (limit unverified; 120 is the community figure).
+7. **Retries:** GETs and the refresh grant only, on 429 and 5xx and transport errors; 1, 4, 16 seconds with jitter, `Retry-After` honored but capped at 60 s. Never retry 4xx. One refresh-and-retry on a 401 outside the budget.
+8. **Mappers never crash a sync.** Unknown enum values are stored raw and mapped to `unknown`/`other`; missing optional fields are nil; a record that cannot be identified is quarantined with its raw JSON and counted on the `sync_runs` row, and the run finishes `partial`.
+
+## Error taxonomy
+
+`Schwab::Error` (status, scrubbed body, request id from `errors[].id`, attempts) with subclasses callers rescue separately:
+
+| Class | When |
+|---|---|
+| `Schwab::AuthError` | API 401 after the one refresh-and-retry |
+| `Schwab::ReauthRequired < AuthError` | any token-endpoint 4xx (`invalid_client`, `invalid_grant`, `refresh_token_authentication_error`, `unsupported_token_type`); the pause path |
+| `Schwab::RateLimited` (`retry_after`) | 429 after the retry budget |
+| `Schwab::ServerError` | 5xx after retries |
+| `Schwab::RequestError` | 400, 403, 404; never retried; a 400 on `startDate` is how the lookback cap announces itself |
+| `Schwab::TransportError` | timeout or connection failure on an idempotent call |
+| `Schwab::UnknownOutcome` | the same failures on a non-idempotent call (Phase 2 order POST); chosen by HTTP method so it can never be confused with the line above |
+| `Schwab::MappingError` | a required field is missing; rescued per record by the sync job |
+
+Error bodies: API errors are JSON:API style `{"errors":[{"id","status","title","detail","source"}]}`; the token endpoint uses `{"error","error_description"}`; gateway 401s and 5xxs can be non-JSON. The parser tolerates all three.
+
+## OAuth
+
+| Item | Value |
+|---|---|
+| Authorize | `GET /v1/oauth/authorize?response_type=code&client_id={app_key}&redirect_uri={callback}&state={csrf}` |
+| Callback | `{callback}?code=...&session=...`; `code` ends in `@` after one URL-decode. Rails `params[:code]` is already decoded once; do not decode again |
+| Token endpoint | `POST /v1/oauth/token`, `Authorization: Basic base64("#{app_key}:#{app_secret}")`, `Content-Type: application/x-www-form-urlencoded` |
+| Code grant | `grant_type=authorization_code&code={code}&redirect_uri={callback}` |
+| Refresh grant | `grant_type=refresh_token&refresh_token={token}` |
+| Token response | `{"expires_in":1800,"token_type":"Bearer","scope":"api","refresh_token","access_token","id_token"}`; `id_token` is not persisted |
+| Access token | 30 minutes; expired tokens are rejected outright (API 401) |
+| Refresh token | 7 days from the authorization-code grant. **Refreshing does not extend it.** `refresh_expires_at` is set once at issuance and never moved |
+| Refresh response | includes a `refresh_token`; store whatever comes back, keep `refresh_expires_at` |
+
+The refresh job runs every 25 minutes. A token-endpoint 4xx is `ReauthRequired`: no backoff, no retry, pause sync.
+
+## Trader API
+
+### `GET /accounts/accountNumbers`
+Response `[{"accountNumber":"<plaintext>","hashValue":"<hash>"}]`. The client returns hash values only.
+
+### `GET /accounts/{hash}?fields=positions`
+`/accounts` (no hash) returns an array without `hashValue`, so linking would require plaintext numbers. Call `/accounts/{hash}` once per hash instead. Balances come by default; `fields=positions` adds positions.
+
+```
+{ "securitiesAccount": {
+    "type": "CASH"|"MARGIN", "accountNumber": <scrubbed>, "roundTrips", "isDayTrader", "isClosingOnlyRestricted", "pfcbFlag",
+    "positions": [ { "longQuantity", "shortQuantity", "settledLongQuantity", "settledShortQuantity",
+                     "averagePrice", "averageLongPrice", "taxLotAverageLongPrice", "marketValue",
+                     "currentDayProfitLoss", "currentDayProfitLossPercentage", "currentDayCost", "longOpenProfitLoss",
+                     "instrument": { "assetType", "cusip"?, "symbol", "description"?, "instrumentId"?, "netChange", "type"? } } ],
+    "initialBalances": {...}, "currentBalances": {...}, "projectedBalances": { "cashAvailableForTrading", "cashAvailableForWithdrawal" } },
+  "aggregatedBalance": { "currentLiquidationValue", "liquidationValue" } }
+```
+
+`instrument.assetType`: EQUITY, OPTION, MUTUAL_FUND, CASH_EQUIVALENT, FIXED_INCOME, INDEX, CURRENCY, COLLECTIVE_INVESTMENT, FUTURE, FOREX, PRODUCT. The accounts API says EQUITY for ETFs where the quotes API says ETF; `instruments.asset_type` comes from the Trader API only. `cusip` and `instrumentId` are optional; cash equivalents and options often lack a CUSIP.
+
+Cash-account `currentBalances`: `cashAvailableForTrading`, `cashAvailableForWithdrawal`, `cashCall`, `longNonMarginableMarketValue`, `totalCash`, `cashDebitCallValue`, `unsettledCash`, `accruedInterest`, `cashBalance`, `cashReceipts`, `longOptionMarketValue`, `liquidationValue`, `longMarketValue`, `moneyMarketFund`, `savings`, `shortMarketValue`, `pendingDeposits`, `mutualFundValue`, `bondValue`, `shortOptionMarketValue`.
+
+Balance mapping: `equity` = `liquidationValue`; `cash_available_for_trading`; `unsettled_cash`; `cash_available_for_withdrawal`; `buying_power` nil for CASH. **`settled_cash` is derived, not a Schwab field.** Reading A: `cashAvailableForTrading - unsettledCash`. Reading B: `cashAvailableForWithdrawal`. Conservative: `min(A, B)` when both present. One named method, one spec per reading; Phase 2 guardrail 4 reads it.
+
+### `GET /accounts/{hash}/orders?fromEnteredTime=&toEnteredTime=&maxResults=3000[&status=]`
+`fromEnteredTime` and `toEnteredTime` are required together, `.SSSZ` UTC. Lookback is 60 days (schwab-py) or one year (Schwabdev); use 60 as one constant. `status` takes one enum value. `maxResults` default and max 3000; send it.
+
+**Also `GET /accounts/{hash}/orders/{orderId}`** for one order. Known working stops older than the lookback are re-fetched by id, otherwise positions get falsely flagged unprotected.
+
+```
+{ "orderId": <int64>, "accountNumber": <scrubbed>, "status", "statusDescription",
+  "orderType": MARKET|LIMIT|STOP|STOP_LIMIT|TRAILING_STOP|TRAILING_STOP_LIMIT|MARKET_ON_CLOSE|LIMIT_ON_CLOSE|CABINET|NON_MARKETABLE|EXERCISE|NET_DEBIT|NET_CREDIT|NET_ZERO|UNKNOWN,
+  "session": NORMAL|AM|PM|SEAMLESS, "duration": DAY|GOOD_TILL_CANCEL|FILL_OR_KILL|IMMEDIATE_OR_CANCEL|END_OF_WEEK|END_OF_MONTH|NEXT_END_OF_MONTH|UNKNOWN,
+  "orderStrategyType": SINGLE|OCO|TRIGGER|CANCEL|RECALL|PAIR|FLATTEN|TWO_DAY_SWAP|BLAST_ALL,
+  "quantity", "filledQuantity", "remainingQuantity", "price", "stopPrice", "stopType", "activationPrice",
+  "taxLotMethod": FIFO|LIFO|HIGH_COST|LOW_COST|AVERAGE_COST|SPECIFIC_LOT|LOSS_HARVESTER,
+  "enteredTime": "2026-08-14T13:31:02+0000", "closeTime", "cancelTime", "releaseTime", "cancelable", "editable", "tag",
+  "orderLegCollection": [ { "legId", "orderLegType", "instruction": BUY|SELL|BUY_TO_COVER|SELL_SHORT|BUY_TO_OPEN|BUY_TO_CLOSE|SELL_TO_OPEN|SELL_TO_CLOSE|EXCHANGE|SELL_SHORT_EXEMPT,
+                            "positionEffect": OPENING|CLOSING|AUTOMATIC, "quantity", "quantityType", "instrument": {...} } ],
+  "orderActivityCollection": [ { "activityType": EXECUTION|ORDER_ACTION, "executionType": "FILL", "quantity", "orderRemainingQuantity",
+                                 "executionLegs": [ { "legId", "price", "quantity", "mismarkedQuantity", "instrumentId", "time" } ] } ],
+  "childOrderStrategies": [ <full orders, recursive> ], "replacingOrderCollection": [ <full orders> ] }
+```
+
+Status enum: AWAITING_PARENT_ORDER, AWAITING_CONDITION, AWAITING_STOP_CONDITION, AWAITING_MANUAL_REVIEW, ACCEPTED, AWAITING_UR_OUT, PENDING_ACTIVATION, QUEUED, WORKING, REJECTED, PENDING_CANCEL, CANCELED (one L), PENDING_REPLACE, REPLACED, FILLED, EXPIRED, NEW, AWAITING_RELEASE_TIME, PENDING_ACKNOWLEDGEMENT, PENDING_RECALL, UNKNOWN.
+
+Working set for stop detection: WORKING, ACCEPTED, QUEUED, PENDING_ACTIVATION, AWAITING_PARENT_ORDER, AWAITING_STOP_CONDITION, AWAITING_CONDITION, NEW, AWAITING_RELEASE_TIME. A bracket child sits in AWAITING_PARENT_ORDER until the parent fills.
+
+Bracket children and replacements are **nested**, each a full order with its own `orderId`. The sync flattens recursively, setting `parent_order_id` and `replaces_order_id` as it walks.
+
+### `GET /accounts/{hash}/transactions?startDate=&endDate=[&types=][&symbol=]`
+`startDate`/`endDate` required together, `.SSSZ`, inclusive; a same-day query needs `endDate` at `23:59:59.000Z`. Lookback 60 days (same constant). `types` takes one value: TRADE, RECEIVE_AND_DELIVER, DIVIDEND_OR_INTEREST, ACH_RECEIPT, ACH_DISBURSEMENT, CASH_RECEIPT, CASH_DISBURSEMENT, ELECTRONIC_FUND, WIRE_OUT, WIRE_IN, JOURNAL, MEMORANDUM, MARGIN_CALL, MONEY_MARKET, SMA_ADJUSTMENT. Whether omitting it returns everything is unverified; the client loops the types the sync cares about.
+
+```
+{ "activityId": <int64, upsert key>, "time": "2026-08-14T13:31:02+0000", "user": {...drop...}, "description", "accountNumber": <scrubbed>,
+  "type", "status": VALID|INVALID|PENDING|UNKNOWN, "subAccount": CASH|MARGIN|SHORT|DIV|INCOME|UNKNOWN,
+  "tradeDate": "2026-08-14T00:00:00+0000", "settlementDate", "positionId", "orderId"?, "netAmount": <signed cash impact>,
+  "activityType": EXECUTION|ORDER_ACTION|TRANSFER|ACTIVITY_CORRECTION|UNKNOWN,
+  "transferItems": [ { "instrument": { "assetType":"EQUITY","cusip","symbol","instrumentId" }, "amount": <shares>, "cost", "price", "positionEffect" },
+                     { "instrument": { "assetType":"CURRENCY","symbol":"CURRENCY_USD" }, "amount": <dollars>, "feeType": "SEC_FEE" } ] }
+```
+
+The security item is the one without `feeType` whose instrument is not CURRENCY; its `amount` is share quantity. Fee items carry `feeType` (COMMISSION, SEC_FEE, STR_FEE, R_FEE, CDSC_FEE, OPT_REG_FEE, ADDITIONAL_FEE, MISCELLANEOUS_FEE, FUTURES_EXCHANGE_FEE, LOW_PROCEEDS_COMMISSION, BASE_CHARGE, GENERAL_CHARGE, GST_FEE, TAF_FEE, INDEX_OPTION_FEE, UNKNOWN) and `amount` in dollars. Side is derived from `positionEffect` plus the sign of `netAmount`; fees are the sum of `feeType` items, never from `cost`. `orderId` is present on TRADE executions only. Sign conventions and every corporate-action shape are unverified; RECEIVE_AND_DELIVER is the type for splits and CUSIP successions.
+
+## Market Data API
+
+### `GET /marketdata/v1/markets?markets=equity,option&date=YYYY-MM-DD`
+One date per call, today to one year out. Open day: `{"equity":{"EQ":{"date","marketType","product","isOpen":true,"sessionHours":{"preMarket":[{"start","end"}],"regularMarket":[...],"postMarket":[...]}}}}` with `-04:00` offsets. Closed day (TD-era behavior, unverified): key changes from `EQ` to `equity`, `sessionHours` absent, `isOpen` false. The mapper takes the first value under `equity` regardless of key, treats missing `sessionHours` as closed, and uses min start and max end per session. Early closes show as a shorter `regularMarket` interval.
+
+### `GET /marketdata/v1/quotes?symbols=A,B&fields=quote,reference&indicative=false`
+Symbols comma-joined and URL-encoded; chunk at 100. Response keyed by symbol: `assetMainType` (EQUITY|ETF|...), `assetSubType`, `quoteType`, `realtime`, `ssid`, `symbol`, `reference` {cusip, description, exchange, exchangeName}, `quote` {askPrice, bidPrice, lastPrice, mark, netChange, netPercentChange, openPrice, highPrice, lowPrice, closePrice, totalVolume, quoteTime, tradeTime, securityStatus, 52WeekHigh, 52WeekLow}, `regular` {regularMarketLastPrice, ...}. `quoteTime`/`tradeTime` are epoch ms. Unknown symbols return in the same 200 under a top-level `errors` key (`{"errors":{"invalidSymbols":[...]}}`); the mapper skips it and reports the list.
+
+### `GET /marketdata/v1/pricehistory?symbol=&periodType=&period=&frequencyType=&frequency=[&startDate=&endDate=]&needExtendedHoursData=false&needPreviousClose=true`
+`startDate`/`endDate` are epoch ms and override `period`. Valid combinations: day (1,2,3,4,5,10) with minute (1,5,10,15,30); month (1,2,3,6) with daily or weekly; year (1,2,3,5,10,15,20) with daily, weekly, monthly; ytd (1) with daily or weekly. Response `{"candles":[{"open","high","low","close","volume","datetime":<epoch ms>}],"symbol","empty","previousClose","previousCloseDate"}`. Daily `datetime` is midnight Eastern in UTC ms: convert in America/New_York. For the collar engine: `periodType=month&period=3&frequencyType=daily`.
+
+### `GET /marketdata/v1/instruments?symbol=&projection=symbol-search` and `GET /marketdata/v1/instruments/{cusip}`
+`{"instruments":[{"cusip","symbol","description","exchange","assetType"}]}`. The fallback for a position or transaction that arrives without a CUSIP. Preserve leading zeros.
+
+## Limits
+
+| Limit | Value used | Notes |
+|---|---|---|
+| Orders and transactions lookback | 60 days, one constant | Schwabdev says one year; probe 61+ days on approval |
+| Read rate limit | 100/min shared budget | community says 120/min per app, all APIs; unverified |
+| 429 handling | back off 1, 4, 16 s with jitter; `Retry-After` capped at 60 s | `Retry-After` presence unverified |
+| Quotes per call | 100 symbols | undocumented |
+| `maxResults` | 3000, sent explicitly | |
+| Market hours | one date per call, today to +1 year | |
+| Order write limit (Phase 2) | 120/min, 4000/day | QuantConnect figure |
+
+## FakeClient
+
+`Schwab::FakeClient` sits **below the mappers**: it returns scrubbed raw hashes in the same shape as the HTTP client, so seeds and Playwright exercise the mapping code where every shape assumption lives, and its fixtures double as the cassette-shaped fixtures for specs. It scripts auth too (`authorize_url`, `exchange_code`, `refresh`) and supports a per-call response queue so a test can say "first `orders` call raises RateLimited, second succeeds". Scenarios: re-auth success and failure, refresh expired, rate limited then success, server error then success, transport timeout, empty account, position removed between syncs, nested bracket child, transaction with missing CUSIP, unknown enum value, closed market day, quotes batch with one invalid symbol, and the four dashboard banner states.
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'rg -n "Schwab client|Schwab" docs/phase-1-plan.md' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+5:Sections: decisions, migrations, jobs, tool surface, journal builder, stops and open risk, snapshots, UI, testing, deploy, build order, deferred items, Schwab assumptions, working method.
+30:| 3 | `accounts` | `schwab_hash` (Schwab's opaque hashValue, unique), `account_type` enum (taxable/ira, nullable: set by the operator since Schwab only reports CASH or MARGIN), `trading_enabled` bool, `nickname`, `last_synced_at`, `raw` jsonb. A plaintext account number is never a column. | yes |
+31:| 4 | `instruments` | `cusip` (nullable, unique where present), `schwab_instrument_id` (nullable, unique where present), `symbol`, `symbol_history` jsonb `[{symbol, until}]` (UTC), `asset_type`, `leveraged` bool default false, `description`, `predecessor_instrument_id` (self FK, set on CUSIP succession: reverse split, merger, spin-off). Identity resolution order: CUSIP, then Schwab instrument id, then symbol+asset_type as last resort with a `needs_review` audit. | yes |
+37:| 10 | `activities` (the PRD's `transactions`; renamed because `transaction` is reserved by Active Record) | One row per Schwab activity. `account_id`, `instrument_id` (nullable for cash-only), `order_id` (FK, nullable), `broker_order_id` (nullable), `broker_activity_id` (unique per account), `kind` enum (fill, dividend, interest, fee, deposit, withdrawal, corporate_action, other), `sub_type` string (raw Schwab type), `side`, `quantity`, `price`, `commission`, `fees` (summed from the activity's fee transfer items), `net_amount`, `trade_date`, `settlement_date`, `executed_at`, `raw` jsonb, `journaled_at` | yes |
+62:| `Schwab::RefreshAccessTokenJob` | every 25 min | POST refresh grant; update `schwab_tokens` (`refresh_expires_at` untouched); on failure audit `token_refresh_failed`; no-op when refresh token expired |
+63:| `Schwab::TokenHealthJob` | daily 08:00 + 20:00 | Nag when `refresh_expires_at` < now + 24h. Escalation rule: on Monday and Tuesday, email if `refresh_expires_at` is before the coming Sunday 18:00 email plus 12h buffer (Sunday re-auth was missed). Audit each nag. |
+80:**Schwab client:** built to `docs/schwab-api-contract.md`. Net::HTTP; plaintext account numbers scrubbed inside the client before any body is returned; logs carry path templates (`/accounts/{hash}/orders`), never hashes, bodies, or headers; one time helper for the three input and three output formats; `BigDecimal` for every money and quantity value; a shared Solid Cache rate budget of 100 requests/minute across Puma and the worker; retries on 429, 5xx, and transport errors for GETs and the refresh grant only (1, 4, 16 s with jitter, `Retry-After` capped at 60 s), never on 4xx; one refresh-and-retry on a 401. Error classes: `AuthError`, `ReauthRequired`, `RateLimited`, `ServerError`, `RequestError`, `TransportError`, `UnknownOutcome` (non-idempotent calls only, chosen by HTTP method), `MappingError`. Interface adds `order(hash, order_id)` so working stops older than the lookback are re-fetched by id, and `instrument(symbol_or_cusip)` for identity fallback. Mappers return `Data` structs with a scrubbed `raw` member; jobs never see a Schwab field name. `Schwab::FakeClient` sits below the mappers and returns raw-shaped hashes with a scriptable per-call queue. Sync runs can finish `partial` with an `unmapped_values` count when individual records are quarantined.
+92:| `get_quotes(symbols)` | Schwab `/marketdata/v1/quotes`, cached 2 min in Solid Cache, each quote stamped with fetched_at; when the token is expired returns the cached value with `stale: true` or an explicit unavailable error |
+93:| `get_price_history(symbol, range)` | Schwab `/marketdata/v1/pricehistory`, cached 5 min |
+159:| Re-auth | `/schwab/authorize` → Schwab → `/schwab/callback` | Requires login; success page with new expiry and catch-up sync enqueued; failure page with error and retry |
+171:- **VCR cassettes** in `spec/cassettes`, recorded against Schwab only once the app is Ready For Use, with a scrubber that replaces bearer tokens, refresh tokens, and account hash values before write. Until then, cassettes are hand-built from community-client response shapes and marked `# SCHWAB_SHAPE_UNVERIFIED`.
+172:- **`Schwab::FakeClient`** implements the same interface as `Schwab::Client`, returns canned payloads, selected by `config.x.schwab.adapter`. Used by dev seeds and Playwright.
+191:3. Schwab adapter: `Schwab::Client` (OAuth, accounts, positions, orders, transactions, market hours, quotes, price history) with retry/backoff/limiter, `Schwab::FakeClient`, response mappers, `docs/verify-on-approval.md` started from §12.
+208:## 12. Schwab assumptions to verify on approval
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc 'git status --porcelain' in /Users/jathayde/Development/Personal/desk.athayde
+hook: PostToolUse Completed
+ succeeded in 94ms:
+git: error: couldn't create cache file '/tmp/xcrun_db-nXewQ9pF' (errno=Operation not permitted)
+?? agents/counselors/1788298377-review-request-question-before-build-st/
+?? agents/counselors/1788299995-review-request-question-review-build-st/
+?? app/models/schwab.rb
+?? app/models/schwab/
+?? bin/rspec
+?? config/initializers/schwab.rb
+?? docs/.keep
+?? docs/schwab-api-contract.md
+?? docs/verify-on-approval.md
+?? lib/schwab_fixtures/
+?? spec/models/schwab/
+?? spec/schwab_isolation_spec.rb
+?? spec/support/schwab_fixtures.rb
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+I have the contract. The changed tree is all new files, so I’m reviewing the implementation directly against the contract rather than relying on a diff against prior code.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' app/models/schwab/client.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "net/http"
+
+module Schwab
+  # The only code that speaks HTTP to Schwab. Returns scrubbed raw hashes; the structs in this
+  # namespace turn them into typed values. Every field name here is SCHWAB_SHAPE_UNVERIFIED
+  # until docs/verify-on-approval.md is worked through.
+  class Client
+    TRADER = "https://api.schwabapi.com/trader/v1"
+    MARKET = "https://api.schwabapi.com/marketdata/v1"
+    OAUTH = "https://api.schwabapi.com/v1/oauth"
+    OPEN_TIMEOUT = 5
+    READ_TIMEOUT = 20
+    BACKOFF = [ 1, 4, 16 ].freeze
+    RETRY_AFTER_CAP = 60
+    TRANSACTION_TYPES = %w[ TRADE RECEIVE_AND_DELIVER DIVIDEND_OR_INTEREST ELECTRONIC_FUND ACH_RECEIPT ACH_DISBURSEMENT
+                            WIRE_IN WIRE_OUT JOURNAL CASH_RECEIPT CASH_DISBURSEMENT ].freeze
+
+    # token responds to #access_token and, if it can renew itself, #refresh!
+    def initialize(token: nil, app_key: Schwab.app_key, app_secret: Schwab.app_secret, callback_url: Schwab.callback_url, sleeper: method(:sleep))
+      @token, @app_key, @app_secret, @callback_url, @sleeper = token, app_key, app_secret, callback_url, sleeper
+    end
+
+    # ---- OAuth -----------------------------------------------------------------------------
+
+    def authorize_url(state:)
+      "#{OAUTH}/authorize?" + URI.encode_www_form(response_type: "code", client_id: @app_key, redirect_uri: @callback_url, state: state)
+    end
+
+    # params[:code] is already URL-decoded once by Rails; it ends in "@". Do not decode again.
+    def exchange_code(code)
+      token_request(grant_type: "authorization_code", code: code, redirect_uri: @callback_url)
+    end
+
+    def refresh(refresh_token)
+      token_request(grant_type: "refresh_token", refresh_token: refresh_token)
+    end
+
+    # ---- Trader API ------------------------------------------------------------------------
+
+    # Hash values only; the plaintext numbers never leave this method.
+    def account_numbers
+      get(TRADER, "/accounts/accountNumbers").map { |row| row["hashValue"] }
+    end
+
+    def account(hash, fields: [ :positions ])
+      get(TRADER, "/accounts/#{hash}", fields: Array(fields).join(","))
+    end
+
+    def orders(hash, from:, to: ::Time.current, status: nil)
+      params = { fromEnteredTime: Timestamp.iso_ms(from), toEnteredTime: Timestamp.iso_ms(to), maxResults: 3000 }
+      params[:status] = status if status
+      get(TRADER, "/accounts/#{hash}/orders", **params)
+    end
+
+    def order(hash, order_id)
+      get(TRADER, "/accounts/#{hash}/orders/#{order_id}")
+    end
+
+    # One request per type the sync cares about; whether omitting `types` returns everything is unverified.
+    def transactions(hash, from:, to: ::Time.current, types: TRANSACTION_TYPES)
+      Array(types).flat_map do |type|
+        get(TRADER, "/accounts/#{hash}/transactions", startDate: Timestamp.iso_ms(from), endDate: Timestamp.iso_ms(to), types: type)
+      end
+    end
+
+    # ---- Market Data API -------------------------------------------------------------------
+
+    def market_hours(date, markets: [ :equity ])
+      get(MARKET, "/markets", markets: Array(markets).join(","), date: Timestamp.date(date))
+    end
+
+    def quotes(symbols, fields: %w[ quote reference ])
+      Array(symbols).each_slice(Schwab::QUOTE_BATCH).reduce({}) do |acc, batch|
+        acc.merge(get(MARKET, "/quotes", symbols: batch.join(","), fields: fields.join(","), indicative: false))
+      end
+    end
+
+    def price_history(symbol, period_type: :month, period: 3, frequency_type: :daily, frequency: 1, from: nil, to: nil)
+      params = { symbol: symbol, periodType: period_type, period: period, frequencyType: frequency_type, frequency: frequency,
+                 needExtendedHoursData: false, needPreviousClose: true }
+      params[:startDate] = Timestamp.epoch_ms(from) if from
+      params[:endDate] = Timestamp.epoch_ms(to) if to
+      get(MARKET, "/pricehistory", **params)
+    end
+
+    def instrument(symbol_or_cusip)
+      get(MARKET, "/instruments", symbol: symbol_or_cusip, projection: "symbol-search").fetch("instruments", [])
+    end
+
+    private
+      def token_request(**form)
+        request = Net::HTTP::Post.new(URI("#{OAUTH}/token"))
+        request.basic_auth(@app_key, @app_secret)
+        request["Accept"] = "application/json"
+        request.set_form_data(form)
+        response, attempts = perform(request, template: "/v1/oauth/token", idempotent: form[:grant_type] == "refresh_token")
+        raise ReauthRequired.new("Schwab token endpoint responded #{response.code}: #{Error.summarize(response.body)}", status: response.code.to_i, body: Scrub.body(response.body)) if response.code.to_i.between?(400, 499)
+        raise Error.for_response(response, attempts: attempts, idempotent: true) unless response.is_a?(Net::HTTPSuccess)
+        JSON.parse(response.body).except("id_token")
+      end
+
+      def get(base, path, **params)
+        uri = URI("#{base}#{path}")
+        uri.query = URI.encode_www_form(params) if params.any?
+        response, attempts = authorized(uri)
+        raise Error.for_response(response, attempts: attempts, idempotent: true) unless response.is_a?(Net::HTTPSuccess)
+        Scrub.json(JSON.parse(response.body))
+      end
+
+      # One refresh-and-retry on 401, outside the backoff budget.
+      def authorized(uri, refreshed: false)
+        request = Net::HTTP::Get.new(uri)
+        request["Authorization"] = "Bearer #{@token.access_token}"
+        request["Accept"] = "application/json"
+        response, attempts = perform(request, template: Scrub.path(uri.path), idempotent: true)
+        if response.code.to_i == 401 && !refreshed && @token.respond_to?(:refresh!)
+          @token.refresh!
+          return authorized(uri, refreshed: true)
+        end
+        [ response, attempts ]
+      end
+
+      # Returns [response, attempts]. Retries live here and nowhere else.
+      def perform(request, template:, idempotent:)
+        attempts = 0
+        begin
+          attempts += 1
+          RateBudget.take!
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          response = http(request.uri).request(request)
+          log(request, template, response.code, started)
+          return [ response, attempts ] unless retriable?(response) && idempotent && attempts <= BACKOFF.size
+          @sleeper.call(delay_for(response, attempts))
+          raise Retry
+        rescue Retry
+          retry
+        rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET, Errno::ECONNREFUSED, SocketError, OpenSSL::SSL::SSLError => e
+          log(request, template, "transport", started)
+          if idempotent && attempts <= BACKOFF.size
+            @sleeper.call(BACKOFF[attempts - 1])
+            retry
+          end
+          klass = idempotent ? TransportError : UnknownOutcome
+          raise klass.new("#{e.class}: #{e.message}", attempts: attempts)
+        end
+      end
+
+      Retry = Class.new(StandardError)
+
+      def retriable?(response) = response.code.to_i == 429 || response.code.to_i >= 500
+
+      def delay_for(response, attempt)
+        base = BACKOFF[attempt - 1]
+        retry_after = response["Retry-After"].to_i
+        retry_after.positive? ? [ retry_after, RETRY_AFTER_CAP ].min : base + rand * base * 0.25
+      end
+
+      def http(uri)
+        Net::HTTP.new(uri.host, uri.port).tap do |h|
+          h.use_ssl = true
+          h.open_timeout = OPEN_TIMEOUT
+          h.read_timeout = READ_TIMEOUT
+        end
+      end
+
+      def log(request, template, status, started)
+        ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+        Rails.logger.info("schwab #{request.method} #{template} #{status} #{ms}ms")
+      end
+  end
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,240p' app/models/schwab/error.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  class Error < StandardError
+    attr_reader :status, :body, :request_id, :attempts
+
+    def initialize(message = nil, status: nil, body: nil, request_id: nil, attempts: 1)
+      super(message || self.class.name.demodulize.titleize)
+      @status, @body, @request_id, @attempts = status, body, request_id, attempts
+    end
+
+    # Builds the right subclass for an HTTP response. Bodies are already scrubbed.
+    def self.for_response(response, attempts:, idempotent:)
+      status = response.code.to_i
+      body = Scrub.body(response.body)
+      klass =
+        case status
+        when 401 then AuthError
+        when 429 then RateLimited
+        when 400, 403, 404 then RequestError
+        when 500.. then idempotent ? ServerError : UnknownOutcome
+        else Error
+        end
+      klass.new("Schwab responded #{status}: #{summarize(body)}", status: status, body: body, request_id: request_id_in(body), attempts: attempts)
+    end
+
+    def self.summarize(body)
+      json = JSON.parse(body) rescue nil
+      return body.to_s.truncate(200) unless json.is_a?(Hash)
+      Array(json["errors"]).map { |e| e["detail"] || e["title"] }.compact.join("; ").presence ||
+        json["error_description"] || json["error"] || body.to_s.truncate(200)
+    end
+
+    def self.request_id_in(body)
+      json = JSON.parse(body) rescue nil
+      json.is_a?(Hash) ? Array(json["errors"]).first&.dig("id") : nil
+    end
+  end
+
+  class AuthError < Error; end
+  class ReauthRequired < AuthError; end   # any token-endpoint 4xx: the pause path
+  class RateLimited < Error
+    def retry_after = @retry_after
+    def initialize(message = nil, retry_after: nil, **opts)
+      super(message, **opts)
+      @retry_after = retry_after
+    end
+  end
+  class ServerError < Error; end
+  class RequestError < Error; end          # 400/403/404: our parameters are wrong; never retried
+  class TransportError < Error; end        # timeout or connection failure on an idempotent call
+  class UnknownOutcome < Error; end        # the same on a non-idempotent call; Phase 2 depends on this being distinct
+  class MappingError < Error; end          # required field missing; rescued per record by sync
+end
+
+exec
+/bin/zsh -lc 'rg --files app/models/schwab app/models config/initializers lib/schwab_fixtures spec/models/schwab spec | sort' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+app/models/account.rb
+app/models/activity.rb
+app/models/agent_run.rb
+app/models/application_record.rb
+app/models/audit_event.rb
+app/models/balance.rb
+app/models/current.rb
+app/models/instrument.rb
+app/models/market_day.rb
+app/models/order.rb
+app/models/order_proposal.rb
+app/models/position.rb
+app/models/risk_rule.rb
+app/models/schwab.rb
+app/models/schwab/account_summary.rb
+app/models/schwab/account_summary.rb
+app/models/schwab/activity.rb
+app/models/schwab/activity.rb
+app/models/schwab/balances.rb
+app/models/schwab/balances.rb
+app/models/schwab/client.rb
+app/models/schwab/client.rb
+app/models/schwab/decimal.rb
+app/models/schwab/decimal.rb
+app/models/schwab/error.rb
+app/models/schwab/error.rb
+app/models/schwab/fake_client.rb
+app/models/schwab/fake_client.rb
+app/models/schwab/instrument_ref.rb
+app/models/schwab/instrument_ref.rb
+app/models/schwab/market_hours.rb
+app/models/schwab/market_hours.rb
+app/models/schwab/order.rb
+app/models/schwab/order.rb
+app/models/schwab/position.rb
+app/models/schwab/position.rb
+app/models/schwab/price_history.rb
+app/models/schwab/price_history.rb
+app/models/schwab/quote.rb
+app/models/schwab/quote.rb
+app/models/schwab/rate_budget.rb
+app/models/schwab/rate_budget.rb
+app/models/schwab/scrub.rb
+app/models/schwab/scrub.rb
+app/models/schwab/timestamp.rb
+app/models/schwab/timestamp.rb
+app/models/schwab_token.rb
+app/models/session.rb
+app/models/setup.rb
+app/models/snapshot.rb
+app/models/submission_attempt.rb
+app/models/sync_run.rb
+app/models/system_settings.rb
+app/models/tool_call.rb
+app/models/trade.rb
+app/models/trade_leg.rb
+app/models/user.rb
+config/initializers/active_record.rb
+config/initializers/assets.rb
+config/initializers/content_security_policy.rb
+config/initializers/default_url_options.rb
+config/initializers/filter_parameter_logging.rb
+config/initializers/inflections.rb
+config/initializers/schwab.rb
+lib/schwab_fixtures/account.json
+lib/schwab_fixtures/account_numbers.json
+lib/schwab_fixtures/instruments.json
+lib/schwab_fixtures/market_hours_closed.json
+lib/schwab_fixtures/market_hours_open.json
+lib/schwab_fixtures/orders.json
+lib/schwab_fixtures/price_history.json
+lib/schwab_fixtures/quotes.json
+lib/schwab_fixtures/token.json
+lib/schwab_fixtures/transactions.json
+spec/db/seeds_spec.rb
+spec/factories/accounts.rb
+spec/factories/activities.rb
+spec/factories/instruments.rb
+spec/factories/orders.rb
+spec/factories/positions.rb
+spec/factories/setups.rb
+spec/factories/trades.rb
+spec/factories/users.rb
+spec/mailers/magic_link_mailer_spec.rb
+spec/models/audit_event_spec.rb
+spec/models/instrument_spec.rb
+spec/models/order_spec.rb
+spec/models/position_spec.rb
+spec/models/schwab/client_spec.rb
+spec/models/schwab/client_spec.rb
+spec/models/schwab/error_spec.rb
+spec/models/schwab/error_spec.rb
+spec/models/schwab/fake_client_spec.rb
+spec/models/schwab/fake_client_spec.rb
+spec/models/schwab/mappers_spec.rb
+spec/models/schwab/mappers_spec.rb
+spec/models/schwab/rate_budget_spec.rb
+spec/models/schwab/rate_budget_spec.rb
+spec/models/schwab/scrub_spec.rb
+spec/models/schwab/scrub_spec.rb
+spec/models/schwab/timestamp_spec.rb
+spec/models/schwab/timestamp_spec.rb
+spec/models/schwab_token_spec.rb
+spec/models/system_settings_spec.rb
+spec/models/trade_leg_spec.rb
+spec/models/trade_spec.rb
+spec/models/user_spec.rb
+spec/rails_helper.rb
+spec/requests/dashboard_spec.rb
+spec/requests/magic_links_spec.rb
+spec/requests/sessions_spec.rb
+spec/schwab_isolation_spec.rb
+spec/spec_helper.rb
+spec/support/schwab_fixtures.rb
+spec/support/sign_in.rb
+spec/support/vcr.rb
+spec/tasks/login_spec.rb
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/schwab/rate_budget.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # One request budget shared by every process (Puma and the worker) through the cache store.
+  # Exceeding it raises rather than sleeping so a web request never blocks on the worker.
+  module RateBudget
+    def self.take!(now: ::Time.current, budget: Schwab::RATE_BUDGET_PER_MINUTE)
+      key = "schwab:rate:#{now.to_i / 60}"
+      Rails.cache.write(key, 0, expires_in: 2.minutes, unless_exist: true)
+      count = Rails.cache.increment(key, 1, expires_in: 2.minutes)
+      return if count <= budget
+      raise RateLimited.new("Local Schwab rate budget spent (#{budget}/min)", retry_after: 60 - now.sec)
+    end
+  end
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/schwab/scrub.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # Plaintext account numbers arrive in the body of every Trader API response. They are removed
+  # here, in the client, before any body reaches raw columns, cassettes, or logs.
+  module Scrub
+    REDACTED_KEYS = %w[ accountNumber user ].freeze
+    ACCOUNT_HASH = /[0-9A-F]{64}/i
+
+    def self.json(value)
+      case value
+      when Hash then value.each_with_object({}) { |(k, v), h| h[k] = REDACTED_KEYS.include?(k) ? nil : json(v) }
+      when Array then value.map { |v| json(v) }
+      else value
+      end
+    end
+
+    def self.body(text)
+      return text if text.blank?
+      parsed = JSON.parse(text) rescue (return text)
+      JSON.generate(json(parsed))
+    end
+
+    # Log lines carry the route template, never the account hash.
+    def self.path(path) = path.gsub(ACCOUNT_HASH, "{hash}")
+
+    def self.uri(uri) = uri.gsub(ACCOUNT_HASH, "<ACCOUNT_HASH>")
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The first pass already shows a few areas to verify closely: retry accounting, token refresh behavior, cache counter atomicity, and endpoint path templating. I’m now reading the mappers and fake client because many real-API failures will sit in shape assumptions rather than the HTTP wrapper.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' app/models/schwab/account_summary.rb" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,260p' app/models/schwab/balances.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # GET /accounts/{hash}?fields=positions, mapped.
+  AccountSummary = Data.define(:account_type, :positions, :balances, :raw) do
+    def self.from(raw)
+      account = raw.fetch("securitiesAccount") { raise MappingError, "securitiesAccount missing" }
+      new(account_type: account["type"],
+          positions: Array(account["positions"]).map { |p| Position.from(p) },
+          balances: Balances.from(account["currentBalances"]),
+          raw: raw)
+    end
+  end
+end
+
+ succeeded in 0ms:
+module Schwab
+  # currentBalances for a cash account. settled_cash is derived, not a Schwab field; see the contract.
+  Balances = Data.define(:equity, :cash_available_for_trading, :cash_available_for_withdrawal, :unsettled_cash,
+                         :total_cash, :cash_balance, :buying_power, :raw) do
+    def self.from(raw)
+      raw ||= {}
+      new(equity: Decimal.parse(raw["liquidationValue"]),
+          cash_available_for_trading: Decimal.parse(raw["cashAvailableForTrading"]),
+          cash_available_for_withdrawal: Decimal.parse(raw["cashAvailableForWithdrawal"]),
+          unsettled_cash: Decimal.parse(raw["unsettledCash"]),
+          total_cash: Decimal.parse(raw["totalCash"]),
+          cash_balance: Decimal.parse(raw["cashBalance"]),
+          buying_power: Decimal.parse(raw["buyingPower"]),
+          raw: raw)
+    end
+
+    # Reading A: available for trading minus unsettled. Reading B: available for withdrawal.
+    # Conservative: the smaller of the two when both are present. SCHWAB_SHAPE_UNVERIFIED.
+    def settled_cash
+      [ settled_cash_by_subtraction, cash_available_for_withdrawal ].compact.min
+    end
+
+    def settled_cash_by_subtraction
+      return nil if cash_available_for_trading.nil?
+      cash_available_for_trading - (unsettled_cash || 0)
+    end
+  end
+end
+
+exec
+/bin/zsh -lc "sed -n '1,260p' app/models/schwab/instrument_ref.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # The instrument block that appears on positions, order legs, transfer items, and quotes.
+  InstrumentRef = Data.define(:symbol, :cusip, :instrument_id, :asset_type, :description) do
+    def self.from(raw)
+      raw ||= {}
+      new(symbol: raw["symbol"], cusip: raw["cusip"].presence, instrument_id: raw["instrumentId"],
+          asset_type: raw["assetType"], description: raw["description"])
+    end
+
+    def currency? = asset_type == "CURRENCY"
+  end
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,300p' app/models/schwab/position.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  Position = Data.define(:instrument, :quantity, :average_price, :market_value, :raw) do
+    def self.from(raw)
+      long = Decimal.parse(raw["longQuantity"]) || 0
+      short = Decimal.parse(raw["shortQuantity"]) || 0
+      new(instrument: InstrumentRef.from(raw["instrument"]), quantity: long - short,
+          average_price: Decimal.parse(raw["averagePrice"]), market_value: Decimal.parse(raw["marketValue"]), raw: raw)
+    end
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,340p' app/models/schwab/order.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # One order as Schwab returns it. Bracket children and replacements arrive nested; #flatten walks them.
+  Order = Data.define(:order_id, :status, :order_type, :session, :duration, :strategy_type, :instruction, :quantity,
+                      :filled_quantity, :remaining_quantity, :price, :stop_price, :tax_lot_method, :entered_at,
+                      :close_time, :instrument, :children, :replacements, :parent_order_id, :replaces_order_id, :raw) do
+    def self.from(raw, parent_order_id: nil, replaces_order_id: nil)
+      leg = Array(raw["orderLegCollection"]).first || {}
+      order_id = raw["orderId"] or raise MappingError, "orderId missing"
+      new(order_id: order_id.to_s, status: raw["status"], order_type: raw["orderType"], session: raw["session"],
+          duration: raw["duration"], strategy_type: raw["orderStrategyType"], instruction: leg["instruction"],
+          quantity: Decimal.parse(raw["quantity"]) || Decimal.parse(leg["quantity"]),
+          filled_quantity: Decimal.parse(raw["filledQuantity"]), remaining_quantity: Decimal.parse(raw["remainingQuantity"]),
+          price: Decimal.parse(raw["price"]), stop_price: Decimal.parse(raw["stopPrice"]), tax_lot_method: raw["taxLotMethod"],
+          entered_at: Timestamp.parse(raw["enteredTime"]), close_time: Timestamp.parse(raw["closeTime"]),
+          instrument: InstrumentRef.from(leg["instrument"]),
+          children: Array(raw["childOrderStrategies"]).map { |c| from(c, parent_order_id: order_id.to_s) },
+          replacements: Array(raw["replacingOrderCollection"]).map { |r| from(r, replaces_order_id: order_id.to_s) },
+          parent_order_id: parent_order_id, replaces_order_id: replaces_order_id, raw: raw)
+    end
+
+    # Self plus every nested child and replacement, depth first, lineage already stamped.
+    def flatten = [ self, *children.flat_map(&:flatten), *replacements.flat_map(&:flatten) ]
+
+    def side
+      case instruction
+      when /\ABUY/ then "BUY"
+      when /\ASELL/ then "SELL"
+      end
+    end
+
+    def working? = ::Order::WORKING_STATUSES.include?(status)
+    def stop? = ::Order::STOP_TYPES.include?(order_type)
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,300p' app/models/schwab/market_hours.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # Equity session times for one date. A closed day has no sessionHours (shape SCHWAB_SHAPE_UNVERIFIED).
+  MarketHours = Data.define(:date, :open, :session_opens_at, :regular_opens_at, :regular_closes_at, :session_closes_at, :raw) do
+    def self.from(raw, date:)
+      equity = (raw["equity"] || {}).values.first || {}
+      sessions = equity["sessionHours"] || {}
+      pre = span(sessions["preMarket"])
+      regular = span(sessions["regularMarket"])
+      post = span(sessions["postMarket"])
+      new(date: date.to_date, open: equity["isOpen"] == true && regular.present?,
+          session_opens_at: (pre || regular)&.first, regular_opens_at: regular&.first,
+          regular_closes_at: regular&.last, session_closes_at: (post || regular)&.last, raw: raw)
+    end
+
+    def self.span(intervals)
+      return nil if intervals.blank?
+      starts = intervals.map { |i| Timestamp.parse(i["start"]) }
+      ends = intervals.map { |i| Timestamp.parse(i["end"]) }
+      [ starts.min, ends.max ]
+    end
+
+    def open? = open
+  end
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,300p' app/models/schwab/quote.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  Quote = Data.define(:symbol, :cusip, :asset_main_type, :last, :bid, :ask, :mark, :net_change, :net_percent_change,
+                      :quote_time, :trade_time, :raw) do
+    # The quotes response is keyed by symbol, with unknown symbols reported under "errors" in the same 200.
+    def self.batch(raw)
+      invalid = Array(raw.dig("errors", "invalidSymbols"))
+      quotes = raw.except("errors").map { |symbol, body| from(symbol, body) }
+      [ quotes, invalid ]
+    end
+
+    def self.from(symbol, raw)
+      q = raw["quote"] || {}
+      new(symbol: raw["symbol"] || symbol, cusip: raw.dig("reference", "cusip"), asset_main_type: raw["assetMainType"],
+          last: Decimal.parse(q["lastPrice"]), bid: Decimal.parse(q["bidPrice"]), ask: Decimal.parse(q["askPrice"]),
+          mark: Decimal.parse(q["mark"]), net_change: Decimal.parse(q["netChange"]), net_percent_change: Decimal.parse(q["netPercentChange"]),
+          quote_time: Timestamp.parse(q["quoteTime"]), trade_time: Timestamp.parse(q["tradeTime"]), raw: raw)
+    end
+  end
+end
+
+exec
+/bin/zsh -lc "sed -n '1,300p' app/models/schwab/price_history.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  Candle = Data.define(:date, :time, :open, :high, :low, :close, :volume) do
+    def self.from(raw)
+      new(date: Timestamp.candle_date(raw["datetime"]), time: Timestamp.parse(raw["datetime"]),
+          open: Decimal.parse(raw["open"]), high: Decimal.parse(raw["high"]), low: Decimal.parse(raw["low"]),
+          close: Decimal.parse(raw["close"]), volume: raw["volume"])
+    end
+  end
+
+  PriceHistory = Data.define(:symbol, :candles, :previous_close, :empty, :raw) do
+    def self.from(raw)
+      new(symbol: raw["symbol"], candles: Array(raw["candles"]).map { |c| Candle.from(c) },
+          previous_close: Decimal.parse(raw["previousClose"]), empty: raw["empty"] == true, raw: raw)
+    end
+
+    def empty? = empty
+  end
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,360p' app/models/schwab/activity.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # One transaction activity. The security transfer item gives instrument, quantity, and price;
+  # fee items are summed. Sign conventions are SCHWAB_SHAPE_UNVERIFIED; side comes from netAmount.
+  Activity = Data.define(:activity_id, :type, :activity_type, :status, :sub_account, :description, :order_id,
+                         :net_amount, :trade_date, :settlement_date, :executed_at, :instrument, :quantity, :price,
+                         :position_effect, :commission, :fees, :raw) do
+    def self.from(raw)
+      activity_id = raw["activityId"] or raise MappingError, "activityId missing"
+      items = Array(raw["transferItems"])
+      security = items.find { |i| i["feeType"].blank? && !InstrumentRef.from(i["instrument"]).currency? }
+      fee_items = items.select { |i| i["feeType"].present? }
+      executed_at = Timestamp.parse(raw["time"]) || Timestamp.parse(raw["tradeDate"])
+      raise MappingError, "activity #{activity_id} has no time or tradeDate" unless executed_at
+
+      new(activity_id: activity_id.to_s, type: raw["type"], activity_type: raw["activityType"], status: raw["status"],
+          sub_account: raw["subAccount"], description: raw["description"], order_id: raw["orderId"]&.to_s,
+          net_amount: Decimal.parse(raw["netAmount"]),
+          trade_date: Timestamp.parse_date(raw["tradeDate"]), settlement_date: Timestamp.parse_date(raw["settlementDate"]),
+          executed_at: executed_at,
+          instrument: security && InstrumentRef.from(security["instrument"]),
+          quantity: security && Decimal.parse(security["amount"])&.abs,
+          price: security && Decimal.parse(security["price"]),
+          position_effect: security && security["positionEffect"],
+          commission: fee_items.select { |i| i["feeType"] == "COMMISSION" }.sum { |i| Decimal.parse(i["amount"])&.abs || 0 },
+          fees: fee_items.reject { |i| i["feeType"] == "COMMISSION" }.sum { |i| Decimal.parse(i["amount"])&.abs || 0 },
+          raw: raw)
+    end
+
+    def trade? = type == "TRADE"
+
+    def side
+      return nil unless trade? && net_amount
+      net_amount.negative? ? "BUY" : "SELL"
+    end
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/schwab/timestamp.rb && sed -n '1,160p' app/models/schwab/decimal.rb && sed -n '1,180p' app/models/schwab.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # Schwab uses three timestamp formats in and three out. Nothing else in the app formats a Schwab time.
+  module Timestamp
+    OFFSET_WITHOUT_COLON = /([+-]\d{2})(\d{2})\z/
+
+    # "+0000", "Z", "-04:00", or epoch milliseconds (integer or numeric string).
+    def self.parse(value)
+      return nil if value.blank?
+      return ::Time.zone.at(Rational(value.to_i, 1000)) if value.is_a?(Integer) || value.to_s.match?(/\A\d{12,}\z/)
+      ::Time.zone.iso8601(value.to_s.sub(OFFSET_WITHOUT_COLON, '\1:\2'))
+    end
+
+    # tradeDate and settlementDate arrive as UTC midnights; read them as UTC or the date slips a day in New York.
+    def self.parse_date(value) = parse(value)&.utc&.to_date
+
+    # Orders and transactions: yyyy-MM-dd'T'HH:mm:ss.SSSZ in UTC.
+    def self.iso_ms(time) = time.utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    # Market hours: YYYY-MM-DD.
+    def self.date(date) = date.to_date.iso8601
+
+    # Price history: epoch milliseconds.
+    def self.epoch_ms(time) = (time.to_r * 1000).to_i
+
+    # Daily candles stamp midnight Eastern expressed in UTC; read them in New York.
+    def self.candle_date(epoch_ms) = ::Time.at(Rational(epoch_ms, 1000)).in_time_zone("America/New_York").to_date
+  end
+end
+module Schwab
+  # JSON floats through Float drift; every money and quantity value goes through here.
+  module Decimal
+    def self.parse(value)
+      return nil if value.nil? || value == ""
+      BigDecimal(value.to_s)
+    rescue ArgumentError
+      nil
+    end
+  end
+end
+# Everything that knows a Schwab field name lives under this namespace. See docs/schwab-api-contract.md.
+module Schwab
+  LOOKBACK = 60.days # orders and transactions; SCHWAB_SHAPE_UNVERIFIED (one source says a year)
+  RATE_BUDGET_PER_MINUTE = 100 # community figure is 120/min per app; SCHWAB_SHAPE_UNVERIFIED
+  QUOTE_BATCH = 100 # SCHWAB_SHAPE_UNVERIFIED
+
+  def self.client(token: nil)
+    case Rails.configuration.x.schwab.adapter
+    when :fake then FakeClient.instance
+    else Client.new(token: token || SchwabToken.current)
+    end
+  end
+
+  def self.app_key = Rails.application.credentials.dig(:schwab, :app_key)
+  def self.app_secret = Rails.application.credentials.dig(:schwab, :app_secret)
+  def self.callback_url = ENV.fetch("SCHWAB_CALLBACK_URL")
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The mapper pass confirms it handles the main happy paths, but I’m checking fixture and spec coverage now because the contract explicitly depends on malformed and edge-shaped responses not taking down a sync.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,320p' app/models/schwab/fake_client.rb" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,360p' spec/models/schwab/client_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Schwab
+  # Same interface as Client, same raw shapes (already scrubbed), served from lib/schwab_fixtures so seeds,
+  # Playwright, and specs all run the real mappers. A per-call queue scripts failures and alternate payloads:
+  #   Schwab::FakeClient.instance.enqueue(:orders) { raise Schwab::RateLimited.new(retry_after: 30) }
+  class FakeClient
+    include Singleton
+
+    FIXTURES = Rails.root.join("lib/schwab_fixtures")
+    ACCOUNT_HASH = "9313A0737C4E1B2D5F6A7B8C9D0E1F2A3B4C5D6E7F8091A2B3C4D5E6F708192A"
+    FAKE_CODE = "fake-authorization-code@"
+
+    attr_reader :calls
+
+    def initialize = reset!
+
+    def reset!
+      @queues = Hash.new { |h, k| h[k] = [] }
+      @calls = []
+      @closed_dates = Set.new
+      self
+    end
+
+    # Script the next response for a method. The block receives the call's arguments.
+    def enqueue(method_name, &block) = @queues[method_name] << block
+
+    def close_market_on(date) = @closed_dates << date.to_date
+
+    # ---- OAuth: the fake authorize page lives in the app (step 4) and redirects straight back
+    def authorize_url(state:) = "/schwab/fake_authorize?#{ { state: state }.to_query }"
+    def exchange_code(code) = scripted(:exchange_code, code) { code == FAKE_CODE ? fixture("token").except("id_token") : raise(ReauthRequired.new("invalid_grant", status: 400)) }
+    def refresh(refresh_token) = scripted(:refresh, refresh_token) { fixture("token").except("id_token") }
+
+    # ---- Trader API
+    def account_numbers = scripted(:account_numbers) { fixture("account_numbers").map { |row| row["hashValue"] } }
+    def account(hash, fields: [ :positions ]) = scripted(:account, hash, fields) { fixture("account") }
+    def orders(hash, from:, to: ::Time.current, status: nil) = scripted(:orders, hash, from, to, status) { fixture("orders") }
+    def order(hash, order_id) = scripted(:order, hash, order_id) { Order.from(fixture("orders").first).flatten.map(&:raw).find { |o| o["orderId"].to_s == order_id.to_s } or raise RequestError.new("order not found", status: 404) }
+    def transactions(hash, from:, to: ::Time.current, types: Client::TRANSACTION_TYPES) = scripted(:transactions, hash, from, to, types) { fixture("transactions") }
+
+    # ---- Market Data API
+    def market_hours(date, markets: [ :equity ])
+      scripted(:market_hours, date, markets) do
+        closed = @closed_dates.include?(date.to_date) || date.to_date.on_weekend?
+        shift_market_hours(fixture(closed ? "market_hours_closed" : "market_hours_open"), date)
+      end
+    end
+    def quotes(symbols, fields: %w[ quote reference ]) = scripted(:quotes, symbols, fields) { fixture("quotes").slice(*Array(symbols).map(&:to_s), "errors") }
+    def price_history(symbol, **) = scripted(:price_history, symbol) { fixture("price_history").merge("symbol" => symbol) }
+    def instrument(symbol_or_cusip) = scripted(:instrument, symbol_or_cusip) { fixture("instruments")["instruments"] }
+
+    private
+      def scripted(method_name, *args)
+        @calls << [ method_name, *args ]
+        block = @queues[method_name].shift
+        block ? block.call(*args) : yield
+      end
+
+      def fixture(name) = Scrub.json(JSON.parse(FIXTURES.join("#{name}.json").read))
+
+      # Fixture dates are stand-ins; the requested date replaces them so the calendar stays coherent.
+      def shift_market_hours(raw, date)
+        original = raw["equity"].values.first["date"]
+        JSON.parse(JSON.generate(raw).gsub(original, date.to_date.iso8601))
+      end
+  end
+end
+
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe Schwab::Client do
+  let(:hash) { Schwab::FakeClient::ACCOUNT_HASH }
+  let(:token) { instance_double("SchwabToken", access_token: "tok-1") }
+  let(:sleeps) { [] }
+  let(:client) { described_class.new(token: token, app_key: "key", app_secret: "secret", callback_url: "https://desk.example.com/schwab/callback", sleeper: ->(s) { sleeps << s }) }
+  let(:trader) { "https://api.schwabapi.com/trader/v1" }
+
+  before { Rails.cache.clear }
+
+  describe "OAuth" do
+    it "builds the authorize URL" do
+      expect(client.authorize_url(state: "s1")).to eq("https://api.schwabapi.com/v1/oauth/authorize?response_type=code&client_id=key&redirect_uri=https%3A%2F%2Fdesk.example.com%2Fschwab%2Fcallback&state=s1")
+    end
+
+    it "exchanges a code with Basic auth and a form body, dropping the id_token" do
+      stub = stub_request(:post, "https://api.schwabapi.com/v1/oauth/token")
+        .with(basic_auth: [ "key", "secret" ], body: { grant_type: "authorization_code", code: "abc@", redirect_uri: "https://desk.example.com/schwab/callback" })
+        .to_return(status: 200, body: schwab_fixture("token").to_json, headers: { "Content-Type" => "application/json" })
+      result = client.exchange_code("abc@")
+      expect(stub).to have_been_requested
+      expect(result).to include("access_token" => "fake-access-token", "refresh_token" => "fake-refresh-token", "expires_in" => 1800)
+      expect(result).not_to have_key("id_token")
+    end
+
+    it "treats any token-endpoint 4xx as re-auth required, without retrying" do
+      stub_request(:post, "https://api.schwabapi.com/v1/oauth/token").to_return(status: 400, body: '{"error":"invalid_grant","error_description":"refresh token expired"}')
+      expect { client.refresh("old") }.to raise_error(Schwab::ReauthRequired, /refresh token expired/)
+      expect(sleeps).to be_empty
+    end
+  end
+
+  describe "requests" do
+    it "sends the bearer token, formats windows in UTC milliseconds, and scrubs the body" do
+      stub = stub_request(:get, "#{trader}/accounts/#{hash}/orders")
+        .with(headers: { "Authorization" => "Bearer tok-1", "Accept" => "application/json" },
+              query: { fromEnteredTime: "2026-08-01T00:00:00.000Z", toEnteredTime: "2026-09-01T12:00:00.000Z", maxResults: "3000" })
+        .to_return(status: 200, body: schwab_fixture("orders").to_json)
+      orders = client.orders(hash, from: Time.utc(2026, 8, 1), to: Time.utc(2026, 9, 1, 12))
+      expect(stub).to have_been_requested
+      expect(orders.first["accountNumber"]).to be_nil
+      expect(orders.first["orderId"]).to eq(1004055538123)
+    end
+
+    it "returns hash values only from accountNumbers" do
+      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 200, body: schwab_fixture("account_numbers").to_json)
+      expect(client.account_numbers).to eq([ hash ])
+    end
+
+    it "asks for one transaction type per request" do
+      stub = stub_request(:get, "#{trader}/accounts/#{hash}/transactions").with(query: hash_including(types: "TRADE")).to_return(status: 200, body: "[]")
+      stub2 = stub_request(:get, "#{trader}/accounts/#{hash}/transactions").with(query: hash_including(types: "DIVIDEND_OR_INTEREST")).to_return(status: 200, body: schwab_fixture("transactions").to_json)
+      result = client.transactions(hash, from: 1.day.ago, types: %w[ TRADE DIVIDEND_OR_INTEREST ])
+      expect(stub).to have_been_requested
+      expect(stub2).to have_been_requested
+      expect(result.size).to eq(4)
+    end
+
+    it "chunks quote symbols" do
+      symbols = (1..150).map { |i| "S#{i}" }
+      first = stub_request(:get, "https://api.schwabapi.com/marketdata/v1/quotes").with(query: hash_including(symbols: symbols.first(100).join(","))).to_return(status: 200, body: "{}")
+      second = stub_request(:get, "https://api.schwabapi.com/marketdata/v1/quotes").with(query: hash_including(symbols: symbols.last(50).join(","))).to_return(status: 200, body: "{}")
+      client.quotes(symbols)
+      expect(first).to have_been_requested
+      expect(second).to have_been_requested
+    end
+  end
+
+  describe "resilience" do
+    it "retries 5xx and 429 with backoff, honoring Retry-After up to the cap" do
+      stub_request(:get, "#{trader}/accounts/accountNumbers")
+        .to_return({ status: 503 }, { status: 429, headers: { "Retry-After" => "500" } }, { status: 200, body: "[]" })
+      expect(client.account_numbers).to eq([])
+      expect(sleeps.size).to eq(2)
+      expect(sleeps.first).to be_between(1, 1.25)
+      expect(sleeps.last).to eq(60)
+    end
+
+    it "gives up after the budget with the right class" do
+      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 502)
+      expect { client.account_numbers }.to raise_error(Schwab::ServerError) { |e| expect(e.attempts).to eq(4) }
+    end
+
+    it "never retries a 4xx" do
+      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 400, body: '{"errors":[{"id":"r1","detail":"bad window"}]}')
+      expect { client.account_numbers }.to raise_error(Schwab::RequestError, /bad window/)
+      expect(sleeps).to be_empty
+    end
+
+    it "refreshes the token once on 401 and retries" do
+      token = double("SchwabToken")
+      allow(token).to receive(:access_token).and_return("tok-old", "tok-new")
+      allow(token).to receive(:refresh!)
+      client = described_class.new(token: token, app_key: "k", app_secret: "s", callback_url: "https://x/cb", sleeper: ->(_) { })
+      stub_request(:get, "#{trader}/accounts/accountNumbers").with(headers: { "Authorization" => "Bearer tok-old" }).to_return(status: 401)
+      stub_request(:get, "#{trader}/accounts/accountNumbers").with(headers: { "Authorization" => "Bearer tok-new" }).to_return(status: 200, body: "[]")
+      expect(client.account_numbers).to eq([])
+      expect(token).to have_received(:refresh!).once
+    end
+
+    it "raises AuthError when the retry after refresh is still unauthorized" do
+      token = double("SchwabToken", access_token: "tok", refresh!: nil)
+      client = described_class.new(token: token, app_key: "k", app_secret: "s", callback_url: "https://x/cb", sleeper: ->(_) { })
+      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 401)
+      expect { client.account_numbers }.to raise_error(Schwab::AuthError)
+    end
+
+    it "wraps transport failures on reads as TransportError after retries" do
+      stub_request(:get, "#{trader}/accounts/accountNumbers").to_timeout
+      expect { client.account_numbers }.to raise_error(Schwab::TransportError)
+      expect(sleeps).to eq([ 1, 4, 16 ])
+    end
+
+    it "wraps transport failures on the code exchange as UnknownOutcome without retrying" do
+      stub_request(:post, "https://api.schwabapi.com/v1/oauth/token").to_timeout
+      expect { client.exchange_code("abc@") }.to raise_error(Schwab::UnknownOutcome)
+      expect(sleeps).to be_empty
+    end
+
+    it "logs the path template, never the account hash" do
+      stub_request(:get, "#{trader}/accounts/#{hash}").with(query: hash_including({})).to_return(status: 200, body: "{}")
+      allow(Rails.logger).to receive(:info).and_call_original
+      client.account(hash)
+      expect(Rails.logger).to have_received(:info).with(%r{\Aschwab GET /trader/v1/accounts/\{hash\} 200 \d+ms\z})
+    end
+  end
+end
+
+exec
+/bin/zsh -lc "sed -n '1,420p' spec/models/schwab/mappers_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,260p' spec/models/schwab/rate_budget_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe Schwab::RateBudget do
+  before { Rails.cache.clear }
+
+  it "raises once the shared per-minute budget is spent, with the seconds until the next window" do
+    now = Time.zone.parse("2026-09-01 10:00:20")
+    3.times { described_class.take!(now: now, budget: 3) }
+    expect { described_class.take!(now: now, budget: 3) }.to raise_error(Schwab::RateLimited) { |e| expect(e.retry_after).to eq(40) }
+    expect { described_class.take!(now: now + 1.minute, budget: 3) }.not_to raise_error
+  end
+end
+
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe "Schwab mappers" do
+  describe Schwab::AccountSummary do
+    subject(:summary) { described_class.from(Schwab::Scrub.json(schwab_fixture("account"))) }
+
+    it "maps positions, tolerating a missing CUSIP on a cash equivalent" do
+      expect(summary.account_type).to eq("CASH")
+      xyz, _def, sweep = summary.positions
+      expect(xyz.instrument).to have_attributes(symbol: "XYZ", cusip: "037833100", instrument_id: 1001, asset_type: "EQUITY")
+      expect(xyz.quantity).to eq(40)
+      expect(xyz.average_price).to eq(BigDecimal("51.18"))
+      expect(sweep.instrument.cusip).to be_nil
+      expect(sweep.quantity).to eq(BigDecimal("2110.5"))
+    end
+
+    it "maps balances and derives settled cash conservatively" do
+      b = summary.balances
+      expect(b.equity).to eq(BigDecimal("6508.55"))
+      expect(b.settled_cash_by_subtraction).to eq(BigDecimal("2110"))
+      expect(b.cash_available_for_withdrawal).to eq(BigDecimal("2110"))
+      expect(b.settled_cash).to eq(BigDecimal("2110"))
+      expect(b.buying_power).to be_nil
+    end
+
+    it "prefers the smaller settled-cash reading and survives a missing field" do
+      b = Schwab::Balances.from("cashAvailableForTrading" => 1000, "unsettledCash" => 300, "cashAvailableForWithdrawal" => 650)
+      expect(b.settled_cash).to eq(650)
+      expect(Schwab::Balances.from("cashAvailableForWithdrawal" => 5).settled_cash).to eq(5)
+      expect(Schwab::Balances.from({}).settled_cash).to be_nil
+    end
+
+    it "raises a MappingError when the account wrapper is missing" do
+      expect { described_class.from({}) }.to raise_error(Schwab::MappingError)
+    end
+  end
+
+  describe Schwab::Order do
+    let(:orders) { schwab_fixture("orders").map { |o| described_class.from(o) } }
+
+    it "flattens nested bracket children and replacements with lineage" do
+      flat = orders.flat_map(&:flatten)
+      expect(flat.map(&:order_id)).to eq(%w[ 1004055538123 1004055538124 1004055538200 1004055538201 ])
+      child = flat[1]
+      expect(child).to have_attributes(parent_order_id: "1004055538123", replaces_order_id: nil, order_type: "STOP", stop_price: BigDecimal("48.9"), side: "SELL")
+      expect(child).to be_working.and be_stop
+      replacement = flat[3]
+      expect(replacement).to have_attributes(replaces_order_id: "1004055538200", parent_order_id: nil, stop_price: BigDecimal("86.5"))
+    end
+
+    it "maps the parent's fields and times" do
+      parent = orders.first
+      expect(parent).to have_attributes(status: "FILLED", side: "BUY", quantity: 40, filled_quantity: 40, price: BigDecimal("51.2"),
+                                        tax_lot_method: "FIFO", duration: "GOOD_TILL_CANCEL", session: "NORMAL")
+      expect(parent.entered_at).to eq(Time.utc(2026, 8, 14, 13, 31, 2))
+      expect(parent.instrument.cusip).to eq("037833100")
+    end
+
+    it "passes unknown enum values through untouched" do
+      order = described_class.from({ "orderId" => 1, "status" => "SOMETHING_NEW", "orderType" => "WEIRD" })
+      expect(order.status).to eq("SOMETHING_NEW")
+      expect(order).not_to be_working
+    end
+  end
+
+  describe Schwab::Activity do
+    let(:activities) { Schwab::Scrub.json(schwab_fixture("transactions")).map { |a| described_class.from(a) } }
+
+    it "maps a fill: security item, fee items summed, side from net amount" do
+      fill = activities[0]
+      expect(fill).to have_attributes(activity_id: "95012345678", type: "TRADE", order_id: "1004055538123", side: "BUY", quantity: 40,
+                                      price: BigDecimal("51.18"), position_effect: "OPENING", net_amount: BigDecimal("-2047.25"))
+      expect(fill.fees).to eq(BigDecimal("0.05"))
+      expect(fill.commission).to eq(0)
+      expect(fill.instrument.cusip).to eq("037833100")
+      expect(fill.trade_date).to eq(Date.new(2026, 8, 14))
+      expect(fill.settlement_date).to eq(Date.new(2026, 8, 15))
+      expect(fill.executed_at).to eq(Time.utc(2026, 8, 14, 14, 3, 11))
+    end
+
+    it "maps a dividend with its instrument and no side" do
+      dividend = activities[1]
+      expect(dividend).to have_attributes(type: "DIVIDEND_OR_INTEREST", side: nil, net_amount: BigDecimal("9.6"))
+      expect(dividend.instrument.symbol).to eq("XYZ")
+    end
+
+    it "maps a cash deposit with no instrument" do
+      deposit = activities[2]
+      expect(deposit.instrument).to be_nil
+      expect(deposit.net_amount).to eq(1000)
+    end
+
+    it "falls back to tradeDate when time is missing, and keeps a CUSIP-less instrument" do
+      sweep = activities[3]
+      expect(sweep.executed_at).to eq(Time.utc(2026, 8, 23))
+      expect(sweep.instrument).to have_attributes(symbol: "SWVXX", cusip: nil)
+    end
+
+    it "raises MappingError without any time" do
+      expect { described_class.from({ "activityId" => 1 }) }.to raise_error(Schwab::MappingError)
+    end
+  end
+
+  describe Schwab::MarketHours do
+    it "maps an open day with full session bounds in Eastern time" do
+      hours = described_class.from(schwab_fixture("market_hours_open"), date: Date.new(2026, 9, 8))
+      expect(hours).to be_open
+      expect(hours.session_opens_at).to eq(Time.utc(2026, 9, 8, 11))
+      expect(hours.regular_opens_at).to eq(Time.utc(2026, 9, 8, 13, 30))
+      expect(hours.regular_closes_at).to eq(Time.utc(2026, 9, 8, 20))
+      expect(hours.session_closes_at).to eq(Time.utc(2026, 9, 9, 0))
+    end
+
+    it "treats the closed-day shape as closed regardless of the product key" do
+      hours = described_class.from(schwab_fixture("market_hours_closed"), date: Date.new(2026, 9, 7))
+      expect(hours).not_to be_open
+      expect(hours.regular_opens_at).to be_nil
+    end
+  end
+
+  describe Schwab::Quote do
+    it "splits quotes from invalid symbols" do
+      quotes, invalid = described_class.batch(schwab_fixture("quotes"))
+      expect(invalid).to eq([ "NOPE" ])
+      expect(quotes.map(&:symbol)).to eq(%w[ XYZ DEF ])
+      expect(quotes.first).to have_attributes(cusip: "037833100", last: BigDecimal("53.0"), net_change: BigDecimal("0.6"))
+      expect(quotes.first.quote_time).to eq(Time.utc(2026, 9, 1, 13, 4))
+    end
+  end
+
+  describe Schwab::PriceHistory do
+    it "maps candles with New York dates" do
+      history = described_class.from(schwab_fixture("price_history"))
+      expect(history.symbol).to eq("XYZ")
+      expect(history).not_to be_empty
+      expect(history.previous_close).to eq(BigDecimal("52.4"))
+      expect(history.candles.map(&:date)).to eq([ Date.new(2026, 8, 31), Date.new(2026, 9, 1) ])
+      expect(history.candles.last.close).to eq(BigDecimal("53.0"))
+    end
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,220p' spec/models/schwab/error_spec.rb && sed -n '1,220p' spec/models/schwab/scrub_spec.rb && sed -n '1,220p' spec/models/schwab/fake_client_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe Schwab::Error do
+  def response(code, body = "")
+    Net::HTTPResponse::CODE_TO_OBJ[code.to_s].new("1.1", code.to_s, "x").tap { |r| r.instance_variable_set(:@body, body); r.instance_variable_set(:@read, true) }
+  end
+
+  it "maps statuses to classes and keeps the request id" do
+    body = '{"errors":[{"id":"abc-123","status":"400","title":"Bad","detail":"startDate too early"}]}'
+    expect(described_class.for_response(response(400, body), attempts: 1, idempotent: true)).to be_a(Schwab::RequestError).and have_attributes(request_id: "abc-123", message: /startDate too early/)
+    expect(described_class.for_response(response(401), attempts: 1, idempotent: true)).to be_a(Schwab::AuthError)
+    expect(described_class.for_response(response(429), attempts: 3, idempotent: true)).to be_a(Schwab::RateLimited).and have_attributes(attempts: 3)
+    expect(described_class.for_response(response(503), attempts: 1, idempotent: true)).to be_a(Schwab::ServerError)
+    expect(described_class.for_response(response(503), attempts: 1, idempotent: false)).to be_a(Schwab::UnknownOutcome)
+  end
+
+  it "scrubs account numbers out of the stored body" do
+    error = described_class.for_response(response(400, '{"accountNumber":"12345678"}'), attempts: 1, idempotent: true)
+    expect(error.body).not_to include("12345678")
+  end
+end
+require "rails_helper"
+
+RSpec.describe Schwab::Scrub do
+  it "drops plaintext account numbers and user blocks anywhere in a body" do
+    raw = { "securitiesAccount" => { "accountNumber" => "12345678", "positions" => [ { "accountNumber" => 1 } ] },
+            "user" => { "firstName" => "John" }, "orderId" => 5 }
+    expect(described_class.json(raw)).to eq("securitiesAccount" => { "accountNumber" => nil, "positions" => [ { "accountNumber" => nil } ] },
+                                            "user" => nil, "orderId" => 5)
+  end
+
+  it "scrubs JSON text and passes non-JSON through" do
+    expect(described_class.body('{"accountNumber":"1","x":2}')).to eq('{"accountNumber":null,"x":2}')
+    expect(described_class.body("<html>gateway</html>")).to eq("<html>gateway</html>")
+  end
+
+  it "replaces account hashes in paths for logs" do
+    expect(described_class.path("/trader/v1/accounts/#{Schwab::FakeClient::ACCOUNT_HASH}/orders")).to eq("/trader/v1/accounts/{hash}/orders")
+  end
+end
+require "rails_helper"
+
+RSpec.describe Schwab::FakeClient do
+  subject(:fake) { described_class.instance.reset! }
+
+  it "exposes exactly the real client's public interface" do
+    expect(described_class.public_instance_methods(false) - %i[ reset! enqueue close_market_on calls ])
+      .to match_array(Schwab::Client.public_instance_methods(false))
+  end
+
+  it "serves raw shapes the real mappers accept, already scrubbed" do
+    raw = fake.account(described_class::ACCOUNT_HASH)
+    expect(raw.dig("securitiesAccount", "accountNumber")).to be_nil
+    expect(Schwab::AccountSummary.from(raw).positions.size).to eq(3)
+    expect(Schwab::Activity.from(fake.transactions(described_class::ACCOUNT_HASH, from: 1.day.ago).first).side).to eq("BUY")
+    expect(fake.account_numbers).to eq([ described_class::ACCOUNT_HASH ])
+  end
+
+  it "scripts the next response per method and records calls" do
+    fake.enqueue(:orders) { raise Schwab::RateLimited.new(retry_after: 30) }
+    expect { fake.orders(described_class::ACCOUNT_HASH, from: 1.day.ago) }.to raise_error(Schwab::RateLimited)
+    expect(fake.orders(described_class::ACCOUNT_HASH, from: 1.day.ago)).to be_an(Array)
+    expect(fake.calls.map(&:first)).to eq(%i[ orders orders ])
+  end
+
+  it "closes markets on weekends and on request" do
+    expect(Schwab::MarketHours.from(fake.market_hours(Date.new(2026, 9, 5)), date: Date.new(2026, 9, 5))).not_to be_open
+    expect(Schwab::MarketHours.from(fake.market_hours(Date.new(2026, 9, 8)), date: Date.new(2026, 9, 8))).to be_open
+    fake.close_market_on(Date.new(2026, 9, 8))
+    expect(Schwab::MarketHours.from(fake.market_hours(Date.new(2026, 9, 8)), date: Date.new(2026, 9, 8))).not_to be_open
+  end
+
+  it "scripts auth: the fake code exchanges, anything else needs re-auth" do
+    expect(fake.exchange_code(described_class::FAKE_CODE)).to include("access_token")
+    expect { fake.exchange_code("bogus") }.to raise_error(Schwab::ReauthRequired)
+  end
+
+  it "is what Schwab.client returns outside production" do
+    expect(Schwab.client).to be(described_class.instance)
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,340p' app/models/schwab_token.rb" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,260p' spec/schwab_isolation_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+class SchwabToken < ApplicationRecord
+  encrypts :access_token, :refresh_token
+end
+
+ succeeded in 0ms:
+require "rails_helper"
+
+# The kickoff's isolation rule: every Schwab shape assumption lives in the adapter layer.
+RSpec.describe "Schwab shape isolation" do
+  SCHWAB_FIELD_NAMES = %w[ hashValue securitiesAccount longQuantity orderLegCollection childOrderStrategies replacingOrderCollection
+                           transferItems sessionHours activityId enteredTime cashAvailableForTrading liquidationValue ].freeze
+
+  it "keeps Schwab field names inside app/models/schwab and its fixtures" do
+    offenders = Rails.root.glob("app/**/*.rb").reject { |f| f.to_s.include?("/app/models/schwab/") }
+      .select { |f| SCHWAB_FIELD_NAMES.any? { |name| f.read.include?(name) } }
+    expect(offenders).to be_empty
+  end
+end
+
+exec
+/bin/zsh -lc "sed -n '1,260p' config/initializers/schwab.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# The fake adapter backs development seeds, the test suite, and Playwright. Production talks to Schwab.
+Rails.application.config.x.schwab.adapter = ENV.fetch("SCHWAB_ADAPTER") { Rails.env.production? ? "http" : "fake" }.to_sym
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc 'rg -n "refresh!|Schwab::|schwab" app config spec lib -g '"'"'!app/models/schwab/**'"' -g '"'!spec/models/schwab/**'"'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+spec/factories/accounts.rb:3:    sequence(:schwab_hash) { |n| Digest::SHA256.hexdigest("account-#{n}").upcase }
+config/initializers/schwab.rb:2:Rails.application.config.x.schwab.adapter = ENV.fetch("SCHWAB_ADAPTER") { Rails.env.production? ? "http" : "fake" }.to_sym
+spec/support/vcr.rb:11:  c.filter_sensitive_data("<SCHWAB_APP_KEY>") { Rails.application.credentials.dig(:schwab, :app_key) }
+spec/support/vcr.rb:12:  c.filter_sensitive_data("<SCHWAB_APP_SECRET>") { Rails.application.credentials.dig(:schwab, :app_secret) }
+spec/support/schwab_fixtures.rb:2:  def schwab_fixture(name) = JSON.parse(Rails.root.join("lib/schwab_fixtures/#{name}.json").read)
+spec/schwab_isolation_spec.rb:8:  it "keeps Schwab field names inside app/models/schwab and its fixtures" do
+spec/schwab_isolation_spec.rb:9:    offenders = Rails.root.glob("app/**/*.rb").reject { |f| f.to_s.include?("/app/models/schwab/") }
+spec/models/instrument_spec.rb:16:    create(:instrument, cusip: "037833100", schwab_instrument_id: 7)
+spec/models/instrument_spec.rb:18:    expect { create(:instrument, cusip: nil, schwab_instrument_id: 7) }.to raise_error(ActiveRecord::RecordNotUnique)
+spec/models/schwab_token_spec.rb:7:    stored = SchwabToken.lease_connection.select_one(SchwabToken.sanitize_sql([ "SELECT access_token, refresh_token FROM schwab_tokens WHERE id = ?", token.id ]))
+app/models/account.rb:13:  validates :schwab_hash, uniqueness: true
+app/models/market_day.rb:2:  enum :source, { schwab: "schwab", fallback: "fallback" }
+app/models/schwab.rb:1:# Everything that knows a Schwab field name lives under this namespace. See docs/schwab-api-contract.md.
+app/models/schwab.rb:8:    case Rails.configuration.x.schwab.adapter
+app/models/schwab.rb:14:  def self.app_key = Rails.application.credentials.dig(:schwab, :app_key)
+app/models/schwab.rb:15:  def self.app_secret = Rails.application.credentials.dig(:schwab, :app_secret)
+app/models/order.rb:2:  # SCHWAB_SHAPE_UNVERIFIED: see docs/schwab-api-contract.md for the status and type vocabularies.
+app/models/order.rb:15:  enum :placed_via, { schwab_direct: "schwab_direct", app: "app" }
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+A notable integration concern is emerging outside the adapter proper: `Schwab.client` assumes token APIs that the token model does not currently expose. I’m checking line numbers and fixture content now so the final review can be precise rather than speculative.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/rate_budget.rb app/models/schwab/error.rb app/models/schwab/scrub.rb app/models/schwab.rb app/models/schwab_token.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ exited 1 in 0ms:
+usage: nl [-p] [-b type] [-d delim] [-f type] [-h type] [-i incr] [-l num]
+          [-n format] [-s sep] [-v startnum] [-w width] [file]
+
+exec
+/bin/zsh -lc "nl -ba app/models/schwab/client.rb | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	require "net/http"
+     2	
+     3	module Schwab
+     4	  # The only code that speaks HTTP to Schwab. Returns scrubbed raw hashes; the structs in this
+     5	  # namespace turn them into typed values. Every field name here is SCHWAB_SHAPE_UNVERIFIED
+     6	  # until docs/verify-on-approval.md is worked through.
+     7	  class Client
+     8	    TRADER = "https://api.schwabapi.com/trader/v1"
+     9	    MARKET = "https://api.schwabapi.com/marketdata/v1"
+    10	    OAUTH = "https://api.schwabapi.com/v1/oauth"
+    11	    OPEN_TIMEOUT = 5
+    12	    READ_TIMEOUT = 20
+    13	    BACKOFF = [ 1, 4, 16 ].freeze
+    14	    RETRY_AFTER_CAP = 60
+    15	    TRANSACTION_TYPES = %w[ TRADE RECEIVE_AND_DELIVER DIVIDEND_OR_INTEREST ELECTRONIC_FUND ACH_RECEIPT ACH_DISBURSEMENT
+    16	                            WIRE_IN WIRE_OUT JOURNAL CASH_RECEIPT CASH_DISBURSEMENT ].freeze
+    17	
+    18	    # token responds to #access_token and, if it can renew itself, #refresh!
+    19	    def initialize(token: nil, app_key: Schwab.app_key, app_secret: Schwab.app_secret, callback_url: Schwab.callback_url, sleeper: method(:sleep))
+    20	      @token, @app_key, @app_secret, @callback_url, @sleeper = token, app_key, app_secret, callback_url, sleeper
+    21	    end
+    22	
+    23	    # ---- OAuth -----------------------------------------------------------------------------
+    24	
+    25	    def authorize_url(state:)
+    26	      "#{OAUTH}/authorize?" + URI.encode_www_form(response_type: "code", client_id: @app_key, redirect_uri: @callback_url, state: state)
+    27	    end
+    28	
+    29	    # params[:code] is already URL-decoded once by Rails; it ends in "@". Do not decode again.
+    30	    def exchange_code(code)
+    31	      token_request(grant_type: "authorization_code", code: code, redirect_uri: @callback_url)
+    32	    end
+    33	
+    34	    def refresh(refresh_token)
+    35	      token_request(grant_type: "refresh_token", refresh_token: refresh_token)
+    36	    end
+    37	
+    38	    # ---- Trader API ------------------------------------------------------------------------
+    39	
+    40	    # Hash values only; the plaintext numbers never leave this method.
+    41	    def account_numbers
+    42	      get(TRADER, "/accounts/accountNumbers").map { |row| row["hashValue"] }
+    43	    end
+    44	
+    45	    def account(hash, fields: [ :positions ])
+    46	      get(TRADER, "/accounts/#{hash}", fields: Array(fields).join(","))
+    47	    end
+    48	
+    49	    def orders(hash, from:, to: ::Time.current, status: nil)
+    50	      params = { fromEnteredTime: Timestamp.iso_ms(from), toEnteredTime: Timestamp.iso_ms(to), maxResults: 3000 }
+    51	      params[:status] = status if status
+    52	      get(TRADER, "/accounts/#{hash}/orders", **params)
+    53	    end
+    54	
+    55	    def order(hash, order_id)
+    56	      get(TRADER, "/accounts/#{hash}/orders/#{order_id}")
+    57	    end
+    58	
+    59	    # One request per type the sync cares about; whether omitting `types` returns everything is unverified.
+    60	    def transactions(hash, from:, to: ::Time.current, types: TRANSACTION_TYPES)
+    61	      Array(types).flat_map do |type|
+    62	        get(TRADER, "/accounts/#{hash}/transactions", startDate: Timestamp.iso_ms(from), endDate: Timestamp.iso_ms(to), types: type)
+    63	      end
+    64	    end
+    65	
+    66	    # ---- Market Data API -------------------------------------------------------------------
+    67	
+    68	    def market_hours(date, markets: [ :equity ])
+    69	      get(MARKET, "/markets", markets: Array(markets).join(","), date: Timestamp.date(date))
+    70	    end
+    71	
+    72	    def quotes(symbols, fields: %w[ quote reference ])
+    73	      Array(symbols).each_slice(Schwab::QUOTE_BATCH).reduce({}) do |acc, batch|
+    74	        acc.merge(get(MARKET, "/quotes", symbols: batch.join(","), fields: fields.join(","), indicative: false))
+    75	      end
+    76	    end
+    77	
+    78	    def price_history(symbol, period_type: :month, period: 3, frequency_type: :daily, frequency: 1, from: nil, to: nil)
+    79	      params = { symbol: symbol, periodType: period_type, period: period, frequencyType: frequency_type, frequency: frequency,
+    80	                 needExtendedHoursData: false, needPreviousClose: true }
+    81	      params[:startDate] = Timestamp.epoch_ms(from) if from
+    82	      params[:endDate] = Timestamp.epoch_ms(to) if to
+    83	      get(MARKET, "/pricehistory", **params)
+    84	    end
+    85	
+    86	    def instrument(symbol_or_cusip)
+    87	      get(MARKET, "/instruments", symbol: symbol_or_cusip, projection: "symbol-search").fetch("instruments", [])
+    88	    end
+    89	
+    90	    private
+    91	      def token_request(**form)
+    92	        request = Net::HTTP::Post.new(URI("#{OAUTH}/token"))
+    93	        request.basic_auth(@app_key, @app_secret)
+    94	        request["Accept"] = "application/json"
+    95	        request.set_form_data(form)
+    96	        response, attempts = perform(request, template: "/v1/oauth/token", idempotent: form[:grant_type] == "refresh_token")
+    97	        raise ReauthRequired.new("Schwab token endpoint responded #{response.code}: #{Error.summarize(response.body)}", status: response.code.to_i, body: Scrub.body(response.body)) if response.code.to_i.between?(400, 499)
+    98	        raise Error.for_response(response, attempts: attempts, idempotent: true) unless response.is_a?(Net::HTTPSuccess)
+    99	        JSON.parse(response.body).except("id_token")
+   100	      end
+   101	
+   102	      def get(base, path, **params)
+   103	        uri = URI("#{base}#{path}")
+   104	        uri.query = URI.encode_www_form(params) if params.any?
+   105	        response, attempts = authorized(uri)
+   106	        raise Error.for_response(response, attempts: attempts, idempotent: true) unless response.is_a?(Net::HTTPSuccess)
+   107	        Scrub.json(JSON.parse(response.body))
+   108	      end
+   109	
+   110	      # One refresh-and-retry on 401, outside the backoff budget.
+   111	      def authorized(uri, refreshed: false)
+   112	        request = Net::HTTP::Get.new(uri)
+   113	        request["Authorization"] = "Bearer #{@token.access_token}"
+   114	        request["Accept"] = "application/json"
+   115	        response, attempts = perform(request, template: Scrub.path(uri.path), idempotent: true)
+   116	        if response.code.to_i == 401 && !refreshed && @token.respond_to?(:refresh!)
+   117	          @token.refresh!
+   118	          return authorized(uri, refreshed: true)
+   119	        end
+   120	        [ response, attempts ]
+   121	      end
+   122	
+   123	      # Returns [response, attempts]. Retries live here and nowhere else.
+   124	      def perform(request, template:, idempotent:)
+   125	        attempts = 0
+   126	        begin
+   127	          attempts += 1
+   128	          RateBudget.take!
+   129	          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+   130	          response = http(request.uri).request(request)
+   131	          log(request, template, response.code, started)
+   132	          return [ response, attempts ] unless retriable?(response) && idempotent && attempts <= BACKOFF.size
+   133	          @sleeper.call(delay_for(response, attempts))
+   134	          raise Retry
+   135	        rescue Retry
+   136	          retry
+   137	        rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET, Errno::ECONNREFUSED, SocketError, OpenSSL::SSL::SSLError => e
+   138	          log(request, template, "transport", started)
+   139	          if idempotent && attempts <= BACKOFF.size
+   140	            @sleeper.call(BACKOFF[attempts - 1])
+   141	            retry
+   142	          end
+   143	          klass = idempotent ? TransportError : UnknownOutcome
+   144	          raise klass.new("#{e.class}: #{e.message}", attempts: attempts)
+   145	        end
+   146	      end
+   147	
+   148	      Retry = Class.new(StandardError)
+   149	
+   150	      def retriable?(response) = response.code.to_i == 429 || response.code.to_i >= 500
+   151	
+   152	      def delay_for(response, attempt)
+   153	        base = BACKOFF[attempt - 1]
+   154	        retry_after = response["Retry-After"].to_i
+   155	        retry_after.positive? ? [ retry_after, RETRY_AFTER_CAP ].min : base + rand * base * 0.25
+   156	      end
+   157	
+   158	      def http(uri)
+   159	        Net::HTTP.new(uri.host, uri.port).tap do |h|
+   160	          h.use_ssl = true
+   161	          h.open_timeout = OPEN_TIMEOUT
+   162	          h.read_timeout = READ_TIMEOUT
+   163	        end
+   164	      end
+   165	
+   166	      def log(request, template, status, started)
+   167	        ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+   168	        Rails.logger.info("schwab #{request.method} #{template} #{status} #{ms}ms")
+   169	      end
+   170	  end
+   171	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc 'rg -n "accountNumber|[0-9]{8,}|id_token|refresh_token|access_token|errors|invalidSymbols|orderId|activityId|cusip" lib/schwab_fixtures spec/models/schwab app/models/schwab config/initializers/schwab.rb app/models/schwab.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+app/models/schwab/error.rb:28:      Array(json["errors"]).map { |e| e["detail"] || e["title"] }.compact.join("; ").presence ||
+app/models/schwab/error.rb:34:      json.is_a?(Hash) ? Array(json["errors"]).first&.dig("id") : nil
+spec/models/schwab/fake_client_spec.rb:13:    expect(raw.dig("securitiesAccount", "accountNumber")).to be_nil
+spec/models/schwab/fake_client_spec.rb:34:    expect(fake.exchange_code(described_class::FAKE_CODE)).to include("access_token")
+app/models/schwab/client.rb:18:    # token responds to #access_token and, if it can renew itself, #refresh!
+app/models/schwab/client.rb:34:    def refresh(refresh_token)
+app/models/schwab/client.rb:35:      token_request(grant_type: "refresh_token", refresh_token: refresh_token)
+app/models/schwab/client.rb:42:      get(TRADER, "/accounts/accountNumbers").map { |row| row["hashValue"] }
+app/models/schwab/client.rb:86:    def instrument(symbol_or_cusip)
+app/models/schwab/client.rb:87:      get(MARKET, "/instruments", symbol: symbol_or_cusip, projection: "symbol-search").fetch("instruments", [])
+app/models/schwab/client.rb:96:        response, attempts = perform(request, template: "/v1/oauth/token", idempotent: form[:grant_type] == "refresh_token")
+app/models/schwab/client.rb:99:        JSON.parse(response.body).except("id_token")
+app/models/schwab/client.rb:113:        request["Authorization"] = "Bearer #{@token.access_token}"
+spec/models/schwab/timestamp_spec.rb:8:    expect(described_class.parse(1788267840000)).to eq(Time.utc(2026, 9, 1, 13, 4))
+spec/models/schwab/timestamp_spec.rb:9:    expect(described_class.parse("1788267840000")).to eq(Time.utc(2026, 9, 1, 13, 4))
+spec/models/schwab/timestamp_spec.rb:17:    expect(described_class.epoch_ms(t)).to eq(1786714262000)
+spec/models/schwab/timestamp_spec.rb:21:    expect(described_class.candle_date(1788148800000)).to eq(Date.new(2026, 8, 31))
+spec/models/schwab/scrub_spec.rb:5:    raw = { "securitiesAccount" => { "accountNumber" => "12345678", "positions" => [ { "accountNumber" => 1 } ] },
+spec/models/schwab/scrub_spec.rb:6:            "user" => { "firstName" => "John" }, "orderId" => 5 }
+spec/models/schwab/scrub_spec.rb:7:    expect(described_class.json(raw)).to eq("securitiesAccount" => { "accountNumber" => nil, "positions" => [ { "accountNumber" => nil } ] },
+spec/models/schwab/scrub_spec.rb:8:                                            "user" => nil, "orderId" => 5)
+spec/models/schwab/scrub_spec.rb:12:    expect(described_class.body('{"accountNumber":"1","x":2}')).to eq('{"accountNumber":null,"x":2}')
+spec/models/schwab/mappers_spec.rb:10:      expect(xyz.instrument).to have_attributes(symbol: "XYZ", cusip: "037833100", instrument_id: 1001, asset_type: "EQUITY")
+spec/models/schwab/mappers_spec.rb:13:      expect(sweep.instrument.cusip).to be_nil
+spec/models/schwab/mappers_spec.rb:43:      expect(flat.map(&:order_id)).to eq(%w[ 1004055538123 1004055538124 1004055538200 1004055538201 ])
+spec/models/schwab/mappers_spec.rb:45:      expect(child).to have_attributes(parent_order_id: "1004055538123", replaces_order_id: nil, order_type: "STOP", stop_price: BigDecimal("48.9"), side: "SELL")
+spec/models/schwab/mappers_spec.rb:48:      expect(replacement).to have_attributes(replaces_order_id: "1004055538200", parent_order_id: nil, stop_price: BigDecimal("86.5"))
+spec/models/schwab/mappers_spec.rb:56:      expect(parent.instrument.cusip).to eq("037833100")
+spec/models/schwab/mappers_spec.rb:60:      order = described_class.from({ "orderId" => 1, "status" => "SOMETHING_NEW", "orderType" => "WEIRD" })
+spec/models/schwab/mappers_spec.rb:71:      expect(fill).to have_attributes(activity_id: "95012345678", type: "TRADE", order_id: "1004055538123", side: "BUY", quantity: 40,
+spec/models/schwab/mappers_spec.rb:75:      expect(fill.instrument.cusip).to eq("037833100")
+spec/models/schwab/mappers_spec.rb:96:      expect(sweep.instrument).to have_attributes(symbol: "SWVXX", cusip: nil)
+spec/models/schwab/mappers_spec.rb:100:      expect { described_class.from({ "activityId" => 1 }) }.to raise_error(Schwab::MappingError)
+spec/models/schwab/mappers_spec.rb:126:      expect(quotes.first).to have_attributes(cusip: "037833100", last: BigDecimal("53.0"), net_change: BigDecimal("0.6"))
+lib/schwab_fixtures/transactions.json:3:    "activityId": 95012345678, "time": "2026-08-14T14:03:11+0000", "user": { "cdDomainId": "x", "login": "john", "type": "ADVISOR_USER", "userId": 1, "firstName": "John", "lastName": "A" },
+lib/schwab_fixtures/transactions.json:4:    "description": "TRADE", "accountNumber": "12345678", "type": "TRADE", "status": "VALID", "subAccount": "CASH",
+lib/schwab_fixtures/transactions.json:5:    "tradeDate": "2026-08-14T00:00:00+0000", "settlementDate": "2026-08-15T00:00:00+0000", "positionId": 5551, "orderId": 1004055538123,
+lib/schwab_fixtures/transactions.json:8:      { "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 }, "amount": 40, "cost": -2047.2, "price": 51.18, "positionEffect": "OPENING" },
+lib/schwab_fixtures/transactions.json:14:    "activityId": 95012345700, "time": "2026-08-21T10:00:00+0000", "description": "QUALIFIED DIVIDEND", "accountNumber": "12345678",
+lib/schwab_fixtures/transactions.json:18:      { "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 }, "amount": 9.6, "cost": 0 }
+lib/schwab_fixtures/transactions.json:22:    "activityId": 95012345800, "time": "2026-08-22T12:00:00+0000", "description": "ACH DEPOSIT", "accountNumber": "12345678",
+lib/schwab_fixtures/transactions.json:28:    "activityId": 95012345900, "description": "MONEY MARKET PURCHASE", "accountNumber": "12345678",
+spec/models/schwab/client_spec.rb:5:  let(:token) { instance_double("SchwabToken", access_token: "tok-1") }
+spec/models/schwab/client_spec.rb:17:    it "exchanges a code with Basic auth and a form body, dropping the id_token" do
+spec/models/schwab/client_spec.rb:23:      expect(result).to include("access_token" => "fake-access-token", "refresh_token" => "fake-refresh-token", "expires_in" => 1800)
+spec/models/schwab/client_spec.rb:24:      expect(result).not_to have_key("id_token")
+spec/models/schwab/client_spec.rb:42:      expect(orders.first["accountNumber"]).to be_nil
+spec/models/schwab/client_spec.rb:43:      expect(orders.first["orderId"]).to eq(1004055538123)
+spec/models/schwab/client_spec.rb:46:    it "returns hash values only from accountNumbers" do
+spec/models/schwab/client_spec.rb:47:      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 200, body: schwab_fixture("account_numbers").to_json)
+spec/models/schwab/client_spec.rb:72:      stub_request(:get, "#{trader}/accounts/accountNumbers")
+spec/models/schwab/client_spec.rb:81:      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 502)
+spec/models/schwab/client_spec.rb:86:      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 400, body: '{"errors":[{"id":"r1","detail":"bad window"}]}')
+spec/models/schwab/client_spec.rb:93:      allow(token).to receive(:access_token).and_return("tok-old", "tok-new")
+spec/models/schwab/client_spec.rb:96:      stub_request(:get, "#{trader}/accounts/accountNumbers").with(headers: { "Authorization" => "Bearer tok-old" }).to_return(status: 401)
+spec/models/schwab/client_spec.rb:97:      stub_request(:get, "#{trader}/accounts/accountNumbers").with(headers: { "Authorization" => "Bearer tok-new" }).to_return(status: 200, body: "[]")
+spec/models/schwab/client_spec.rb:103:      token = double("SchwabToken", access_token: "tok", refresh!: nil)
+spec/models/schwab/client_spec.rb:105:      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 401)
+spec/models/schwab/client_spec.rb:110:      stub_request(:get, "#{trader}/accounts/accountNumbers").to_timeout
+app/models/schwab/order.rb:8:      order_id = raw["orderId"] or raise MappingError, "orderId missing"
+spec/models/schwab/error_spec.rb:9:    body = '{"errors":[{"id":"abc-123","status":"400","title":"Bad","detail":"startDate too early"}]}'
+spec/models/schwab/error_spec.rb:18:    error = described_class.for_response(response(400, '{"accountNumber":"12345678"}'), attempts: 1, idempotent: true)
+spec/models/schwab/error_spec.rb:19:    expect(error.body).not_to include("12345678")
+lib/schwab_fixtures/account.json:4:    "accountNumber": "12345678",
+lib/schwab_fixtures/account.json:13:        "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "description": "XYZ CORP", "instrumentId": 1001, "netChange": 0.6 }
+lib/schwab_fixtures/account.json:18:        "instrument": { "assetType": "EQUITY", "cusip": "594918104", "symbol": "DEF", "description": "DEF INC", "instrumentId": 1002, "netChange": -1.4 }
+app/models/schwab/quote.rb:2:  Quote = Data.define(:symbol, :cusip, :asset_main_type, :last, :bid, :ask, :mark, :net_change, :net_percent_change,
+app/models/schwab/quote.rb:4:    # The quotes response is keyed by symbol, with unknown symbols reported under "errors" in the same 200.
+app/models/schwab/quote.rb:6:      invalid = Array(raw.dig("errors", "invalidSymbols"))
+app/models/schwab/quote.rb:7:      quotes = raw.except("errors").map { |symbol, body| from(symbol, body) }
+app/models/schwab/quote.rb:13:      new(symbol: raw["symbol"] || symbol, cusip: raw.dig("reference", "cusip"), asset_main_type: raw["assetMainType"],
+lib/schwab_fixtures/price_history.json:2: {"open":51.7,"high":53.64,"low":50.72,"close":52.4,"volume":2911742,"datetime":1788148800000},
+lib/schwab_fixtures/price_history.json:3: {"open":52.5,"high":53.4,"low":52.1,"close":53.0,"volume":1204533,"datetime":1788235200000}],
+lib/schwab_fixtures/price_history.json:4: "symbol":"XYZ","empty":false,"previousClose":52.4,"previousCloseDate":1788148800000}
+app/models/schwab/scrub.rb:5:    REDACTED_KEYS = %w[ accountNumber user ].freeze
+lib/schwab_fixtures/token.json:1:{"expires_in":1800,"token_type":"Bearer","scope":"api","refresh_token":"fake-refresh-token","access_token":"fake-access-token","id_token":"fake.jwt.token"}
+app/models/schwab/instrument_ref.rb:3:  InstrumentRef = Data.define(:symbol, :cusip, :instrument_id, :asset_type, :description) do
+app/models/schwab/instrument_ref.rb:6:      new(symbol: raw["symbol"], cusip: raw["cusip"].presence, instrument_id: raw["instrumentId"],
+app/models/schwab/activity.rb:8:      activity_id = raw["activityId"] or raise MappingError, "activityId missing"
+app/models/schwab/activity.rb:16:          sub_account: raw["subAccount"], description: raw["description"], order_id: raw["orderId"]&.to_s,
+lib/schwab_fixtures/account_numbers.json:1:[{"accountNumber":"12345678","hashValue":"9313A0737C4E1B2D5F6A7B8C9D0E1F2A3B4C5D6E7F8091A2B3C4D5E6F708192A"}]
+app/models/schwab/fake_client.rb:30:    def exchange_code(code) = scripted(:exchange_code, code) { code == FAKE_CODE ? fixture("token").except("id_token") : raise(ReauthRequired.new("invalid_grant", status: 400)) }
+app/models/schwab/fake_client.rb:31:    def refresh(refresh_token) = scripted(:refresh, refresh_token) { fixture("token").except("id_token") }
+app/models/schwab/fake_client.rb:37:    def order(hash, order_id) = scripted(:order, hash, order_id) { Order.from(fixture("orders").first).flatten.map(&:raw).find { |o| o["orderId"].to_s == order_id.to_s } or raise RequestError.new("order not found", status: 404) }
+app/models/schwab/fake_client.rb:47:    def quotes(symbols, fields: %w[ quote reference ]) = scripted(:quotes, symbols, fields) { fixture("quotes").slice(*Array(symbols).map(&:to_s), "errors") }
+app/models/schwab/fake_client.rb:49:    def instrument(symbol_or_cusip) = scripted(:instrument, symbol_or_cusip) { fixture("instruments")["instruments"] }
+lib/schwab_fixtures/orders.json:6:      { "orderLegType": "EQUITY", "legId": 1, "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 },
+lib/schwab_fixtures/orders.json:9:    "orderStrategyType": "TRIGGER", "orderId": 1004055538123, "cancelable": false, "editable": false,
+lib/schwab_fixtures/orders.json:11:    "accountNumber": 12345678, "taxLotMethod": "FIFO",
+lib/schwab_fixtures/orders.json:21:          { "orderLegType": "EQUITY", "legId": 1, "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 },
+lib/schwab_fixtures/orders.json:24:        "orderStrategyType": "SINGLE", "orderId": 1004055538124, "cancelable": true, "editable": true,
+lib/schwab_fixtures/orders.json:25:        "status": "WORKING", "enteredTime": "2026-08-14T13:31:02+0000", "accountNumber": 12345678
+lib/schwab_fixtures/orders.json:32:      { "orderLegType": "EQUITY", "legId": 1, "instrument": { "assetType": "EQUITY", "cusip": "594918104", "symbol": "DEF", "instrumentId": 1002 },
+lib/schwab_fixtures/orders.json:35:    "orderStrategyType": "SINGLE", "orderId": 1004055538200, "status": "REPLACED", "enteredTime": "2026-08-20T15:00:00+0000",
+lib/schwab_fixtures/orders.json:36:    "closeTime": "2026-08-25T15:10:00+0000", "accountNumber": 12345678,
+lib/schwab_fixtures/orders.json:41:          { "orderLegType": "EQUITY", "legId": 1, "instrument": { "assetType": "EQUITY", "cusip": "594918104", "symbol": "DEF", "instrumentId": 1002 },
+lib/schwab_fixtures/orders.json:44:        "orderStrategyType": "SINGLE", "orderId": 1004055538201, "status": "WORKING", "enteredTime": "2026-08-25T15:10:00+0000", "accountNumber": 12345678
+lib/schwab_fixtures/quotes.json:2:  "XYZ": { "assetMainType": "EQUITY", "assetSubType": "COMMON_STOCK", "quoteType": "NBBO", "realtime": true, "ssid": 1973757747, "symbol": "XYZ",
+lib/schwab_fixtures/quotes.json:3:    "reference": { "cusip": "037833100", "description": "XYZ CORP", "exchange": "Q", "exchangeName": "NASDAQ" },
+lib/schwab_fixtures/quotes.json:6:      "openPrice": 52.5, "quoteTime": 1788267840000, "securityStatus": "Normal", "totalVolume": 1204533, "tradeTime": 1788267839000 } },
+lib/schwab_fixtures/quotes.json:7:  "DEF": { "assetMainType": "EQUITY", "symbol": "DEF", "reference": { "cusip": "594918104", "description": "DEF INC" },
+lib/schwab_fixtures/quotes.json:8:    "quote": { "lastPrice": 86.57, "bidPrice": 86.5, "askPrice": 86.6, "mark": 86.57, "netChange": -1.4, "netPercentChange": -1.59, "quoteTime": 1788267840000, "tradeTime": 1788267839000 } },
+lib/schwab_fixtures/quotes.json:9:  "errors": { "invalidSymbols": [ "NOPE" ] }
+lib/schwab_fixtures/instruments.json:1:{"instruments":[{"cusip":"037833100","symbol":"XYZ","description":"XYZ CORP","exchange":"NASDAQ","assetType":"EQUITY"}]}
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/models/schwab/activity.rb app/models/schwab/order.rb app/models/schwab/quote.rb app/models/schwab/fake_client.rb | sed -n '1,420p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+usage: nl [-p] [-b type] [-d delim] [-f type] [-h type] [-i incr] [-l num]
+          [-n format] [-s sep] [-v startnum] [-w width] [file]
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+One command tried to number multiple files in a way this `nl` does not accept; I have the content, but I’m rerunning targeted line-number reads for the files likely to appear in findings.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/rate_budget.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Schwab
+     2	  # One request budget shared by every process (Puma and the worker) through the cache store.
+     3	  # Exceeding it raises rather than sleeping so a web request never blocks on the worker.
+     4	  module RateBudget
+     5	    def self.take!(now: ::Time.current, budget: Schwab::RATE_BUDGET_PER_MINUTE)
+     6	      key = "schwab:rate:#{now.to_i / 60}"
+     7	      Rails.cache.write(key, 0, expires_in: 2.minutes, unless_exist: true)
+     8	      count = Rails.cache.increment(key, 1, expires_in: 2.minutes)
+     9	      return if count <= budget
+    10	      raise RateLimited.new("Local Schwab rate budget spent (#{budget}/min)", retry_after: 60 - now.sec)
+    11	    end
+    12	  end
+    13	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/scrub.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Schwab
+     2	  # Plaintext account numbers arrive in the body of every Trader API response. They are removed
+     3	  # here, in the client, before any body reaches raw columns, cassettes, or logs.
+     4	  module Scrub
+     5	    REDACTED_KEYS = %w[ accountNumber user ].freeze
+     6	    ACCOUNT_HASH = /[0-9A-F]{64}/i
+     7	
+     8	    def self.json(value)
+     9	      case value
+    10	      when Hash then value.each_with_object({}) { |(k, v), h| h[k] = REDACTED_KEYS.include?(k) ? nil : json(v) }
+    11	      when Array then value.map { |v| json(v) }
+    12	      else value
+    13	      end
+    14	    end
+    15	
+    16	    def self.body(text)
+    17	      return text if text.blank?
+    18	      parsed = JSON.parse(text) rescue (return text)
+    19	      JSON.generate(json(parsed))
+    20	    end
+    21	
+    22	    # Log lines carry the route template, never the account hash.
+    23	    def self.path(path) = path.gsub(ACCOUNT_HASH, "{hash}")
+    24	
+    25	    def self.uri(uri) = uri.gsub(ACCOUNT_HASH, "<ACCOUNT_HASH>")
+    26	  end
+    27	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Everything that knows a Schwab field name lives under this namespace. See docs/schwab-api-contract.md.
+     2	module Schwab
+     3	  LOOKBACK = 60.days # orders and transactions; SCHWAB_SHAPE_UNVERIFIED (one source says a year)
+     4	  RATE_BUDGET_PER_MINUTE = 100 # community figure is 120/min per app; SCHWAB_SHAPE_UNVERIFIED
+     5	  QUOTE_BATCH = 100 # SCHWAB_SHAPE_UNVERIFIED
+     6	
+     7	  def self.client(token: nil)
+     8	    case Rails.configuration.x.schwab.adapter
+     9	    when :fake then FakeClient.instance
+    10	    else Client.new(token: token || SchwabToken.current)
+    11	    end
+    12	  end
+    13	
+    14	  def self.app_key = Rails.application.credentials.dig(:schwab, :app_key)
+    15	  def self.app_secret = Rails.application.credentials.dig(:schwab, :app_secret)
+    16	  def self.callback_url = ENV.fetch("SCHWAB_CALLBACK_URL")
+    17	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/error.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Schwab
+     2	  class Error < StandardError
+     3	    attr_reader :status, :body, :request_id, :attempts
+     4	
+     5	    def initialize(message = nil, status: nil, body: nil, request_id: nil, attempts: 1)
+     6	      super(message || self.class.name.demodulize.titleize)
+     7	      @status, @body, @request_id, @attempts = status, body, request_id, attempts
+     8	    end
+     9	
+    10	    # Builds the right subclass for an HTTP response. Bodies are already scrubbed.
+    11	    def self.for_response(response, attempts:, idempotent:)
+    12	      status = response.code.to_i
+    13	      body = Scrub.body(response.body)
+    14	      klass =
+    15	        case status
+    16	        when 401 then AuthError
+    17	        when 429 then RateLimited
+    18	        when 400, 403, 404 then RequestError
+    19	        when 500.. then idempotent ? ServerError : UnknownOutcome
+    20	        else Error
+    21	        end
+    22	      klass.new("Schwab responded #{status}: #{summarize(body)}", status: status, body: body, request_id: request_id_in(body), attempts: attempts)
+    23	    end
+    24	
+    25	    def self.summarize(body)
+    26	      json = JSON.parse(body) rescue nil
+    27	      return body.to_s.truncate(200) unless json.is_a?(Hash)
+    28	      Array(json["errors"]).map { |e| e["detail"] || e["title"] }.compact.join("; ").presence ||
+    29	        json["error_description"] || json["error"] || body.to_s.truncate(200)
+    30	    end
+    31	
+    32	    def self.request_id_in(body)
+    33	      json = JSON.parse(body) rescue nil
+    34	      json.is_a?(Hash) ? Array(json["errors"]).first&.dig("id") : nil
+    35	    end
+    36	  end
+    37	
+    38	  class AuthError < Error; end
+    39	  class ReauthRequired < AuthError; end   # any token-endpoint 4xx: the pause path
+    40	  class RateLimited < Error
+    41	    def retry_after = @retry_after
+    42	    def initialize(message = nil, retry_after: nil, **opts)
+    43	      super(message, **opts)
+    44	      @retry_after = retry_after
+    45	    end
+    46	  end
+    47	  class ServerError < Error; end
+    48	  class RequestError < Error; end          # 400/403/404: our parameters are wrong; never retried
+    49	  class TransportError < Error; end        # timeout or connection failure on an idempotent call
+    50	  class UnknownOutcome < Error; end        # the same on a non-idempotent call; Phase 2 depends on this being distinct
+    51	  class MappingError < Error; end          # required field missing; rescued per record by sync
+    52	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab_token.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	class SchwabToken < ApplicationRecord
+     2	  encrypts :access_token, :refresh_token
+     3	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/fake_client.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/activity.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Schwab
+     2	  # Same interface as Client, same raw shapes (already scrubbed), served from lib/schwab_fixtures so seeds,
+     3	  # Playwright, and specs all run the real mappers. A per-call queue scripts failures and alternate payloads:
+     4	  #   Schwab::FakeClient.instance.enqueue(:orders) { raise Schwab::RateLimited.new(retry_after: 30) }
+     5	  class FakeClient
+     6	    include Singleton
+     7	
+     8	    FIXTURES = Rails.root.join("lib/schwab_fixtures")
+     9	    ACCOUNT_HASH = "9313A0737C4E1B2D5F6A7B8C9D0E1F2A3B4C5D6E7F8091A2B3C4D5E6F708192A"
+    10	    FAKE_CODE = "fake-authorization-code@"
+    11	
+    12	    attr_reader :calls
+    13	
+    14	    def initialize = reset!
+    15	
+    16	    def reset!
+    17	      @queues = Hash.new { |h, k| h[k] = [] }
+    18	      @calls = []
+    19	      @closed_dates = Set.new
+    20	      self
+    21	    end
+    22	
+    23	    # Script the next response for a method. The block receives the call's arguments.
+    24	    def enqueue(method_name, &block) = @queues[method_name] << block
+    25	
+    26	    def close_market_on(date) = @closed_dates << date.to_date
+    27	
+    28	    # ---- OAuth: the fake authorize page lives in the app (step 4) and redirects straight back
+    29	    def authorize_url(state:) = "/schwab/fake_authorize?#{ { state: state }.to_query }"
+    30	    def exchange_code(code) = scripted(:exchange_code, code) { code == FAKE_CODE ? fixture("token").except("id_token") : raise(ReauthRequired.new("invalid_grant", status: 400)) }
+    31	    def refresh(refresh_token) = scripted(:refresh, refresh_token) { fixture("token").except("id_token") }
+    32	
+    33	    # ---- Trader API
+    34	    def account_numbers = scripted(:account_numbers) { fixture("account_numbers").map { |row| row["hashValue"] } }
+    35	    def account(hash, fields: [ :positions ]) = scripted(:account, hash, fields) { fixture("account") }
+    36	    def orders(hash, from:, to: ::Time.current, status: nil) = scripted(:orders, hash, from, to, status) { fixture("orders") }
+    37	    def order(hash, order_id) = scripted(:order, hash, order_id) { Order.from(fixture("orders").first).flatten.map(&:raw).find { |o| o["orderId"].to_s == order_id.to_s } or raise RequestError.new("order not found", status: 404) }
+    38	    def transactions(hash, from:, to: ::Time.current, types: Client::TRANSACTION_TYPES) = scripted(:transactions, hash, from, to, types) { fixture("transactions") }
+    39	
+    40	    # ---- Market Data API
+    41	    def market_hours(date, markets: [ :equity ])
+    42	      scripted(:market_hours, date, markets) do
+    43	        closed = @closed_dates.include?(date.to_date) || date.to_date.on_weekend?
+    44	        shift_market_hours(fixture(closed ? "market_hours_closed" : "market_hours_open"), date)
+    45	      end
+    46	    end
+    47	    def quotes(symbols, fields: %w[ quote reference ]) = scripted(:quotes, symbols, fields) { fixture("quotes").slice(*Array(symbols).map(&:to_s), "errors") }
+    48	    def price_history(symbol, **) = scripted(:price_history, symbol) { fixture("price_history").merge("symbol" => symbol) }
+    49	    def instrument(symbol_or_cusip) = scripted(:instrument, symbol_or_cusip) { fixture("instruments")["instruments"] }
+    50	
+    51	    private
+    52	      def scripted(method_name, *args)
+    53	        @calls << [ method_name, *args ]
+    54	        block = @queues[method_name].shift
+    55	        block ? block.call(*args) : yield
+    56	      end
+    57	
+    58	      def fixture(name) = Scrub.json(JSON.parse(FIXTURES.join("#{name}.json").read))
+    59	
+    60	      # Fixture dates are stand-ins; the requested date replaces them so the calendar stays coherent.
+    61	      def shift_market_hours(raw, date)
+    62	        original = raw["equity"].values.first["date"]
+    63	        JSON.parse(JSON.generate(raw).gsub(original, date.to_date.iso8601))
+    64	      end
+    65	  end
+    66	end
+
+ succeeded in 0ms:
+     1	module Schwab
+     2	  # One transaction activity. The security transfer item gives instrument, quantity, and price;
+     3	  # fee items are summed. Sign conventions are SCHWAB_SHAPE_UNVERIFIED; side comes from netAmount.
+     4	  Activity = Data.define(:activity_id, :type, :activity_type, :status, :sub_account, :description, :order_id,
+     5	                         :net_amount, :trade_date, :settlement_date, :executed_at, :instrument, :quantity, :price,
+     6	                         :position_effect, :commission, :fees, :raw) do
+     7	    def self.from(raw)
+     8	      activity_id = raw["activityId"] or raise MappingError, "activityId missing"
+     9	      items = Array(raw["transferItems"])
+    10	      security = items.find { |i| i["feeType"].blank? && !InstrumentRef.from(i["instrument"]).currency? }
+    11	      fee_items = items.select { |i| i["feeType"].present? }
+    12	      executed_at = Timestamp.parse(raw["time"]) || Timestamp.parse(raw["tradeDate"])
+    13	      raise MappingError, "activity #{activity_id} has no time or tradeDate" unless executed_at
+    14	
+    15	      new(activity_id: activity_id.to_s, type: raw["type"], activity_type: raw["activityType"], status: raw["status"],
+    16	          sub_account: raw["subAccount"], description: raw["description"], order_id: raw["orderId"]&.to_s,
+    17	          net_amount: Decimal.parse(raw["netAmount"]),
+    18	          trade_date: Timestamp.parse_date(raw["tradeDate"]), settlement_date: Timestamp.parse_date(raw["settlementDate"]),
+    19	          executed_at: executed_at,
+    20	          instrument: security && InstrumentRef.from(security["instrument"]),
+    21	          quantity: security && Decimal.parse(security["amount"])&.abs,
+    22	          price: security && Decimal.parse(security["price"]),
+    23	          position_effect: security && security["positionEffect"],
+    24	          commission: fee_items.select { |i| i["feeType"] == "COMMISSION" }.sum { |i| Decimal.parse(i["amount"])&.abs || 0 },
+    25	          fees: fee_items.reject { |i| i["feeType"] == "COMMISSION" }.sum { |i| Decimal.parse(i["amount"])&.abs || 0 },
+    26	          raw: raw)
+    27	    end
+    28	
+    29	    def trade? = type == "TRADE"
+    30	
+    31	    def side
+    32	      return nil unless trade? && net_amount
+    33	      net_amount.negative? ? "BUY" : "SELL"
+    34	    end
+    35	  end
+    36	end
+
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/quote.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/order.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	module Schwab
+     2	  Quote = Data.define(:symbol, :cusip, :asset_main_type, :last, :bid, :ask, :mark, :net_change, :net_percent_change,
+     3	                      :quote_time, :trade_time, :raw) do
+     4	    # The quotes response is keyed by symbol, with unknown symbols reported under "errors" in the same 200.
+     5	    def self.batch(raw)
+     6	      invalid = Array(raw.dig("errors", "invalidSymbols"))
+     7	      quotes = raw.except("errors").map { |symbol, body| from(symbol, body) }
+     8	      [ quotes, invalid ]
+     9	    end
+    10	
+    11	    def self.from(symbol, raw)
+    12	      q = raw["quote"] || {}
+    13	      new(symbol: raw["symbol"] || symbol, cusip: raw.dig("reference", "cusip"), asset_main_type: raw["assetMainType"],
+    14	          last: Decimal.parse(q["lastPrice"]), bid: Decimal.parse(q["bidPrice"]), ask: Decimal.parse(q["askPrice"]),
+    15	          mark: Decimal.parse(q["mark"]), net_change: Decimal.parse(q["netChange"]), net_percent_change: Decimal.parse(q["netPercentChange"]),
+    16	          quote_time: Timestamp.parse(q["quoteTime"]), trade_time: Timestamp.parse(q["tradeTime"]), raw: raw)
+    17	    end
+    18	  end
+    19	end
+
+ succeeded in 0ms:
+     1	module Schwab
+     2	  # One order as Schwab returns it. Bracket children and replacements arrive nested; #flatten walks them.
+     3	  Order = Data.define(:order_id, :status, :order_type, :session, :duration, :strategy_type, :instruction, :quantity,
+     4	                      :filled_quantity, :remaining_quantity, :price, :stop_price, :tax_lot_method, :entered_at,
+     5	                      :close_time, :instrument, :children, :replacements, :parent_order_id, :replaces_order_id, :raw) do
+     6	    def self.from(raw, parent_order_id: nil, replaces_order_id: nil)
+     7	      leg = Array(raw["orderLegCollection"]).first || {}
+     8	      order_id = raw["orderId"] or raise MappingError, "orderId missing"
+     9	      new(order_id: order_id.to_s, status: raw["status"], order_type: raw["orderType"], session: raw["session"],
+    10	          duration: raw["duration"], strategy_type: raw["orderStrategyType"], instruction: leg["instruction"],
+    11	          quantity: Decimal.parse(raw["quantity"]) || Decimal.parse(leg["quantity"]),
+    12	          filled_quantity: Decimal.parse(raw["filledQuantity"]), remaining_quantity: Decimal.parse(raw["remainingQuantity"]),
+    13	          price: Decimal.parse(raw["price"]), stop_price: Decimal.parse(raw["stopPrice"]), tax_lot_method: raw["taxLotMethod"],
+    14	          entered_at: Timestamp.parse(raw["enteredTime"]), close_time: Timestamp.parse(raw["closeTime"]),
+    15	          instrument: InstrumentRef.from(leg["instrument"]),
+    16	          children: Array(raw["childOrderStrategies"]).map { |c| from(c, parent_order_id: order_id.to_s) },
+    17	          replacements: Array(raw["replacingOrderCollection"]).map { |r| from(r, replaces_order_id: order_id.to_s) },
+    18	          parent_order_id: parent_order_id, replaces_order_id: replaces_order_id, raw: raw)
+    19	    end
+    20	
+    21	    # Self plus every nested child and replacement, depth first, lineage already stamped.
+    22	    def flatten = [ self, *children.flat_map(&:flatten), *replacements.flat_map(&:flatten) ]
+    23	
+    24	    def side
+    25	      case instruction
+    26	      when /\ABUY/ then "BUY"
+    27	      when /\ASELL/ then "SELL"
+    28	      end
+    29	    end
+    30	
+    31	    def working? = ::Order::WORKING_STATUSES.include?(status)
+    32	    def stop? = ::Order::STOP_TYPES.include?(order_type)
+    33	  end
+    34	end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/models/schwab/account_summary.rb app/models/schwab/instrument_ref.rb app/models/schwab/market_hours.rb app/models/schwab/price_history.rb app/models/schwab/timestamp.rb app/models/schwab/decimal.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ exited 1 in 0ms:
+usage: nl [-p] [-b type] [-d delim] [-f type] [-h type] [-i incr] [-l num]
+          [-n format] [-s sep] [-v startnum] [-w width] [file]
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+I’m not making any edits for this request; this is a pure review. I’m checking Rails cache configuration next because the rate-budget requirement specifically depends on production cache behavior, not just unit tests.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,220p' config/environments/production.rb" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,220p' config/environments/development.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "active_support/core_ext/integer/time"
+
+Rails.application.configure do
+  # Settings specified here will take precedence over those in config/application.rb.
+
+  # Make code changes take effect immediately without server restart.
+  config.enable_reloading = true
+
+  # Do not eager load code on boot.
+  config.eager_load = false
+
+  # Show full error reports.
+  config.consider_all_requests_local = true
+
+  # Enable server timing.
+  config.server_timing = true
+
+  # Enable/disable Action Controller caching. By default Action Controller caching is disabled.
+  # Run rails dev:cache to toggle Action Controller caching.
+  if Rails.root.join("tmp/caching-dev.txt").exist?
+    config.action_controller.perform_caching = true
+    config.action_controller.enable_fragment_cache_logging = true
+    config.public_file_server.headers = { "cache-control" => "public, max-age=#{2.days.to_i}" }
+  else
+    config.action_controller.perform_caching = false
+  end
+
+  # Change to :null_store to avoid any caching.
+  config.cache_store = :memory_store
+
+  # Store uploaded files on the local file system (see config/storage.yml for options).
+  config.active_storage.service = :local
+
+  # Don't care if the mailer can't send.
+  config.action_mailer.raise_delivery_errors = false
+
+  # Make template changes take effect immediately.
+  config.action_mailer.perform_caching = false
+
+  # Set localhost to be used by links generated in mailer templates.
+  config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
+
+  # Mail is written to tmp/mails so sign-in links can be read without a mail server.
+  config.action_mailer.delivery_method = :file
+  config.action_mailer.file_settings = { location: Rails.root.join("tmp/mails") }
+
+  # Print deprecation notices to the Rails logger.
+  config.active_support.deprecation = :log
+
+  # Raise an error on page load if there are pending migrations.
+  config.active_record.migration_error = :page_load
+
+  # Highlight code that triggered database queries in logs.
+  config.active_record.verbose_query_logs = true
+
+  # Append comments with runtime information tags to SQL queries in logs.
+  config.active_record.query_log_tags_enabled = true
+
+  # Highlight code that enqueued background job in logs.
+  config.active_job.verbose_enqueue_logs = true
+
+  # Highlight code that triggered redirect in logs.
+  config.action_dispatch.verbose_redirect_logs = true
+
+  # Suppress logger output for asset requests.
+  config.assets.quiet = true
+
+  # Raises error for missing translations.
+  # config.i18n.raise_on_missing_translations = true
+
+  # Annotate rendered view with file names.
+  config.action_view.annotate_rendered_view_with_filenames = true
+
+  # Uncomment if you wish to allow Action Cable access from any origin.
+  # config.action_cable.disable_request_forgery_protection = true
+
+  # Raise error when a before_action's only/except options reference missing actions.
+  config.action_controller.raise_on_missing_callback_actions = true
+
+  # Apply autocorrection by RuboCop to files generated by `bin/rails generate`.
+  # config.generators.apply_rubocop_autocorrect_after_generate!
+end
+
+ succeeded in 0ms:
+require "active_support/core_ext/integer/time"
+
+Rails.application.configure do
+  # Settings specified here will take precedence over those in config/application.rb.
+
+  # Code is not reloaded between requests.
+  config.enable_reloading = false
+
+  # Eager load code on boot for better performance and memory savings (ignored by Rake tasks).
+  config.eager_load = true
+
+  # Full error reports are disabled.
+  config.consider_all_requests_local = false
+
+  # Turn on fragment caching in view templates.
+  config.action_controller.perform_caching = true
+
+  # Cache assets for far-future expiry since they are all digest stamped.
+  config.public_file_server.headers = { "cache-control" => "public, max-age=#{1.year.to_i}" }
+
+  # Enable serving of images, stylesheets, and JavaScripts from an asset server.
+  # config.asset_host = "http://assets.example.com"
+
+  # Store uploaded files on the local file system (see config/storage.yml for options).
+  config.active_storage.service = :local
+
+  # Assume all access to the app is happening through a SSL-terminating reverse proxy.
+  config.assume_ssl = true
+
+  # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
+  config.force_ssl = true
+
+  # Skip http-to-https redirect for the default health check endpoint.
+  # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
+
+  # Log to STDOUT with the current request id as a default log tag.
+  config.log_tags = [ :request_id ]
+  config.logger   = ActiveSupport::TaggedLogging.logger(STDOUT)
+
+  # Change to "debug" to log everything (including potentially personally-identifiable information!).
+  config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
+
+  # Prevent health checks from clogging up the logs.
+  config.silence_healthcheck_path = "/up"
+
+  # Don't log any deprecations.
+  config.active_support.report_deprecations = false
+
+  # Replace the default in-process memory cache store with a durable alternative.
+  config.cache_store = :solid_cache_store
+
+  # Replace the default in-process and non-durable queuing backend for Active Job.
+  config.active_job.queue_adapter = :solid_queue
+  config.solid_queue.connects_to = { database: { writing: :queue } }
+
+  # Ignore bad email addresses and do not raise email delivery errors.
+  # Set this to true and configure the email server for immediate delivery to raise delivery errors.
+  # config.action_mailer.raise_delivery_errors = false
+
+  # Set host to be used by links generated in mailer templates.
+  config.action_mailer.default_url_options = { host: "desk.athayde.com", protocol: "https" }
+
+  # Outgoing mail via Resend over SMTP; the API key lives in credentials under resend.api_key.
+  config.action_mailer.delivery_method = :smtp
+  config.action_mailer.smtp_settings = {
+    address: "smtp.resend.com",
+    port: 465,
+    tls: true,
+    user_name: "resend",
+    password: Rails.application.credentials.resend!.fetch(:api_key),
+    authentication: :plain
+  }
+
+  # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
+  # the I18n.default_locale when a translation cannot be found).
+  config.i18n.fallbacks = true
+
+  # Do not dump schema after migrations.
+  config.active_record.dump_schema_after_migration = false
+
+  # Only use :id for inspections in production.
+  config.active_record.attributes_for_inspect = [ :id ]
+
+  # Enable DNS rebinding protection and other `Host` header attacks.
+  config.hosts = [ "desk.athayde.com" ]
+  #
+  # Skip DNS rebinding protection for the default health check endpoint.
+  config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc 'rg -n "cache_store|solid_cache|Solid|config.cache|rails dev:cache" config Gemfile* db app' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+Gemfile.lock:308:    solid_cache (1.0.10)
+Gemfile.lock:381:  solid_cache
+Gemfile.lock:502:  solid_cache (1.0.10) sha256=bc05a2fb3ac78a6f43cbb5946679cf9db67dd30d22939ededc385cb93e120d41
+Gemfile:25:gem "solid_cache"
+db/cache_schema.rb:2:  create_table "solid_cache_entries", force: :cascade do |t|
+db/cache_schema.rb:8:    t.index ["byte_size"], name: "index_solid_cache_entries_on_byte_size"
+db/cache_schema.rb:9:    t.index ["key_hash", "byte_size"], name: "index_solid_cache_entries_on_key_hash_and_byte_size"
+db/cache_schema.rb:10:    t.index ["key_hash"], name: "index_solid_cache_entries_on_key_hash", unique: true
+config/puma.rb:37:# Run the Solid Queue supervisor inside of Puma for single-server deployments.
+config/recurring.yml:14:    command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
+config/environments/production.rb:50:  config.cache_store = :solid_cache_store
+config/environments/test.rb:23:  config.cache_store = :memory_store
+config/environments/development.rb:19:  # Run rails dev:cache to toggle Action Controller caching.
+config/environments/development.rb:29:  config.cache_store = :memory_store
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "rg -n \"class SchwabToken|create_table \\\"schwab_tokens\\\"|schwab_tokens|access_token|refresh_expires_at\" db app spec" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+db/migrate/20260901220020_create_schwab_tokens.rb:3:    create_table :schwab_tokens do |t|
+db/migrate/20260901220020_create_schwab_tokens.rb:4:      t.text :access_token, null: false
+db/migrate/20260901220020_create_schwab_tokens.rb:7:      t.datetime :refresh_expires_at, null: false # issued_at + 7 days; never moved by a refresh
+db/structure.sql:511:-- Name: schwab_tokens; Type: TABLE; Schema: public; Owner: -
+db/structure.sql:514:CREATE TABLE public.schwab_tokens (
+db/structure.sql:516:    access_token text NOT NULL,
+db/structure.sql:519:    refresh_expires_at timestamp(6) with time zone NOT NULL,
+db/structure.sql:530:-- Name: schwab_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+db/structure.sql:533:CREATE SEQUENCE public.schwab_tokens_id_seq
+db/structure.sql:542:-- Name: schwab_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+db/structure.sql:545:ALTER SEQUENCE public.schwab_tokens_id_seq OWNED BY public.schwab_tokens.id;
+db/structure.sql:1009:-- Name: schwab_tokens id; Type: DEFAULT; Schema: public; Owner: -
+db/structure.sql:1012:ALTER TABLE ONLY public.schwab_tokens ALTER COLUMN id SET DEFAULT nextval('public.schwab_tokens_id_seq'::regclass);
+db/structure.sql:1190:-- Name: schwab_tokens schwab_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+db/structure.sql:1193:ALTER TABLE ONLY public.schwab_tokens
+db/structure.sql:1194:    ADD CONSTRAINT schwab_tokens_pkey PRIMARY KEY (id);
+spec/support/vcr.rb:23:  SECRET_FORM_FIELDS = %w[ client_id client_secret code refresh_token access_token ].freeze
+spec/support/vcr.rb:24:  SECRET_JSON_FIELDS = %w[ access_token refresh_token id_token ].freeze
+spec/models/schwab_token_spec.rb:5:    token = SchwabToken.create!(access_token: "access-abc", refresh_token: "refresh-xyz", access_expires_at: 30.minutes.from_now,
+spec/models/schwab_token_spec.rb:6:                                refresh_expires_at: 7.days.from_now, issued_at: Time.current)
+spec/models/schwab_token_spec.rb:7:    stored = SchwabToken.lease_connection.select_one(SchwabToken.sanitize_sql([ "SELECT access_token, refresh_token FROM schwab_tokens WHERE id = ?", token.id ]))
+spec/models/schwab_token_spec.rb:8:    expect(stored["access_token"]).not_to eq("access-abc")
+spec/models/schwab_token_spec.rb:10:    expect(token.reload).to have_attributes(access_token: "access-abc", refresh_token: "refresh-xyz")
+app/models/schwab/client.rb:18:    # token responds to #access_token and, if it can renew itself, #refresh!
+app/models/schwab/client.rb:113:        request["Authorization"] = "Bearer #{@token.access_token}"
+app/models/schwab_token.rb:1:class SchwabToken < ApplicationRecord
+app/models/schwab_token.rb:2:  encrypts :access_token, :refresh_token
+spec/models/schwab/fake_client_spec.rb:34:    expect(fake.exchange_code(described_class::FAKE_CODE)).to include("access_token")
+spec/models/schwab/client_spec.rb:5:  let(:token) { instance_double("SchwabToken", access_token: "tok-1") }
+spec/models/schwab/client_spec.rb:23:      expect(result).to include("access_token" => "fake-access-token", "refresh_token" => "fake-refresh-token", "expires_in" => 1800)
+spec/models/schwab/client_spec.rb:93:      allow(token).to receive(:access_token).and_return("tok-old", "tok-new")
+spec/models/schwab/client_spec.rb:103:      token = double("SchwabToken", access_token: "tok", refresh!: nil)
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The production cache is Solid Cache, so the adapter is relying on `Rails.cache.increment` being cross-process and expiring correctly. I’m checking local gem code instead of guessing about those semantics.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'bundle show activesupport' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'bundle show solid_cache' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "rg -n \"def increment|increment\\(\" "'$(bundle show solid_cache 2>/dev/null) $(bundle show activesupport 2>/dev/null)/lib/active_support/cache -g '"'*.rb'" in /Users/jathayde/Development/Personal/desk.athayde
+ exited 1 in 2212ms:
+/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/2.6.0/rubygems.rb:283:in `find_spec_for_exe': Could not find 'bundler' (4.0.4) required by your /Users/jathayde/Development/Personal/desk.athayde/Gemfile.lock. (Gem::GemNotFoundException)
+To update to the latest version installed on your system, run `bundle update --bundler`.
+To install the missing version, run `gem install bundler:4.0.4`
+	from /System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/2.6.0/rubygems.rb:302:in `activate_bin_path'
+	from /usr/bin/bundle:23:in `<main>'
+
+ exited 1 in 2209ms:
+/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/2.6.0/rubygems.rb:283:in `find_spec_for_exe': Could not find 'bundler' (4.0.4) required by your /Users/jathayde/Development/Personal/desk.athayde/Gemfile.lock. (Gem::GemNotFoundException)
+To update to the latest version installed on your system, run `bundle update --bundler`.
+To install the missing version, run `gem install bundler:4.0.4`
+	from /System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/2.6.0/rubygems.rb:302:in `activate_bin_path'
+	from /usr/bin/bundle:23:in `<main>'
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ exited 2 in 3756ms:
+rg: /lib/active_support/cache: IO error for operation on /lib/active_support/cache: No such file or directory (os error 2)
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "gem env home && ruby -e 'puts Gem.path'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 2968ms:
+/Library/Ruby/Gems/2.6.0
+/Users/jathayde/.gem/ruby/2.6.0
+/Library/Ruby/Gems/2.6.0
+/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/gems/2.6.0
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The local bundle cannot be loaded because the requested Bundler version is missing, so I can’t execute the specs in this sandbox. I’m still able to do a static review from the files and local configuration.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "find /Users/jathayde/.gem /Library/Ruby/Gems /System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/gems -path '*solid_cache*' -o -path '*active_support/cache*' 2>/dev/null | head -200" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The review is now mostly complete. I’m doing one final pass for endpoint parameter encoding and mapper edge cases that would pass current fixtures but fail against the real API.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/order.rb" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,140p' db/migrate/20260901220020_create_schwab_tokens.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+class CreateSchwabTokens < ActiveRecord::Migration[8.1]
+  def change
+    create_table :schwab_tokens do |t|
+      t.text :access_token, null: false
+      t.text :refresh_token, null: false
+      t.datetime :access_expires_at, null: false
+      t.datetime :refresh_expires_at, null: false # issued_at + 7 days; never moved by a refresh
+      t.datetime :issued_at, null: false
+      t.datetime :last_refreshed_at
+      t.text :last_refresh_error
+      t.string :scope
+
+      t.timestamps
+    end
+  end
+end
+
+ succeeded in 0ms:
+class Order < ApplicationRecord
+  # SCHWAB_SHAPE_UNVERIFIED: see docs/schwab-api-contract.md for the status and type vocabularies.
+  WORKING_STATUSES = %w[ WORKING ACCEPTED QUEUED PENDING_ACTIVATION AWAITING_PARENT_ORDER AWAITING_STOP_CONDITION
+                         AWAITING_CONDITION NEW AWAITING_RELEASE_TIME ].freeze
+  STOP_TYPES = %w[ STOP STOP_LIMIT TRAILING_STOP TRAILING_STOP_LIMIT ].freeze
+
+  belongs_to :account
+  belongs_to :instrument
+  belongs_to :parent_order, class_name: "Order", optional: true
+  belongs_to :replaces_order, class_name: "Order", optional: true
+  belongs_to :order_proposal, optional: true
+  has_many :child_orders, class_name: "Order", foreign_key: :parent_order_id, dependent: :nullify, inverse_of: :parent_order
+  has_many :activities, dependent: :nullify
+
+  enum :placed_via, { schwab_direct: "schwab_direct", app: "app" }
+
+  scope :working, -> { where(status: WORKING_STATUSES) }
+  scope :stops, -> { where(order_type: STOP_TYPES) }
+
+  def working? = WORKING_STATUSES.include?(status)
+  def stop? = STOP_TYPES.include?(order_type)
+end
+
+exec
+/bin/zsh -lc "sed -n '1,220p' spec/support/vcr.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# The suite never touches the live Schwab API. Cassettes are scrubbed of credentials, tokens,
+# account hashes, and plaintext account numbers before they are written. Requests match on
+# method and URI only, because scrubbed bodies would never match a live refresh grant.
+VCR.configure do |c|
+  c.cassette_library_dir = Rails.root.join("spec/cassettes")
+  c.hook_into :webmock
+  c.configure_rspec_metadata!
+  c.default_cassette_options = { record: :none, match_requests_on: %i[ method uri ] }
+  c.allow_http_connections_when_no_cassette = false
+
+  c.filter_sensitive_data("<SCHWAB_APP_KEY>") { Rails.application.credentials.dig(:schwab, :app_key) }
+  c.filter_sensitive_data("<SCHWAB_APP_SECRET>") { Rails.application.credentials.dig(:schwab, :app_secret) }
+
+  c.before_record do |interaction|
+    interaction.request.headers.delete("Authorization")
+    interaction.request.body = VcrScrub.form(interaction.request.body)
+    interaction.request.uri = VcrScrub.uri(interaction.request.uri)
+    interaction.response.body = VcrScrub.json(interaction.response.body)
+  end
+end
+
+module VcrScrub
+  SECRET_FORM_FIELDS = %w[ client_id client_secret code refresh_token access_token ].freeze
+  SECRET_JSON_FIELDS = %w[ access_token refresh_token id_token ].freeze
+  ACCOUNT_HASH = /[0-9A-F]{64}/i
+
+  def self.form(body)
+    return body if body.blank?
+    body.gsub(/(#{SECRET_FORM_FIELDS.join("|")})=[^&]*/) { "#{$1}=<REDACTED>" }
+  end
+
+  def self.uri(uri)
+    uri.gsub(%r{/accounts/#{ACCOUNT_HASH}}, "/accounts/<ACCOUNT_HASH>")
+  end
+
+  def self.json(body)
+    return body if body.blank?
+    body
+      .gsub(/"(#{SECRET_JSON_FIELDS.join("|")})"\s*:\s*"[^"]*"/) { %("#{$1}": "<REDACTED>") }
+      .gsub(/"hashValue"\s*:\s*"[^"]*"/, '"hashValue": "<ACCOUNT_HASH>"')
+      .gsub(/"accountNumber"\s*:\s*"?\d+"?/, '"accountNumber": "<ACCOUNT_NUMBER>"')
+      .gsub(ACCOUNT_HASH, "<ACCOUNT_HASH>")
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "for f in lib/schwab_fixtures/*.json; do ruby -rjson -e 'JSON.parse(File.read(ARGV[0])); puts ARGV[0]' \""'$f"; done' in /Users/jathayde/Development/Personal/desk.athayde
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ succeeded in 16022ms:
+lib/schwab_fixtures/account.json
+lib/schwab_fixtures/account_numbers.json
+lib/schwab_fixtures/instruments.json
+lib/schwab_fixtures/market_hours_closed.json
+lib/schwab_fixtures/market_hours_open.json
+lib/schwab_fixtures/orders.json
+lib/schwab_fixtures/price_history.json
+lib/schwab_fixtures/quotes.json
+lib/schwab_fixtures/token.json
+lib/schwab_fixtures/transactions.json
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+Two concrete defects are now clear: the default production client has no usable token refresh surface, and the transaction type loop does not cover the full contract enum. I’m checking whether any of the remaining issues are true bugs or just deferred verification items.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,220p' lib/schwab_fixtures/transactions.json" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+[
+  {
+    "activityId": 95012345678, "time": "2026-08-14T14:03:11+0000", "user": { "cdDomainId": "x", "login": "john", "type": "ADVISOR_USER", "userId": 1, "firstName": "John", "lastName": "A" },
+    "description": "TRADE", "accountNumber": "12345678", "type": "TRADE", "status": "VALID", "subAccount": "CASH",
+    "tradeDate": "2026-08-14T00:00:00+0000", "settlementDate": "2026-08-15T00:00:00+0000", "positionId": 5551, "orderId": 1004055538123,
+    "netAmount": -2047.25, "activityType": "EXECUTION",
+    "transferItems": [
+      { "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 }, "amount": 40, "cost": -2047.2, "price": 51.18, "positionEffect": "OPENING" },
+      { "instrument": { "assetType": "CURRENCY", "symbol": "CURRENCY_USD" }, "amount": -0.03, "cost": -0.03, "feeType": "SEC_FEE" },
+      { "instrument": { "assetType": "CURRENCY", "symbol": "CURRENCY_USD" }, "amount": -0.02, "cost": -0.02, "feeType": "TAF_FEE" }
+    ]
+  },
+  {
+    "activityId": 95012345700, "time": "2026-08-21T10:00:00+0000", "description": "QUALIFIED DIVIDEND", "accountNumber": "12345678",
+    "type": "DIVIDEND_OR_INTEREST", "status": "VALID", "subAccount": "CASH", "tradeDate": "2026-08-21T00:00:00+0000",
+    "netAmount": 9.6, "activityType": "TRANSFER",
+    "transferItems": [
+      { "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "instrumentId": 1001 }, "amount": 9.6, "cost": 0 }
+    ]
+  },
+  {
+    "activityId": 95012345800, "time": "2026-08-22T12:00:00+0000", "description": "ACH DEPOSIT", "accountNumber": "12345678",
+    "type": "ELECTRONIC_FUND", "status": "VALID", "subAccount": "CASH", "tradeDate": "2026-08-22T00:00:00+0000",
+    "netAmount": 1000.0, "activityType": "TRANSFER",
+    "transferItems": [ { "instrument": { "assetType": "CURRENCY", "symbol": "CURRENCY_USD" }, "amount": 1000.0, "cost": 0 } ]
+  },
+  {
+    "activityId": 95012345900, "description": "MONEY MARKET PURCHASE", "accountNumber": "12345678",
+    "type": "TRADE", "status": "VALID", "subAccount": "CASH", "tradeDate": "2026-08-23T00:00:00+0000",
+    "netAmount": -500.0, "activityType": "EXECUTION",
+    "transferItems": [
+      { "instrument": { "assetType": "CASH_EQUIVALENT", "symbol": "SWVXX", "description": "SCHWAB VALUE ADVANTAGE MONEY" }, "amount": 500, "cost": -500.0, "price": 1.0, "positionEffect": "OPENING" }
+    ]
+  }
+]
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+**Findings**
+
+1. **Production token flow is not implemented.**  
+[app/models/schwab.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab.rb:10) calls `SchwabToken.current`, but [app/models/schwab_token.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab_token.rb:1) defines no `current`. The 401 path in [client.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/client.rb:116) also expects `refresh!`, which does not exist. In production, `Schwab.client` will fail before the first request, and expired-token recovery will not work.
+
+2. **Concurrent 401s can double-refresh the same token.**  
+[client.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/client.rb:116) directly calls `@token.refresh!` with no visible row lock, compare-and-swap, or reload guard. Under Solid Queue/Puma concurrency, multiple jobs can observe the same expired token and refresh simultaneously. The contract explicitly calls out avoiding double-refresh.
+
+3. **Transaction polling omits contract transaction types.**  
+[client.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/client.rb:15) leaves out `MEMORANDUM`, `MARGIN_CALL`, `MONEY_MARKET`, and `SMA_ADJUSTMENT`. The contract lists them as valid `types`, and some are relevant to cash movement/corporate-action visibility. This will silently miss real account activity.
+
+4. **CUSIP instrument lookup endpoint is missing.**  
+[client.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/client.rb:86) always calls `/instruments?symbol=...&projection=symbol-search`. The contract also requires `GET /marketdata/v1/instruments/{cusip}`. A caller passing a CUSIP to `instrument(symbol_or_cusip)` may not get the intended lookup.
+
+5. **HTTP 429 errors lose `retry_after`.**  
+[error.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/error.rb:17) creates `RateLimited`, but [error.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/error.rb:22) never passes `retry_after`. After retry exhaustion, callers cannot know Schwab’s retry delay.
+
+6. **Transport retries do not use jitter.**  
+Response retries use jitter in [client.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/client.rb:152), but transport retries sleep exact `[1, 4, 16]` at [client.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/client.rb:140). That violates the contract and can synchronize workers during an outage.
+
+7. **Non-JSON error bodies are not scrubbed.**  
+[Scrub.body](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/scrub.rb:16) returns non-JSON unchanged, and error messages summarize that body. Gateway 401/5xx bodies are allowed to be non-JSON by the contract, so any account number or sensitive text in those bodies can leak into `Schwab::Error#body` and exception messages.
+
+8. **Quote chunking loses invalid-symbol errors from earlier chunks.**  
+[client.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/client.rb:73) merges raw chunk hashes. If multiple chunks contain top-level `"errors"`, later chunks overwrite earlier invalid symbols before [quote.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/quote.rb:6) sees them.
+
+9. **Nested replacement lineage is incomplete.**  
+[order.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/order.rb:17) sets `replaces_order_id` on replacements but does not preserve an existing `parent_order_id`. A replacement nested under a bracket child loses its parent lineage.
+
+10. **Activity side derivation ignores `positionEffect`.**  
+[activity.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab/activity.rb:31) derives side only from `netAmount`. The contract says side comes from `positionEffect` plus `netAmount`; this will misclassify edge cases such as zero-net trades and some opening/closing flows.
+
+**Spec Gaps**
+
+Client specs do not cover `account` query params, `order(hash, order_id)`, `market_hours`, `price_history`, or the CUSIP instrument endpoint. There is also no concurrency spec for token refresh, no Solid Cache-backed rate-budget spec, and no multi-chunk quote invalid-symbol spec.
+
+I could not run the suite because the local Bundler version required by `Gemfile.lock` is not installed, and the workspace is read-only.
+hook: Stop
+hook: Stop Completed
+tokens used
+84,064

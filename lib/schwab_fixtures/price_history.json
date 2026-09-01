@@ -1,0 +1,4 @@
+{"candles":[
+ {"open":51.7,"high":53.64,"low":50.72,"close":52.4,"volume":2911742,"datetime":1788148800000},
+ {"open":52.5,"high":53.4,"low":52.1,"close":53.0,"volume":1204533,"datetime":1788235200000}],
+ "symbol":"XYZ","empty":false,"previousClose":52.4,"previousCloseDate":1788148800000}

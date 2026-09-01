@@ -1,0 +1,10 @@
+{
+  "XYZ": { "assetMainType": "EQUITY", "assetSubType": "COMMON_STOCK", "quoteType": "NBBO", "realtime": true, "ssid": 1973757747, "symbol": "XYZ",
+    "reference": { "cusip": "037833100", "description": "XYZ CORP", "exchange": "Q", "exchangeName": "NASDAQ" },
+    "quote": { "52WeekHigh": 60.1, "52WeekLow": 40.2, "askPrice": 53.02, "askSize": 3, "bidPrice": 52.98, "bidSize": 5, "closePrice": 52.4,
+      "highPrice": 53.4, "lastPrice": 53.0, "lastSize": 100, "lowPrice": 52.1, "mark": 53.0, "netChange": 0.6, "netPercentChange": 1.145,
+      "openPrice": 52.5, "quoteTime": 1788267840000, "securityStatus": "Normal", "totalVolume": 1204533, "tradeTime": 1788267839000 } },
+  "DEF": { "assetMainType": "EQUITY", "symbol": "DEF", "reference": { "cusip": "594918104", "description": "DEF INC" },
+    "quote": { "lastPrice": 86.57, "bidPrice": 86.5, "askPrice": 86.6, "mark": 86.57, "netChange": -1.4, "netPercentChange": -1.59, "quoteTime": 1788267840000, "tradeTime": 1788267839000 } },
+  "errors": { "invalidSymbols": [ "NOPE" ] }
+}

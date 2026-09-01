@@ -1,0 +1,1080 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a05efc-cf50-7432-b604-134a831e3527
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788300021-review-request-question-before-build-st/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the referenced prompt first, then follow its instructions exactly within the current workspace permissions.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,220p' agents/counselors/1788300021-review-request-question-before-build-st/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Second Opinion Request
+
+## Question
+# Review Request
+
+## Question
+Before build step 4 (Schwab OAuth flow and the token lifecycle) is written, review the design against the PRD and find what would go wrong operationally. This is the top operational risk in the PRD: a missed re-auth silently kills all automation.
+
+## Context
+
+### PRD and plan sections
+- @docs/artifacts/investment-copilot-prd.md §5.1 (OAuth, 25-minute refresh, 7-day expiry, degrade-and-queue, re-auth flow), §5.10 (Sunday ritual, Mon/Tue escalation), §10 (risks)
+- @docs/artifacts/investment-copilot-ui-flows.md Flow 1 banner states (token expiring / token expired), Flow 5 re-auth success and failure, Flow 8 token age
+- @docs/phase-1-plan.md §2 (token gating paragraph and the `Schwab::RefreshAccessTokenJob`, `Schwab::TokenHealthJob`, `Sync::CatchUpJob` rows), §7 (re-auth and login rows), §0 decisions 3 and 8
+- @docs/schwab-api-contract.md OAuth section (authorize URL, callback with `@` in the code, token response, lifetimes, refresh does not extend the 7-day window, token-endpoint 4xx means re-auth)
+
+### What exists
+- Step 1: magic-link login, two seeded users, `Authentication` concern with `Current.user`.
+- Step 2: `schwab_tokens` table (access_token and refresh_token encrypted, access_expires_at, refresh_expires_at NOT NULL and never moved by a refresh, issued_at, last_refreshed_at, last_refresh_error, scope), `audit_events` with `AuditEvent::KINDS` including re_auth_succeeded, re_auth_failed, token_refresh_failed, sync_paused_token_expired, sync_resumed, token_nag_sent; `system_settings.sync_paused_reason`; `sync_runs`.
+- Step 3: `Schwab::Client#authorize_url(state:)`, `#exchange_code(code)`, `#refresh(refresh_token)`; the client calls `token.refresh!` once on a 401 if the token object responds to it; `Schwab::ReauthRequired` for any token-endpoint 4xx; `Schwab::FakeClient` with a fake authorize URL and a scripted code exchange. See @app/models/schwab/client.rb and @app/models/schwab/fake_client.rb.
+
+### Planned step 4 design
+- `SchwabToken.current` (latest row). Predicates: `access_expired?`, `refresh_expired?`, `refresh_expiring_within?(24.hours)`, `usable?`. `SchwabToken.issue!(token_response)` on code exchange: new row, `issued_at` now, `refresh_expires_at` = issued_at + 7 days. `SchwabToken#refresh!`: calls the client's refresh grant under a row lock so two jobs cannot double-refresh; updates access token and `access_expires_at`, stores whatever refresh_token comes back, never touches `refresh_expires_at`; on `ReauthRequired` records `last_refresh_error`, audits `token_refresh_failed`, and pauses sync via `system_settings.sync_paused_reason`.
+- `Schwab::RefreshAccessTokenJob` every 25 minutes (recurring.yml): no-op if no token or refresh expired; otherwise `refresh!`.
+- `Schwab::TokenHealthJob` daily 08:00 and 20:00 ET: nag email when `refresh_expires_at` < now + 24h; on Monday and Tuesday also nag if `refresh_expires_at` is before the coming Sunday 18:00 email plus 12h buffer; audits `token_nag_sent`.
+- `SchwabController`: `authorize` (requires login; stores a random `state` in the session; redirects to `authorize_url`), `callback` (requires login; verifies `state`; `exchange_code(params[:code])`; `SchwabToken.issue!`; audits `re_auth_succeeded`; clears the pause and enqueues `Sync::CatchUpJob`; renders success with the new expiry), failure renders the error with a retry link and audits `re_auth_failed`. A `fake_authorize` route exists only for the fake adapter and redirects to the callback with the fake code.
+- `TokenGated` concern for jobs: skip and record `skipped_token` when the refresh token is expired.
+- Dashboard banner precedence uses these predicates (built in step 7).
+
+## Instructions
+You are providing an independent review. Be critical and thorough.
+- Check the design against every requirement in §5.1 and §5.10, and the callback against the contract (state echo unverified, code decoding, exact redirect_uri match)
+- Find race conditions: two workers refreshing at once, a refresh landing during the code exchange, the callback hit twice, a refresh running while the token row is being replaced
+- Check the clock math: 30-minute access token with a 25-minute refresh under Solid Queue scheduling drift, 7-day expiry from issuance, the Mon/Tue escalation rule, time zones
+- Check the failure paths: token endpoint 5xx versus 4xx, transport errors, a refresh that returns a different refresh_token string, what the user sees when re-auth fails, what happens if the user completes re-auth while jobs are mid-run
+- Check security: login required on both routes, state as CSRF, session fixation on the callback, the token never appearing in logs or the URL, whether the fake_authorize route can ever be reachable in production
+- Flag anything missing for Phase 2 (the submission path will need the token too)
+- Be direct and opinionated; do not hedge; order by severity
+
+## Instructions
+You are providing an independent second opinion. Be critical and thorough.
+- Analyze the question in the context provided
+- Identify risks, tradeoffs, and blind spots
+- Suggest alternatives if you see better approaches
+- Be direct and opinionated — don't hedge
+- Structure your response with clear headings
+- Keep your response focused and actionable
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+I’m going to inspect the PRD, phase plan, API contract, and the existing Schwab client/token-related code so the review is grounded in what is actually documented and implemented.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'rg -n "(''^##? |Step|token gating|Schwab::RefreshAccessTokenJob|Schwab::TokenHealthJob|Sync::CatchUpJob|re-auth|login|decision|Decision|OAuth|paused|expired)" docs/phase-1-plan.md' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'rg -n "(''^##? |5'"\\.1|5\\.10|OAuth|25-minute|7-day|Sunday|Mon|Tue|token|re-auth|reauth|degrade|queue|Risks|risk)\" docs/artifacts/investment-copilot-prd.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+1:# Phase 1 Plan: Investment Copilot (read-only)
+5:Sections: decisions, migrations, jobs, tool surface, journal builder, stops and open risk, snapshots, UI, testing, deploy, build order, deferred items, Schwab assumptions, working method.
+9:## 0. Decisions (resolved 2026-09-01)
+13:3. **Web login is passwordless magic link**, built on the Rails 8 auth generator with `generates_token_for :magic_link` (15 min, single use). Users are seeded, not self-registered: john@athayde.com and whitney@athayde.com only. No gem. Because a second person can log in, `audit_events.user_id` exists from day one so Phase 2 approvals are attributable. Fallback when email is down: `bin/rails login:link[email]` prints a magic link to the console.
+14:4. **Email via Resend over SMTP**, no gem; API key in credentials. Production login and re-auth depend on it, so Resend DNS is a prerequisite for the first production deploy.
+18:8. **MCP auth (open verification, not blocking):** the Claude app's custom-connector UI exposes static bearer headers only to orgs in a beta. John checks Settings → Connectors → Add custom connector for a "headers" option before step 8. If absent, the fallback is a minimal OAuth 2.1 authorization-code + PKCE endpoint on the app that issues the same bearer after magic-link login. `McpAuth` verifies the bearer either way, so the tool layer is unaffected.
+22:## 1. Migrations (in creation order)
+46:| 19 | `agent_runs` | `kind` enum (morning_brief, eod, sunday_review), `status`, `degraded` bool (ran with expired token / stale data), `started_at`, `finished_at`, `tool_turns`, `input_tokens`, `output_tokens`, `estimated_cost`, `output_markdown`, `error`, `model` | yes |
+48:| 21 | `system_settings` | Singleton row (check constraint `id = 1`): `shadow_mode` bool default true, `manual_halt` bool default false, `manual_halt_reason`, `manual_halt_at`, `sync_paused_reason` (set while token expired) | yes |
+56:## 2. Jobs (Solid Queue, `config/recurring.yml`, all times America/New_York)
+58:**Token gating.** Only `Sync::TickJob` and the agent jobs are scheduled; everything else is enqueued by them. When the refresh token is expired the tick job writes one `sync_runs` `skipped_token` row per hour, sets `system_settings.sync_paused_reason`, audits `sync_paused_token_expired` once per episode, and enqueues nothing. No self-re-enqueue, so the queue cannot grow. The re-auth callback clears the pause and enqueues `Sync::CatchUpJob`, which runs all feeds with windows widened to cover the gap (capped at the 60-day transactions limit). Agent jobs run degraded rather than wait: `degraded: true`, the prompt states the token is expired and every number carries its as-of time, and the email subject is prefixed accordingly. Snapshots are not written for days without a fresh balance.
+62:| `Schwab::RefreshAccessTokenJob` | every 25 min | POST refresh grant; update `schwab_tokens` (`refresh_expires_at` untouched); on failure audit `token_refresh_failed`; no-op when refresh token expired |
+63:| `Schwab::TokenHealthJob` | daily 08:00 + 20:00 | Nag when `refresh_expires_at` < now + 24h. Escalation rule: on Monday and Tuesday, email if `refresh_expires_at` is before the coming Sunday 18:00 email plus 12h buffer (Sunday re-auth was missed). Audit each nag. |
+65:| `Sync::AccountsJob` | daily 06:05, after every re-auth | `/accounts/accountNumbers` then `/accounts`; upsert by `schwab_hash` |
+69:| `Sync::CatchUpJob` | after re-auth | Accounts, positions, orders, transactions with widened windows |
+78:| `Agent::SundayReviewJob` | Sunday 18:00 | Phase 1 stub, no API call: re-auth link, token age, sync health, job failures, setup stats table |
+84:## 3. Tool surface (one registry, two transports)
+92:| `get_quotes(symbols)` | Schwab `/marketdata/v1/quotes`, cached 2 min in Solid Cache, each quote stamped with fetched_at; when the token is expired returns the cached value with `stale: true` or an explicit unavailable error |
+100:**MCP server:** `POST /mcp` (Streamable HTTP, JSON-RPC 2.0). `McpAuth` extracts a bearer from `Authorization` and compares with `ActiveSupport::SecurityUtils.secure_compare`; 401 renders a plain "MCP auth failed" page (Playwright target). See decision 0.8 for the OAuth fallback.
+106:## 4. Journal builder (zero-to-zero, trading-enabled accounts only)
+129:## 5. Stops and open risk in Phase 1
+139:## 6. Snapshots (per account, chain-linked)
+151:## 7. UI (Hotwire, mobile-responsive, no JS routers, no hover-dependent modals)
+155:| Dashboard | `/` | Banner (healthy / expiring / expired / halted), equity + day change, open risk with unprotected count, settled/unsettled cash, positions list with distance-to-stop as the primary number and inline `unprotected` where applicable, "N trades need review" callout, pending proposals count (0), staleness stamps on every number, empty state before first sync |
+159:| Re-auth | `/schwab/authorize` → Schwab → `/schwab/callback` | Requires login; success page with new expiry and catch-up sync enqueued; failure page with error and retry |
+164:Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 comes only from `system_settings.manual_halt`.
+168:## 8. Testing
+173:- **Playwright** (`e2e/`, `@playwright/test` via npm, the only Node dependency): dashboard in four banner states via a test-env-only `/playwright/scenarios/:name` reseed route, MCP 401 page, re-auth success and failure (FakeClient scripted), trade review flow.
+178:## 9. Deploy
+187:## 10. Build order (green `bin/ci` at each step)
+191:3. Schwab adapter: `Schwab::Client` (OAuth, accounts, positions, orders, transactions, market hours, quotes, price history) with retry/backoff/limiter, `Schwab::FakeClient`, response mappers, `docs/verify-on-approval.md` started from §12.
+192:4. OAuth controller + token model + refresh job + token health job + re-auth pages + pause/catch-up + audit events.
+196:8. MCP server + tool registry with permission metadata (after decision 0.8 is verified).
+202:## 11. Explicitly not built in Phase 1
+208:## 12. Schwab assumptions to verify on approval
+222:- Claude app custom connectors: static bearer header availability for this org (decision 0.8).
+226:## 13. Working method, per phase and per build step
+
+ succeeded in 0ms:
+1:# PRD: Investment Copilot (working title)
+7:## 1. Summary
+13:## 2. Goals
+17:- A guardrail engine (risk rules as data, not vibes) that evaluates every proposed order before it can reach Schwab.
+21:## 3. Non-Goals (v1)
+29:## 4. Architecture
+35:└─────────────┘                      │  - OAuth token lifecycle  │
+40:│ memory files │                      │  - Order proposal queue  │
+43:                                                   │ HTTPS/OAuth2
+49:**Why Rails and not just an agent:** the agent cannot be trusted with credentials, token refresh timing, idempotent order submission, or rule enforcement. Those are deterministic jobs. The agent is good at synthesis, briefs, screening, and post-mortems. Split accordingly.
+53:## 5. Components
+55:### 5.1 Schwab Integration (Rails)
+58:- **OAuth:** three-legged OAuth 2.0. Access token ~30 min, refresh token hard-expires at 7 days with no programmatic renewal.
+59:  - Background job refreshes the access token every ~25 minutes while a valid refresh token exists.
+60:  - Re-auth flow: when the refresh token is within 24h of expiry, the app notifies (email/SMS/push) with a one-click link to redo the browser login. Track refresh-token age as a first-class health metric on the dashboard.
+61:  - All scheduled work checks token health first and degrades gracefully (queues, does not silently skip).
+64:- **Secrets:** app key/secret in Rails credentials; tokens encrypted at rest (Active Record Encryption). Nothing broker-related in the memory files repo.
+73:- `order_proposals` (agent- or human-initiated; status: proposed → validated/rejected → approved → submitted → filled/cancelled; stores guardrail evaluation results as JSON; carries a submission_attempt record for the ambiguous-outcome path in 5.1)
+77:- `risk_rules` (rule type, params, active, version): see 5.4
+78:- `snapshots` (daily equity, open risk $, open risk %, drawdown from HWM). Equity series is flow-adjusted: deposits/withdrawals (from transactions) are excluded from HWM/drawdown math so a deposit never resets a drawdown and a withdrawal never fakes one.
+79:- `audit_events` (append-only: approvals, rejections, collar overrides with reason, rule edits with before/after, kill-switch toggles, re-auths, shadow-mode toggles). Every mention of "logged" elsewhere in this doc means a row here.
+93:1. Max risk per trade: X% of equity (size derived from entry-stop distance).
+121:- Proposal evaluation returns each method's value, the collar bounds, where the proposed stop sits, and the resulting position size under the max-risk-per-trade rule for the chosen stop.
+128:Configuration lives in `risk_rules` (method on/off, k, p, N per setup). Method parameters are data, not code, so they can be tuned as the journal accumulates evidence about which stop style fits each setup.
+142:- `get_portfolio` (positions with live marks, distance to stop, open risk)
+143:- `get_account_health` (equity, settled cash, drawdown, token status)
+146:- `get_risk_rules`, `evaluate_hypothetical_order(params)` (dry-run guardrails)
+153:Explicitly absent from MCP: submit_order, cancel_order, edit_risk_rules, token operations. Submission happens only in the Rails approval UI (or a signed confirmation link), by the human.
+159:- **Interactive (human present):** the Claude app (desktop/Cowork/web) with the Rails MCP server registered as a remote connector. Rails exposes MCP over HTTPS with bearer-token auth (token in dokku config, rotatable). This is where ad hoc analysis, screening, and order proposals happen, billed through the Claude subscription seat.
+160:- **Scheduled (unattended):** Solid Queue jobs on the VPS call the Anthropic Messages API directly with an API key, passing tool definitions that map to the same internal service layer the MCP server uses (in-process, no MCP hop). Output is rendered to email. This covers the 07:00 brief, 16:30 EOD, and Sunday review. **Unattended runs get read-only tools only.** These runs ingest untrusted text (transcripts, news, fetched pages), so `propose_order`, `add_watchlist_item`, and `annotate_trade` are not in their tool set; anything a brief wants to suggest is rendered as text in the email, and the human creates the proposal interactively. Write tools exist only in the interactive runtime. Each scheduled job also has a hard cap on tool turns. Rationale: unattended runs can't depend on a desktop app being open, and keeping the scheduler in Rails means the VPS is the single ops surface (one place for cron, retries, failure alerts, and the token-health gate).
+171:- Removed from files because Rails owns them now: portfolio.csv, trades.csv, risk.md (risk rules live in the DB and are surfaced read-only to the agent).
+176:- 07:00 ET pre-market brief: overnight moves on holdings/watchlist, gaps, today's earnings/econ events touching the book, stops at risk, settled-cash status. Delivered by email.
+178:- Sunday edge review: per-setup expectancy over trailing sample, flag negative-expectancy setups, propose deactivation (human confirms).
+179:- Token-health nag when refresh token < 24h from expiry.
+186:- Proposal queue + proposal detail (the approve/reject decision; deliberate-confirm on approve; warn-acknowledge, collar-override-with-reason, and hard-fail states)
+197:- **Notifications, revised:** time-sensitive alerts move from email to push once the app exists: new proposal, fill/cancel, halt tripped, `unprotected` position, token expiring. Briefs and the Sunday ritual stay email (long-form, read on a desktop anyway). Push payloads carry no financial figures; they deep-link and the app fetches.
+199:- **Auth to the Rails app:** the native shell holds a session like the browser does; no separate API auth. The MCP bearer token is never on the phone.
+205:- HTTPS via dokku letsencrypt plugin; the app's OAuth callback URL is a stable route on the app's domain, registered exactly in the Schwab app config.
+207:- Schwab app key/secret in dokku config vars; tokens encrypted at rest in Postgres.
+208:- The Sunday re-auth (see 5.10) happens from any browser; only the callback needs to reach the VPS.
+211:### 5.10 Weekly Ritual (decided: Sundays, email)
+213:The 7-day refresh token becomes a scheduled habit instead of a surprise:
+215:- Sunday evening email bundles: (a) the weekly edge review, (b) a re-auth link to redo the Schwab browser login, (c) system health summary (last sync times, job failures, token age).
+216:- Re-authing every Sunday resets the 7-day clock so it never expires mid-week. Caveat: expiry is 7 days from issuance, so the email lands earlier than the prior week's auth time, and a daily health check escalates (Mon, then Tue) if the re-auth hasn't happened. On expiry, sync jobs pause and queue rather than erroring.
+218:### 5.11 Testing & CI (mirrors Talos / Patchvault conventions)
+223:  3. Token lifecycle: refresh-at-25-min, 7-day expiry, degrade-and-queue behavior. Use time travel (ActiveSupport::Testing::TimeHelpers); never sleep.
+224:  4. Schwab client service layer: VCR/WebMock cassettes only. The suite never touches the live API; cassettes get scrubbed of tokens and encrypted account values before commit.
+226:- **Playwright** for clickable UI: approval queue flow (approve/reject a proposal, override a stop outside the collar with a logged reason), dashboard renders with seeded data, risk-rule editor. These run against a seeded test DB with a fake Schwab adapter, not cassettes.
+230:### 5.12 Allocation Module (cycle-pattern mechanics)
+241:4. **Cash-drag diagnostic.** The Sunday review computes time-in-cash vs the deployment policy and flags divergence ("policy says deployed; book is 40% cash for 3 weeks"). Informational, never a forced action.
+242:5. **Correlation stress check.** Weekly job computes rolling 60-day correlations between each holding (and tagged "diversifier" instruments) and SPY from price history. When a diversifier's correlation exceeds a threshold (default 0.6), the Sunday review flags that the diversification assumption is currently failing. Diagnostic only.
+243:6. **Flow/sentiment input.** Weekly fund-flow datapoint (ICI weekly long-term fund flows; source via FMP if available, else fetched from ICI's published release) rendered in the Sunday review as context alongside the edge stats. Data in, judgment human.
+249:## 6. Phasing
+251:**Phase 1 (read-only):** Schwab OAuth + token lifecycle, account/position/transaction sync, dashboard, journal auto-population from fills, memory repo, MCP read tools, daily briefs.
+253:**Phase 2.5 (allocation module):** targets, drift checks, rebalance/deployment proposals, correlation and cash-drag diagnostics in the Sunday review (§5.12).
+256:## 7. Decisions Log
+260:- Notifications: email only for now; Sunday ritual bundles re-auth + edge review (see 5.10).
+271:## 8. Options Scope (expanded from open question 2)
+282:**Journal complexity:** R-multiple math changes (risk is premium paid for long options; assignment risk for short options). Expiration and assignment arrive as transaction events that must be linked back to the originating trade, and assignment of a CSP creates a new stock position mid-trade. This is the largest chunk of real work.
+284:**Stop collar:** ATR/swing methods don't map to options premiums. Long options would use a premium-based max-loss rule (e.g., full premium is the risk, sized accordingly) instead of the collar.
+290:## 9. Open Questions (remaining)
+294:## 10. Risks
+296:- **7-day refresh token** is the top operational risk; a missed re-auth silently kills all automation. Mitigated by health checks and nags, but it cannot be engineered away.
+298:- Order idempotency: no client order id on the Schwab side, so dedupe is local (row-locked single submission path, `submission_unknown` state, reconcile-before-retry; see 5.1). Duplicate submission is the one bug this system cannot afford.
+
+exec
+/bin/zsh -lc 'rg -n "(Flow 1|Flow 5|Flow 8|token|reauth|re-auth|banner|expired|expiring|success|failure|age)" docs/artifacts/investment-copilot-ui-flows.md' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+11:3. **Sunday email** → re-auth link and edge review link.
+26:| System health | Mobile + desktop | Token age, sync status, jobs, kill switch |
+28:## Flow 1: Morning glance (mobile, read-only)
+32:Dashboard states (mutually exclusive banners, one at a time):
+33:- **Healthy:** no banner.
+34:- **Token expiring:** refresh token < 24h. Banner links to re-auth flow.
+35:- **Token expired:** sync paused. Everything shows "as of [timestamp]" staleness marks. Re-auth is the only call to action.
+48:2. Thesis: the agent's (or your) one-paragraph reasoning, plus which setup it's tagged as.
+70:Submit → same validation path and proposal detail screen as Flow 2. Human and agent proposals are identical objects downstream; the only difference is the author field.
+80:## Flow 5: Sunday ritual
+82:Sunday email contains: edge review summary, system health summary, re-auth button.
+84:- **Re-auth:** button → Schwab OAuth (their hosted login) → callback → success screen showing new token expiry date. Failure state: retry with the error shown.
+85:- **Edge review** screen: per-setup table (win rate, avg R, expectancy, sample size, trailing-20 trend). Setups with negative expectancy flagged. Action per setup: deactivate (confirm dialog stating the effect: agent stops proposing this setup). Reactivation same path.
+91:No bulk edit. No editing while a halt is active (prevents mood-driven loosening on a bad day; the halt banner says so).
+95:List: symbol, trigger note ("break above 52.10 on volume"), added date, current price vs trigger. Add/edit/remove. The agent reads triggers; a trigger being met surfaces in the morning brief, not as a push (v1).
+97:## Flow 8: System health & kill switch
+99:Token age (days:hours, with the Sunday cadence marked), last successful sync per feed, recent job failures, API spend this month. One control: **Pause system** (kill switch): stops all proposal creation and submission until unpaused. Unpause requires typed confirmation.
+104:- **Stale data:** any market number older than its cache window shows a staleness mark with timestamp. Never render a price without its age being discoverable.
+105:- **Token expired:** global banner, read-only mode for anything requiring fresh Schwab data.
+110:Push (deep-link only, no figures in the payload): new proposal, fill/cancel, halt tripped, unprotected position, token expiring. Email: morning brief, EOD summary, Sunday ritual, job-failure digests. Original list:
+116:- Token expiring (T-24h), escalations Mon/Tue if Sunday re-auth missed
+117:- Job failure (collapsed: one email per failure type per day)
+131:- **Payment confirmation → the deliberate confirm.** Mercury puts an authorization sentence directly above a single primary button ("By clicking Schedule Payment, I authorize…"). That is our Approve pattern: a plain-language line stating exactly what will be sent to Schwab, then one primary button. Given the stakes, keep a second gesture, but model it on this rather than a modal.
+140:- **Midday (web) → app shell and dashboard.** Icon-only collapsed left rail (~40px) with a top search bar; dark theme; chart cards with a headline number, legend (current / previous / average), dashed average line, and a timeframe dropdown plus "Customize" at the card row's top right. Layout: one full-width primary chart, then a 2-up row of smaller chart cards. Our mapping: equity curve as the primary chart with HWM as the dashed line; the 2-up row is open risk over time and drawdown from HWM. The rail holds our five areas: dashboard, proposals, journal, watchlist, system.
+145:Open interaction with the earlier question: a dark shell makes "halt mutes the whole palette" a weaker signal than on a light UI; the halt banner probably has to carry the state on its own.
+152:- **Holding detail page.** Price chart with range chips, a "Your position" strip (balance, shares, cost basis, return, allocation), then a right-column card with News / About tabs and a stats row below. This is our **Position detail** screen, which the inventory above omits. Our version of the strip: shares, cost basis, unrealized P&L, working stop, distance to stop, this position's share of open risk. Right column tabs become Thesis (from the originating proposal) and History (journal legs for this instrument).
+172:**Review modal → orphan-fill and incomplete-journal review.** "Is this merchant recurring? There are 9 more to review": entity card with recent transactions, a few form fields, and three actions (Skip / Not recurring / Save as recurring). Ours: "Is this fill part of a setup? N more to review", recent fills for the instrument, setup dropdown and planned stop, actions Skip / Not a trade / Save. The orange top banner with "Review now" is the pending-review entry point; the nav badge count (Recurring 10) is the proposals count on the rail.
+180:**AI-origin marker.** Monarch marks AI-generated content with a sparkle glyph next to the title (Weekly Recap, Budget, Spending). Adopt it: every agent-authored element (thesis, brief, review suggestion) carries the glyph, so human vs agent origin is legible at a glance. Ties to the origin field on proposals.
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc 'rg -n "(OAuth|authorize|callback|redirect_uri|state|code|token|refresh|expires|4xx|401|@)" docs/schwab-api-contract.md app/models/schwab/client.rb app/models/schwab/fake_client.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+app/models/schwab/fake_client.rb:10:    FAKE_CODE = "fake-authorization-code@"
+app/models/schwab/fake_client.rb:17:      @queues = Hash.new { |h, k| h[k] = [] }
+app/models/schwab/fake_client.rb:18:      @calls = []
+app/models/schwab/fake_client.rb:19:      @closed_dates = Set.new
+app/models/schwab/fake_client.rb:24:    def enqueue(method_name, &block) = @queues[method_name] << block
+app/models/schwab/fake_client.rb:26:    def close_market_on(date) = @closed_dates << date.to_date
+app/models/schwab/fake_client.rb:28:    # ---- OAuth: the fake authorize page lives in the app (step 4) and redirects straight back
+app/models/schwab/fake_client.rb:29:    def authorize_url(state:) = "/schwab/fake_authorize?#{ { state: state }.to_query }"
+app/models/schwab/fake_client.rb:30:    def exchange_code(code) = scripted(:exchange_code, code) { code == FAKE_CODE ? fixture("token").except("id_token") : raise(ReauthRequired.new("invalid_grant", status: 400)) }
+app/models/schwab/fake_client.rb:31:    def refresh(refresh_token) = scripted(:refresh, refresh_token) { fixture("token").except("id_token") }
+app/models/schwab/fake_client.rb:43:        closed = @closed_dates.include?(date.to_date) || date.to_date.on_weekend?
+app/models/schwab/fake_client.rb:53:        @calls << [ method_name, *args ]
+app/models/schwab/fake_client.rb:54:        block = @queues[method_name].shift
+app/models/schwab/client.rb:4:  # The only code that speaks HTTP to Schwab. Returns scrubbed raw hashes; the structs in this
+app/models/schwab/client.rb:18:    # token responds to #access_token and, if it can renew itself, #refresh!
+app/models/schwab/client.rb:19:    def initialize(token: nil, app_key: Schwab.app_key, app_secret: Schwab.app_secret, callback_url: Schwab.callback_url, sleeper: method(:sleep))
+app/models/schwab/client.rb:20:      @token, @app_key, @app_secret, @callback_url, @sleeper = token, app_key, app_secret, callback_url, sleeper
+app/models/schwab/client.rb:23:    # ---- OAuth -----------------------------------------------------------------------------
+app/models/schwab/client.rb:25:    def authorize_url(state:)
+app/models/schwab/client.rb:26:      "#{OAUTH}/authorize?" + URI.encode_www_form(response_type: "code", client_id: @app_key, redirect_uri: @callback_url, state: state)
+app/models/schwab/client.rb:29:    # params[:code] is already URL-decoded once by Rails; it ends in "@". Do not decode again.
+app/models/schwab/client.rb:30:    def exchange_code(code)
+app/models/schwab/client.rb:31:      token_request(grant_type: "authorization_code", code: code, redirect_uri: @callback_url)
+app/models/schwab/client.rb:34:    def refresh(refresh_token)
+app/models/schwab/client.rb:35:      token_request(grant_type: "refresh_token", refresh_token: refresh_token)
+app/models/schwab/client.rb:91:      def token_request(**form)
+app/models/schwab/client.rb:92:        request = Net::HTTP::Post.new(URI("#{OAUTH}/token"))
+app/models/schwab/client.rb:93:        request.basic_auth(@app_key, @app_secret)
+app/models/schwab/client.rb:96:        response, attempts = perform(request, template: "/v1/oauth/token", idempotent: form[:grant_type] == "refresh_token")
+app/models/schwab/client.rb:97:        raise ReauthRequired.new("Schwab token endpoint responded #{response.code}: #{Error.summarize(response.body)}", status: response.code.to_i, body: Scrub.body(response.body)) if response.code.to_i.between?(400, 499)
+app/models/schwab/client.rb:99:        JSON.parse(response.body).except("id_token")
+app/models/schwab/client.rb:104:        uri.query = URI.encode_www_form(params) if params.any?
+app/models/schwab/client.rb:105:        response, attempts = authorized(uri)
+app/models/schwab/client.rb:110:      # One refresh-and-retry on 401, outside the backoff budget.
+app/models/schwab/client.rb:111:      def authorized(uri, refreshed: false)
+app/models/schwab/client.rb:113:        request["Authorization"] = "Bearer #{@token.access_token}"
+app/models/schwab/client.rb:116:        if response.code.to_i == 401 && !refreshed && @token.respond_to?(:refresh!)
+app/models/schwab/client.rb:117:          @token.refresh!
+app/models/schwab/client.rb:118:          return authorized(uri, refreshed: true)
+app/models/schwab/client.rb:131:          log(request, template, response.code, started)
+app/models/schwab/client.rb:133:          @sleeper.call(delay_for(response, attempts))
+app/models/schwab/client.rb:140:            @sleeper.call(BACKOFF[attempts - 1])
+app/models/schwab/client.rb:150:      def retriable?(response) = response.code.to_i == 429 || response.code.to_i >= 500
+docs/schwab-api-contract.md:3:Compiled 2026-09-01 from schwab-py, Schwabdev, the sudowealth TypeScript schemas, schwab-client-js, the R `charlesschwabapi` package, and QuantConnect, via the counselors review in `agents/counselors/1788298377-*`. The api-evangelist OpenAPI files are skeletal and are not used for shapes. Nothing here has been confirmed against Schwab's portal; `docs/verify-on-approval.md` lists what to check once the app is Ready For Use. Adapter code marks each assumption `# SCHWAB_SHAPE_UNVERIFIED`.
+docs/schwab-api-contract.md:5:Hosts: `https://api.schwabapi.com/trader/v1` and `https://api.schwabapi.com/marketdata/v1`. Every API call sends `Authorization: Bearer <access_token>` and `Accept: application/json`. Responses are bare arrays or objects, no envelope.
+docs/schwab-api-contract.md:15:7. **Retries:** GETs and the refresh grant only, on 429 and 5xx and transport errors; 1, 4, 16 seconds with jitter, `Retry-After` honored but capped at 60 s. Never retry 4xx. One refresh-and-retry on a 401 outside the budget.
+docs/schwab-api-contract.md:24:| `Schwab::AuthError` | API 401 after the one refresh-and-retry |
+docs/schwab-api-contract.md:25:| `Schwab::ReauthRequired < AuthError` | any token-endpoint 4xx (`invalid_client`, `invalid_grant`, `refresh_token_authentication_error`, `unsupported_token_type`); the pause path |
+docs/schwab-api-contract.md:33:Error bodies: API errors are JSON:API style `{"errors":[{"id","status","title","detail","source"}]}`; the token endpoint uses `{"error","error_description"}`; gateway 401s and 5xxs can be non-JSON. The parser tolerates all three.
+docs/schwab-api-contract.md:35:## OAuth
+docs/schwab-api-contract.md:39:| Authorize | `GET /v1/oauth/authorize?response_type=code&client_id={app_key}&redirect_uri={callback}&state={csrf}` |
+docs/schwab-api-contract.md:40:| Callback | `{callback}?code=...&session=...`; `code` ends in `@` after one URL-decode. Rails `params[:code]` is already decoded once; do not decode again |
+docs/schwab-api-contract.md:41:| Token endpoint | `POST /v1/oauth/token`, `Authorization: Basic base64("#{app_key}:#{app_secret}")`, `Content-Type: application/x-www-form-urlencoded` |
+docs/schwab-api-contract.md:42:| Code grant | `grant_type=authorization_code&code={code}&redirect_uri={callback}` |
+docs/schwab-api-contract.md:43:| Refresh grant | `grant_type=refresh_token&refresh_token={token}` |
+docs/schwab-api-contract.md:44:| Token response | `{"expires_in":1800,"token_type":"Bearer","scope":"api","refresh_token","access_token","id_token"}`; `id_token` is not persisted |
+docs/schwab-api-contract.md:45:| Access token | 30 minutes; expired tokens are rejected outright (API 401) |
+docs/schwab-api-contract.md:46:| Refresh token | 7 days from the authorization-code grant. **Refreshing does not extend it.** `refresh_expires_at` is set once at issuance and never moved |
+docs/schwab-api-contract.md:47:| Refresh response | includes a `refresh_token`; store whatever comes back, keep `refresh_expires_at` |
+docs/schwab-api-contract.md:49:The refresh job runs every 25 minutes. A token-endpoint 4xx is `ReauthRequired`: no backoff, no retry, pause sync.
+docs/schwab-api-contract.md:122:Symbols comma-joined and URL-encoded; chunk at 100. Response keyed by symbol: `assetMainType` (EQUITY|ETF|...), `assetSubType`, `quoteType`, `realtime`, `ssid`, `symbol`, `reference` {cusip, description, exchange, exchangeName}, `quote` {askPrice, bidPrice, lastPrice, mark, netChange, netPercentChange, openPrice, highPrice, lowPrice, closePrice, totalVolume, quoteTime, tradeTime, securityStatus, 52WeekHigh, 52WeekLow}, `regular` {regularMarketLastPrice, ...}. `quoteTime`/`tradeTime` are epoch ms. Unknown symbols return in the same 200 under a top-level `errors` key (`{"errors":{"invalidSymbols":[...]}}`); the mapper skips it and reports the list.
+docs/schwab-api-contract.md:144:`Schwab::FakeClient` sits **below the mappers**: it returns scrubbed raw hashes in the same shape as the HTTP client, so seeds and Playwright exercise the mapping code where every shape assumption lives, and its fixtures double as the cassette-shaped fixtures for specs. It scripts auth too (`authorize_url`, `exchange_code`, `refresh`) and supports a per-call response queue so a test can say "first `orders` call raises RateLimited, second succeeds". Scenarios: re-auth success and failure, refresh expired, rate limited then success, server error then success, transport timeout, empty account, position removed between syncs, nested bracket child, transaction with missing CUSIP, unknown enum value, closed market day, quotes batch with one invalid symbol, and the four dashboard banner states.
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The docs confirm the core promise: refresh tokens are hard-expiring at 7 days, Sunday re-auth is the intended control, and expired tokens must pause/queue without silently skipping. I’m reading the exact section bodies now and checking existing auth/client behavior for mismatches.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '56,64p' docs/phase-1-plan.md && sed -n '151,164p' docs/phase-1-plan.md && sed -n '190,194p' docs/phase-1-plan.md" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '35,50p' docs/schwab-api-contract.md && sed -n '1,180p' app/models/schwab/client.rb && sed -n '1,70p' app/models/schwab/fake_client.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+## 2. Jobs (Solid Queue, `config/recurring.yml`, all times America/New_York)
+
+**Token gating.** Only `Sync::TickJob` and the agent jobs are scheduled; everything else is enqueued by them. When the refresh token is expired the tick job writes one `sync_runs` `skipped_token` row per hour, sets `system_settings.sync_paused_reason`, audits `sync_paused_token_expired` once per episode, and enqueues nothing. No self-re-enqueue, so the queue cannot grow. The re-auth callback clears the pause and enqueues `Sync::CatchUpJob`, which runs all feeds with windows widened to cover the gap (capped at the 60-day transactions limit). Agent jobs run degraded rather than wait: `degraded: true`, the prompt states the token is expired and every number carries its as-of time, and the email subject is prefixed accordingly. Snapshots are not written for days without a fresh balance.
+
+| Job | Schedule | Does |
+|---|---|---|
+| `Schwab::RefreshAccessTokenJob` | every 25 min | POST refresh grant; update `schwab_tokens` (`refresh_expires_at` untouched); on failure audit `token_refresh_failed`; no-op when refresh token expired |
+| `Schwab::TokenHealthJob` | daily 08:00 + 20:00 | Nag when `refresh_expires_at` < now + 24h. Escalation rule: on Monday and Tuesday, email if `refresh_expires_at` is before the coming Sunday 18:00 email plus 12h buffer (Sunday re-auth was missed). Audit each nag. |
+| `Sync::TickJob` | every 5 min | Sole scheduled sync entry point. Refreshes `market_days` if today or the next 7 days are missing (one call per date). Due checks compare against last *started* time with 1-minute slack. Enqueues: positions+balances (15 min inside the full session window pre-market through post-market, 60 min otherwise); orders+transactions (5 min inside the session, 60 min otherwise); `Snapshots::DailyJob` once per market day after `regular_closes_at` + 20 min and after a successful positions sync since close. |
+## 7. UI (Hotwire, mobile-responsive, no JS routers, no hover-dependent modals)
+
+| Screen | Route | Phase 1 content |
+|---|---|---|
+| Dashboard | `/` | Banner (healthy / expiring / expired / halted), equity + day change, open risk with unprotected count, settled/unsettled cash, positions list with distance-to-stop as the primary number and inline `unprotected` where applicable, "N trades need review" callout, pending proposals count (0), staleness stamps on every number, empty state before first sync |
+| Trade review | `/trades/:id/review` | Setup, planned stop, thesis for `needs_review` trades; "N more to review" progression |
+| Trade detail / post-mortem | `/trades`, `/trades/:id` | List and detail; Flow 4 quick entry (one line + followed/improvised) |
+| System health | `/system` | Token age vs 7d with next Sunday marked, last sync per feed, sync pause reason, job failures (7d), API spend (month, from `agent_runs`), shadow mode indicator, manual halt toggle with reason (audited) |
+| Re-auth | `/schwab/authorize` → Schwab → `/schwab/callback` | Requires login; success page with new expiry and catch-up sync enqueued; failure page with error and retry |
+| Login | `/session/new` → email → `/session/magic/:token` | Passwordless; unknown emails get the same "check your inbox" response |
+
+**App mark:** the Athayde (Ataíde) family arms, azure, four bends argent running top-left to bottom-right, from the Portuguese Ataíde family (https://en.wikipedia.org/wiki/Ata%C3%ADde_family); the crest animal is a lion, reserved for later use. It sits top-left of the shell on every screen and serves as favicon and PWA icon. Vector at `app/assets/images/brand/crest.svg`, drawn from the athayde.com reference PNG kept in `docs/artifacts/brand/`.
+
+Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 comes only from `system_settings.manual_halt`.
+2. Migrations 1–21, models with validations/enums, `AuditEvent` append-only trigger, `SystemSettings` singleton.
+3. Schwab adapter: `Schwab::Client` (OAuth, accounts, positions, orders, transactions, market hours, quotes, price history) with retry/backoff/limiter, `Schwab::FakeClient`, response mappers, `docs/verify-on-approval.md` started from §12.
+4. OAuth controller + token model + refresh job + token health job + re-auth pages + pause/catch-up + audit events.
+5. Sync jobs, market calendar, tick scheduler, `sync_runs`, working-stop detection.
+6. Journal builder (bootstrap, link, review path) + setup stats + snapshots.
+
+ succeeded in 0ms:
+## OAuth
+
+| Item | Value |
+|---|---|
+| Authorize | `GET /v1/oauth/authorize?response_type=code&client_id={app_key}&redirect_uri={callback}&state={csrf}` |
+| Callback | `{callback}?code=...&session=...`; `code` ends in `@` after one URL-decode. Rails `params[:code]` is already decoded once; do not decode again |
+| Token endpoint | `POST /v1/oauth/token`, `Authorization: Basic base64("#{app_key}:#{app_secret}")`, `Content-Type: application/x-www-form-urlencoded` |
+| Code grant | `grant_type=authorization_code&code={code}&redirect_uri={callback}` |
+| Refresh grant | `grant_type=refresh_token&refresh_token={token}` |
+| Token response | `{"expires_in":1800,"token_type":"Bearer","scope":"api","refresh_token","access_token","id_token"}`; `id_token` is not persisted |
+| Access token | 30 minutes; expired tokens are rejected outright (API 401) |
+| Refresh token | 7 days from the authorization-code grant. **Refreshing does not extend it.** `refresh_expires_at` is set once at issuance and never moved |
+| Refresh response | includes a `refresh_token`; store whatever comes back, keep `refresh_expires_at` |
+
+The refresh job runs every 25 minutes. A token-endpoint 4xx is `ReauthRequired`: no backoff, no retry, pause sync.
+
+require "net/http"
+
+module Schwab
+  # The only code that speaks HTTP to Schwab. Returns scrubbed raw hashes; the structs in this
+  # namespace turn them into typed values. Every field name here is SCHWAB_SHAPE_UNVERIFIED
+  # until docs/verify-on-approval.md is worked through.
+  class Client
+    TRADER = "https://api.schwabapi.com/trader/v1"
+    MARKET = "https://api.schwabapi.com/marketdata/v1"
+    OAUTH = "https://api.schwabapi.com/v1/oauth"
+    OPEN_TIMEOUT = 5
+    READ_TIMEOUT = 20
+    BACKOFF = [ 1, 4, 16 ].freeze
+    RETRY_AFTER_CAP = 60
+    TRANSACTION_TYPES = %w[ TRADE RECEIVE_AND_DELIVER DIVIDEND_OR_INTEREST ELECTRONIC_FUND ACH_RECEIPT ACH_DISBURSEMENT
+                            WIRE_IN WIRE_OUT JOURNAL CASH_RECEIPT CASH_DISBURSEMENT ].freeze
+
+    # token responds to #access_token and, if it can renew itself, #refresh!
+    def initialize(token: nil, app_key: Schwab.app_key, app_secret: Schwab.app_secret, callback_url: Schwab.callback_url, sleeper: method(:sleep))
+      @token, @app_key, @app_secret, @callback_url, @sleeper = token, app_key, app_secret, callback_url, sleeper
+    end
+
+    # ---- OAuth -----------------------------------------------------------------------------
+
+    def authorize_url(state:)
+      "#{OAUTH}/authorize?" + URI.encode_www_form(response_type: "code", client_id: @app_key, redirect_uri: @callback_url, state: state)
+    end
+
+    # params[:code] is already URL-decoded once by Rails; it ends in "@". Do not decode again.
+    def exchange_code(code)
+      token_request(grant_type: "authorization_code", code: code, redirect_uri: @callback_url)
+    end
+
+    def refresh(refresh_token)
+      token_request(grant_type: "refresh_token", refresh_token: refresh_token)
+    end
+
+    # ---- Trader API ------------------------------------------------------------------------
+
+    # Hash values only; the plaintext numbers never leave this method.
+    def account_numbers
+      get(TRADER, "/accounts/accountNumbers").map { |row| row["hashValue"] }
+    end
+
+    def account(hash, fields: [ :positions ])
+      get(TRADER, "/accounts/#{hash}", fields: Array(fields).join(","))
+    end
+
+    def orders(hash, from:, to: ::Time.current, status: nil)
+      params = { fromEnteredTime: Timestamp.iso_ms(from), toEnteredTime: Timestamp.iso_ms(to), maxResults: 3000 }
+      params[:status] = status if status
+      get(TRADER, "/accounts/#{hash}/orders", **params)
+    end
+
+    def order(hash, order_id)
+      get(TRADER, "/accounts/#{hash}/orders/#{order_id}")
+    end
+
+    # One request per type the sync cares about; whether omitting `types` returns everything is unverified.
+    def transactions(hash, from:, to: ::Time.current, types: TRANSACTION_TYPES)
+      Array(types).flat_map do |type|
+        get(TRADER, "/accounts/#{hash}/transactions", startDate: Timestamp.iso_ms(from), endDate: Timestamp.iso_ms(to), types: type)
+      end
+    end
+
+    # ---- Market Data API -------------------------------------------------------------------
+
+    def market_hours(date, markets: [ :equity ])
+      get(MARKET, "/markets", markets: Array(markets).join(","), date: Timestamp.date(date))
+    end
+
+    def quotes(symbols, fields: %w[ quote reference ])
+      Array(symbols).each_slice(Schwab::QUOTE_BATCH).reduce({}) do |acc, batch|
+        acc.merge(get(MARKET, "/quotes", symbols: batch.join(","), fields: fields.join(","), indicative: false))
+      end
+    end
+
+    def price_history(symbol, period_type: :month, period: 3, frequency_type: :daily, frequency: 1, from: nil, to: nil)
+      params = { symbol: symbol, periodType: period_type, period: period, frequencyType: frequency_type, frequency: frequency,
+                 needExtendedHoursData: false, needPreviousClose: true }
+      params[:startDate] = Timestamp.epoch_ms(from) if from
+      params[:endDate] = Timestamp.epoch_ms(to) if to
+      get(MARKET, "/pricehistory", **params)
+    end
+
+    def instrument(symbol_or_cusip)
+      get(MARKET, "/instruments", symbol: symbol_or_cusip, projection: "symbol-search").fetch("instruments", [])
+    end
+
+    private
+      def token_request(**form)
+        request = Net::HTTP::Post.new(URI("#{OAUTH}/token"))
+        request.basic_auth(@app_key, @app_secret)
+        request["Accept"] = "application/json"
+        request.set_form_data(form)
+        response, attempts = perform(request, template: "/v1/oauth/token", idempotent: form[:grant_type] == "refresh_token")
+        raise ReauthRequired.new("Schwab token endpoint responded #{response.code}: #{Error.summarize(response.body)}", status: response.code.to_i, body: Scrub.body(response.body)) if response.code.to_i.between?(400, 499)
+        raise Error.for_response(response, attempts: attempts, idempotent: true) unless response.is_a?(Net::HTTPSuccess)
+        JSON.parse(response.body).except("id_token")
+      end
+
+      def get(base, path, **params)
+        uri = URI("#{base}#{path}")
+        uri.query = URI.encode_www_form(params) if params.any?
+        response, attempts = authorized(uri)
+        raise Error.for_response(response, attempts: attempts, idempotent: true) unless response.is_a?(Net::HTTPSuccess)
+        Scrub.json(JSON.parse(response.body))
+      end
+
+      # One refresh-and-retry on 401, outside the backoff budget.
+      def authorized(uri, refreshed: false)
+        request = Net::HTTP::Get.new(uri)
+        request["Authorization"] = "Bearer #{@token.access_token}"
+        request["Accept"] = "application/json"
+        response, attempts = perform(request, template: Scrub.path(uri.path), idempotent: true)
+        if response.code.to_i == 401 && !refreshed && @token.respond_to?(:refresh!)
+          @token.refresh!
+          return authorized(uri, refreshed: true)
+        end
+        [ response, attempts ]
+      end
+
+      # Returns [response, attempts]. Retries live here and nowhere else.
+      def perform(request, template:, idempotent:)
+        attempts = 0
+        begin
+          attempts += 1
+          RateBudget.take!
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          response = http(request.uri).request(request)
+          log(request, template, response.code, started)
+          return [ response, attempts ] unless retriable?(response) && idempotent && attempts <= BACKOFF.size
+          @sleeper.call(delay_for(response, attempts))
+          raise Retry
+        rescue Retry
+          retry
+        rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET, Errno::ECONNREFUSED, SocketError, OpenSSL::SSL::SSLError => e
+          log(request, template, "transport", started)
+          if idempotent && attempts <= BACKOFF.size
+            @sleeper.call(BACKOFF[attempts - 1])
+            retry
+          end
+          klass = idempotent ? TransportError : UnknownOutcome
+          raise klass.new("#{e.class}: #{e.message}", attempts: attempts)
+        end
+      end
+
+      Retry = Class.new(StandardError)
+
+      def retriable?(response) = response.code.to_i == 429 || response.code.to_i >= 500
+
+      def delay_for(response, attempt)
+        base = BACKOFF[attempt - 1]
+        retry_after = response["Retry-After"].to_i
+        retry_after.positive? ? [ retry_after, RETRY_AFTER_CAP ].min : base + rand * base * 0.25
+      end
+
+      def http(uri)
+        Net::HTTP.new(uri.host, uri.port).tap do |h|
+          h.use_ssl = true
+          h.open_timeout = OPEN_TIMEOUT
+          h.read_timeout = READ_TIMEOUT
+        end
+      end
+
+      def log(request, template, status, started)
+        ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+        Rails.logger.info("schwab #{request.method} #{template} #{status} #{ms}ms")
+      end
+  end
+end
+module Schwab
+  # Same interface as Client, same raw shapes (already scrubbed), served from lib/schwab_fixtures so seeds,
+  # Playwright, and specs all run the real mappers. A per-call queue scripts failures and alternate payloads:
+  #   Schwab::FakeClient.instance.enqueue(:orders) { raise Schwab::RateLimited.new(retry_after: 30) }
+  class FakeClient
+    include Singleton
+
+    FIXTURES = Rails.root.join("lib/schwab_fixtures")
+    ACCOUNT_HASH = "9313A0737C4E1B2D5F6A7B8C9D0E1F2A3B4C5D6E7F8091A2B3C4D5E6F708192A"
+    FAKE_CODE = "fake-authorization-code@"
+
+    attr_reader :calls
+
+    def initialize = reset!
+
+    def reset!
+      @queues = Hash.new { |h, k| h[k] = [] }
+      @calls = []
+      @closed_dates = Set.new
+      self
+    end
+
+    # Script the next response for a method. The block receives the call's arguments.
+    def enqueue(method_name, &block) = @queues[method_name] << block
+
+    def close_market_on(date) = @closed_dates << date.to_date
+
+    # ---- OAuth: the fake authorize page lives in the app (step 4) and redirects straight back
+    def authorize_url(state:) = "/schwab/fake_authorize?#{ { state: state }.to_query }"
+    def exchange_code(code) = scripted(:exchange_code, code) { code == FAKE_CODE ? fixture("token").except("id_token") : raise(ReauthRequired.new("invalid_grant", status: 400)) }
+    def refresh(refresh_token) = scripted(:refresh, refresh_token) { fixture("token").except("id_token") }
+
+    # ---- Trader API
+    def account_numbers = scripted(:account_numbers) { fixture("account_numbers").map { |row| row["hashValue"] } }
+    def account(hash, fields: [ :positions ]) = scripted(:account, hash, fields) { fixture("account") }
+    def orders(hash, from:, to: ::Time.current, status: nil) = scripted(:orders, hash, from, to, status) { fixture("orders") }
+    def order(hash, order_id) = scripted(:order, hash, order_id) { Order.from(fixture("orders").first).flatten.map(&:raw).find { |o| o["orderId"].to_s == order_id.to_s } or raise RequestError.new("order not found", status: 404) }
+    def transactions(hash, from:, to: ::Time.current, types: Client::TRANSACTION_TYPES) = scripted(:transactions, hash, from, to, types) { fixture("transactions") }
+
+    # ---- Market Data API
+    def market_hours(date, markets: [ :equity ])
+      scripted(:market_hours, date, markets) do
+        closed = @closed_dates.include?(date.to_date) || date.to_date.on_weekend?
+        shift_market_hours(fixture(closed ? "market_hours_closed" : "market_hours_open"), date)
+      end
+    end
+    def quotes(symbols, fields: %w[ quote reference ]) = scripted(:quotes, symbols, fields) { fixture("quotes").slice(*Array(symbols).map(&:to_s), "errors") }
+    def price_history(symbol, **) = scripted(:price_history, symbol) { fixture("price_history").merge("symbol" => symbol) }
+    def instrument(symbol_or_cusip) = scripted(:instrument, symbol_or_cusip) { fixture("instruments")["instruments"] }
+
+    private
+      def scripted(method_name, *args)
+        @calls << [ method_name, *args ]
+        block = @queues[method_name].shift
+        block ? block.call(*args) : yield
+      end
+
+      def fixture(name) = Scrub.json(JSON.parse(FIXTURES.join("#{name}.json").read))
+
+      # Fixture dates are stand-ins; the requested date replaces them so the calendar stays coherent.
+      def shift_market_hours(raw, date)
+        original = raw["equity"].values.first["date"]
+        JSON.parse(JSON.generate(raw).gsub(original, date.to_date.iso8601))
+      end
+  end
+end
+
+exec
+/bin/zsh -lc "sed -n '55,66p' docs/artifacts/investment-copilot-prd.md && sed -n '211,218p' docs/artifacts/investment-copilot-prd.md && sed -n '294,299p' docs/artifacts/investment-copilot-prd.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+### 5.1 Schwab Integration (Rails)
+
+- **App registration:** Schwab Developer Portal, Trader API - Individual product. Manual approval, 1-3 business days. Callback URL must be HTTPS and match exactly.
+- **OAuth:** three-legged OAuth 2.0. Access token ~30 min, refresh token hard-expires at 7 days with no programmatic renewal.
+  - Background job refreshes the access token every ~25 minutes while a valid refresh token exists.
+  - Re-auth flow: when the refresh token is within 24h of expiry, the app notifies (email/SMS/push) with a one-click link to redo the browser login. Track refresh-token age as a first-class health metric on the dashboard.
+  - All scheduled work checks token health first and degrades gracefully (queues, does not silently skip).
+- **Account numbers:** call `/accounts/accountNumbers` first; use encrypted account values for all subsequent calls. Never store or log plaintext account numbers.
+- **Client generation:** the api-evangelist OpenAPI specs turned out to be skeletal (minimal order schema, no response schemas for chains), so treat them as scaffolding only. Better references for the real shapes: the schwab-py order-builder docs and community client libraries that model the full schema; replace with Schwab's official schemas once portal access is approved. Wrap in a thin service layer with retry/backoff and rate-limit awareness.
+- **Secrets:** app key/secret in Rails credentials; tokens encrypted at rest (Active Record Encryption). Nothing broker-related in the memory files repo.
+- **Order submission idempotency:** the Schwab order POST has no client-supplied order id (per community clients; confirm post-approval), so dedupe is local. The approved → submitted transition runs under a row lock and is the only code path that can call the order endpoint. On an ambiguous outcome (timeout, 5xx, connection drop after send), the proposal enters `submission_unknown`; a reconciliation job queries the orders endpoint for a matching order (instrument, qty, side, price, time window) before any retry. No blind retries, ever.
+
+### 5.10 Weekly Ritual (decided: Sundays, email)
+
+The 7-day refresh token becomes a scheduled habit instead of a surprise:
+
+- Sunday evening email bundles: (a) the weekly edge review, (b) a re-auth link to redo the Schwab browser login, (c) system health summary (last sync times, job failures, token age).
+- Re-authing every Sunday resets the 7-day clock so it never expires mid-week. Caveat: expiry is 7 days from issuance, so the email lands earlier than the prior week's auth time, and a daily health check escalates (Mon, then Tue) if the re-auth hasn't happened. On expiry, sync jobs pause and queue rather than erroring.
+
+### 5.11 Testing & CI (mirrors Talos / Patchvault conventions)
+## 10. Risks
+
+- **7-day refresh token** is the top operational risk; a missed re-auth silently kills all automation. Mitigated by health checks and nags, but it cannot be engineered away.
+- Schwab individual-tier API terms: this is fine for personal use; anything multi-user requires their commercial review.
+- Order idempotency: no client order id on the Schwab side, so dedupe is local (row-locked single submission path, `submission_unknown` state, reconcile-before-retry; see 5.1). Duplicate submission is the one bug this system cannot afford.
+- Agent hallucination and prompt injection are contained by design: the agent never computes position size or submits orders, and unattended runs cannot create proposals at all (5.5a).
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "rg -n \"SchwabToken|schwab_tokens|AuditEvent|system_settings|Authentication|Current\\.user|schwab|fake_authorize|recurring\" app config db test spec e2e 2>/dev/null" in /Users/jathayde/Development/Personal/desk.athayde
+ exited 2 in 0ms:
+spec/schwab_isolation_spec.rb:8:  it "keeps Schwab field names inside app/models/schwab and its fixtures" do
+spec/schwab_isolation_spec.rb:9:    offenders = Rails.root.glob("app/**/*.rb").reject { |f| f.to_s.include?("/app/models/schwab/") }
+db/queue_schema.rb:79:  create_table "solid_queue_recurring_executions", force: :cascade do |t|
+db/queue_schema.rb:84:    t.index [ "job_id" ], name: "index_solid_queue_recurring_executions_on_job_id", unique: true
+db/queue_schema.rb:85:    t.index [ "task_key", "run_at" ], name: "index_solid_queue_recurring_executions_on_task_key_and_run_at", unique: true
+db/queue_schema.rb:88:  create_table "solid_queue_recurring_tasks", force: :cascade do |t|
+db/queue_schema.rb:100:    t.index [ "key" ], name: "index_solid_queue_recurring_tasks_on_key", unique: true
+db/queue_schema.rb:101:    t.index [ "static" ], name: "index_solid_queue_recurring_tasks_on_static"
+db/queue_schema.rb:158:  add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+spec/support/schwab_fixtures.rb:2:  def schwab_fixture(name) = JSON.parse(Rails.root.join("lib/schwab_fixtures/#{name}.json").read)
+spec/models/instrument_spec.rb:16:    create(:instrument, cusip: "037833100", schwab_instrument_id: 7)
+spec/models/instrument_spec.rb:18:    expect { create(:instrument, cusip: nil, schwab_instrument_id: 7) }.to raise_error(ActiveRecord::RecordNotUnique)
+spec/support/vcr.rb:11:  c.filter_sensitive_data("<SCHWAB_APP_KEY>") { Rails.application.credentials.dig(:schwab, :app_key) }
+spec/support/vcr.rb:12:  c.filter_sensitive_data("<SCHWAB_APP_SECRET>") { Rails.application.credentials.dig(:schwab, :app_secret) }
+spec/factories/accounts.rb:3:    sequence(:schwab_hash) { |n| Digest::SHA256.hexdigest("account-#{n}").upcase }
+db/structure.sql:36:    schwab_hash character varying NOT NULL,
+db/structure.sql:249:    schwab_instrument_id bigint,
+db/structure.sql:294:    source character varying DEFAULT 'schwab'::character varying NOT NULL,
+db/structure.sql:394:    placed_via character varying DEFAULT 'schwab_direct'::character varying NOT NULL,
+db/structure.sql:511:-- Name: schwab_tokens; Type: TABLE; Schema: public; Owner: -
+db/structure.sql:514:CREATE TABLE public.schwab_tokens (
+db/structure.sql:530:-- Name: schwab_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+db/structure.sql:533:CREATE SEQUENCE public.schwab_tokens_id_seq
+db/structure.sql:542:-- Name: schwab_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+db/structure.sql:545:ALTER SEQUENCE public.schwab_tokens_id_seq OWNED BY public.schwab_tokens.id;
+db/structure.sql:736:-- Name: system_settings; Type: TABLE; Schema: public; Owner: -
+db/structure.sql:739:CREATE TABLE public.system_settings (
+db/structure.sql:748:    CONSTRAINT system_settings_singleton CHECK ((id = 1))
+db/structure.sql:753:-- Name: system_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+db/structure.sql:756:CREATE SEQUENCE public.system_settings_id_seq
+db/structure.sql:765:-- Name: system_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+db/structure.sql:768:ALTER SEQUENCE public.system_settings_id_seq OWNED BY public.system_settings.id;
+db/structure.sql:1009:-- Name: schwab_tokens id; Type: DEFAULT; Schema: public; Owner: -
+db/structure.sql:1012:ALTER TABLE ONLY public.schwab_tokens ALTER COLUMN id SET DEFAULT nextval('public.schwab_tokens_id_seq'::regclass);
+db/structure.sql:1051:-- Name: system_settings id; Type: DEFAULT; Schema: public; Owner: -
+db/structure.sql:1054:ALTER TABLE ONLY public.system_settings ALTER COLUMN id SET DEFAULT nextval('public.system_settings_id_seq'::regclass);
+db/structure.sql:1190:-- Name: schwab_tokens schwab_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+db/structure.sql:1193:ALTER TABLE ONLY public.schwab_tokens
+db/structure.sql:1194:    ADD CONSTRAINT schwab_tokens_pkey PRIMARY KEY (id);
+db/structure.sql:1238:-- Name: system_settings system_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+db/structure.sql:1241:ALTER TABLE ONLY public.system_settings
+db/structure.sql:1242:    ADD CONSTRAINT system_settings_pkey PRIMARY KEY (id);
+db/structure.sql:1285:-- Name: index_accounts_on_schwab_hash; Type: INDEX; Schema: public; Owner: -
+db/structure.sql:1288:CREATE UNIQUE INDEX index_accounts_on_schwab_hash ON public.accounts USING btree (schwab_hash);
+db/structure.sql:1397:-- Name: index_instruments_on_schwab_instrument_id; Type: INDEX; Schema: public; Owner: -
+db/structure.sql:1400:CREATE UNIQUE INDEX index_instruments_on_schwab_instrument_id ON public.instruments USING btree (schwab_instrument_id) WHERE (schwab_instrument_id IS NOT NULL);
+db/migrate/20260901220004_create_orders.rb:17:      t.string :placed_via, null: false, default: "schwab_direct"
+config/initializers/schwab.rb:2:Rails.application.config.x.schwab.adapter = ENV.fetch("SCHWAB_ADAPTER") { Rails.env.production? ? "http" : "fake" }.to_sym
+db/migrate/20260901220001_create_accounts.rb:4:      t.string :schwab_hash, null: false
+db/migrate/20260901220001_create_accounts.rb:13:    add_index :accounts, :schwab_hash, unique: true
+db/migrate/20260901220019_create_system_settings.rb:3:    create_table :system_settings do |t|
+db/migrate/20260901220019_create_system_settings.rb:11:      t.check_constraint "id = 1", name: "system_settings_singleton"
+db/migrate/20260901220014_create_audit_events.rb:1:class CreateAuditEvents < ActiveRecord::Migration[8.1]
+db/migrate/20260901220020_create_schwab_tokens.rb:1:class CreateSchwabTokens < ActiveRecord::Migration[8.1]
+db/migrate/20260901220020_create_schwab_tokens.rb:3:    create_table :schwab_tokens do |t|
+db/migrate/20260901220002_create_instruments.rb:5:      t.bigint :schwab_instrument_id
+db/migrate/20260901220002_create_instruments.rb:16:    add_index :instruments, :schwab_instrument_id, unique: true, where: "schwab_instrument_id IS NOT NULL"
+db/migrate/20260901220015_create_market_days.rb:12:      t.string :source, null: false, default: "schwab"
+spec/models/schwab/mappers_spec.rb:5:    subject(:summary) { described_class.from(Schwab::Scrub.json(schwab_fixture("account"))) }
+spec/models/schwab/mappers_spec.rb:39:    let(:orders) { schwab_fixture("orders").map { |o| described_class.from(o) } }
+spec/models/schwab/mappers_spec.rb:67:    let(:activities) { Schwab::Scrub.json(schwab_fixture("transactions")).map { |a| described_class.from(a) } }
+spec/models/schwab/mappers_spec.rb:106:      hours = described_class.from(schwab_fixture("market_hours_open"), date: Date.new(2026, 9, 8))
+spec/models/schwab/mappers_spec.rb:115:      hours = described_class.from(schwab_fixture("market_hours_closed"), date: Date.new(2026, 9, 7))
+spec/models/schwab/mappers_spec.rb:123:      quotes, invalid = described_class.batch(schwab_fixture("quotes"))
+spec/models/schwab/mappers_spec.rb:133:      history = described_class.from(schwab_fixture("price_history"))
+spec/models/schwab/client_spec.rb:5:  let(:token) { instance_double("SchwabToken", access_token: "tok-1") }
+spec/models/schwab/client_spec.rb:7:  let(:client) { described_class.new(token: token, app_key: "key", app_secret: "secret", callback_url: "https://desk.example.com/schwab/callback", sleeper: ->(s) { sleeps << s }) }
+spec/models/schwab/client_spec.rb:8:  let(:trader) { "https://api.schwabapi.com/trader/v1" }
+spec/models/schwab/client_spec.rb:14:      expect(client.authorize_url(state: "s1")).to eq("https://api.schwabapi.com/v1/oauth/authorize?response_type=code&client_id=key&redirect_uri=https%3A%2F%2Fdesk.example.com%2Fschwab%2Fcallback&state=s1")
+spec/models/schwab/client_spec.rb:18:      stub = stub_request(:post, "https://api.schwabapi.com/v1/oauth/token")
+spec/models/schwab/client_spec.rb:19:        .with(basic_auth: [ "key", "secret" ], body: { grant_type: "authorization_code", code: "abc@", redirect_uri: "https://desk.example.com/schwab/callback" })
+spec/models/schwab/client_spec.rb:20:        .to_return(status: 200, body: schwab_fixture("token").to_json, headers: { "Content-Type" => "application/json" })
+spec/models/schwab/client_spec.rb:28:      stub_request(:post, "https://api.schwabapi.com/v1/oauth/token").to_return(status: 400, body: '{"error":"invalid_grant","error_description":"refresh token expired"}')
+spec/models/schwab/client_spec.rb:39:        .to_return(status: 200, body: schwab_fixture("orders").to_json)
+spec/models/schwab/client_spec.rb:47:      stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 200, body: schwab_fixture("account_numbers").to_json)
+spec/models/schwab/client_spec.rb:53:      stub2 = stub_request(:get, "#{trader}/accounts/#{hash}/transactions").with(query: hash_including(types: "DIVIDEND_OR_INTEREST")).to_return(status: 200, body: schwab_fixture("transactions").to_json)
+spec/models/schwab/client_spec.rb:62:      first = stub_request(:get, "https://api.schwabapi.com/marketdata/v1/quotes").with(query: hash_including(symbols: symbols.first(100).join(","))).to_return(status: 200, body: "{}")
+spec/models/schwab/client_spec.rb:63:      second = stub_request(:get, "https://api.schwabapi.com/marketdata/v1/quotes").with(query: hash_including(symbols: symbols.last(50).join(","))).to_return(status: 200, body: "{}")
+spec/models/schwab/client_spec.rb:92:      token = double("SchwabToken")
+spec/models/schwab/client_spec.rb:103:      token = double("SchwabToken", access_token: "tok", refresh!: nil)
+spec/models/schwab/client_spec.rb:116:      stub_request(:post, "https://api.schwabapi.com/v1/oauth/token").to_timeout
+spec/models/schwab/client_spec.rb:125:      expect(Rails.logger).to have_received(:info).with(%r{\Aschwab GET /trader/v1/accounts/\{hash\} 200 \d+ms\z})
+spec/models/system_settings_spec.rb:12:    expect { SystemSettings.create!(id: 2) }.to raise_error(ActiveRecord::StatementInvalid, /system_settings_singleton/)
+spec/models/schwab_token_spec.rb:3:RSpec.describe SchwabToken do
+spec/models/schwab_token_spec.rb:5:    token = SchwabToken.create!(access_token: "access-abc", refresh_token: "refresh-xyz", access_expires_at: 30.minutes.from_now,
+spec/models/schwab_token_spec.rb:7:    stored = SchwabToken.lease_connection.select_one(SchwabToken.sanitize_sql([ "SELECT access_token, refresh_token FROM schwab_tokens WHERE id = ?", token.id ]))
+app/controllers/concerns/authentication.rb:1:module Authentication
+spec/models/audit_event_spec.rb:3:RSpec.describe AuditEvent do
+spec/models/audit_event_spec.rb:4:  let!(:event) { AuditEvent.log("shadow_mode_toggled", actor: :human, reason: "testing", data: { from: true, to: false }) }
+spec/models/audit_event_spec.rb:11:    expect { AuditEvent.log("made_up", actor: :system) }.to raise_error(ActiveRecord::RecordInvalid)
+spec/models/audit_event_spec.rb:20:    expect { AuditEvent.where(id: event.id).update_all(reason: "changed") }.to raise_error(ActiveRecord::StatementInvalid, /append-only/)
+spec/models/audit_event_spec.rb:24:    expect { AuditEvent.where(id: event.id).delete_all }.to raise_error(ActiveRecord::StatementInvalid, /append-only/)
+spec/models/audit_event_spec.rb:28:    expect { AuditEvent.connection.truncate("audit_events") }.to raise_error(ActiveRecord::StatementInvalid, /append-only/)
+spec/models/audit_event_spec.rb:33:    logged = AuditEvent.log("re_auth_succeeded", actor: :human, user: user, subject: user)
+app/models/schwab_token.rb:1:class SchwabToken < ApplicationRecord
+app/models/schwab.rb:1:# Everything that knows a Schwab field name lives under this namespace. See docs/schwab-api-contract.md.
+app/models/schwab.rb:8:    case Rails.configuration.x.schwab.adapter
+app/models/schwab.rb:10:    else Client.new(token: token || SchwabToken.current)
+app/models/schwab.rb:14:  def self.app_key = Rails.application.credentials.dig(:schwab, :app_key)
+app/models/schwab.rb:15:  def self.app_secret = Rails.application.credentials.dig(:schwab, :app_secret)
+app/models/account.rb:13:  validates :schwab_hash, uniqueness: true
+app/models/audit_event.rb:3:class AuditEvent < ApplicationRecord
+app/models/schwab/fake_client.rb:2:  # Same interface as Client, same raw shapes (already scrubbed), served from lib/schwab_fixtures so seeds,
+app/models/schwab/fake_client.rb:8:    FIXTURES = Rails.root.join("lib/schwab_fixtures")
+app/models/schwab/fake_client.rb:29:    def authorize_url(state:) = "/schwab/fake_authorize?#{ { state: state }.to_query }"
+app/models/order.rb:2:  # SCHWAB_SHAPE_UNVERIFIED: see docs/schwab-api-contract.md for the status and type vocabularies.
+app/models/order.rb:15:  enum :placed_via, { schwab_direct: "schwab_direct", app: "app" }
+app/models/market_day.rb:2:  enum :source, { schwab: "schwab", fallback: "fallback" }
+app/models/schwab/client.rb:8:    TRADER = "https://api.schwabapi.com/trader/v1"
+app/models/schwab/client.rb:9:    MARKET = "https://api.schwabapi.com/marketdata/v1"
+app/models/schwab/client.rb:10:    OAUTH = "https://api.schwabapi.com/v1/oauth"
+app/models/schwab/client.rb:168:        Rails.logger.info("schwab #{request.method} #{template} #{status} #{ms}ms")
+app/models/schwab/rate_budget.rb:6:      key = "schwab:rate:#{now.to_i / 60}"
+app/controllers/application_controller.rb:2:  include Authentication
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+There is already a `SchwabToken` file in the repo, so I’m checking it as part of the review. Even if step 4 is “planned,” any existing partial implementation affects the operational risks.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/schwab_token.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+class SchwabToken < ApplicationRecord
+  encrypts :access_token, :refresh_token
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/audit_event.rb && sed -n '1,180p' app/models/system_settings.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Append-only. Every "logged" action in the PRD is a row here; the database triggers reject
+# UPDATE, DELETE, and TRUNCATE, and Active Record refuses updates before it gets that far.
+class AuditEvent < ApplicationRecord
+  KINDS = %w[
+    re_auth_succeeded re_auth_failed token_refresh_failed sync_paused_token_expired sync_resumed
+    token_nag_sent shadow_mode_toggled manual_halt_set manual_halt_cleared trade_reviewed
+    instrument_identity_fallback
+  ].freeze
+
+  belongs_to :user, optional: true
+  belongs_to :subject, polymorphic: true, optional: true
+
+  enum :actor, { human: "human", system: "system", agent: "agent" }, prefix: true
+
+  validates :kind, inclusion: { in: KINDS }
+
+  def self.log(kind, actor:, data: {}, user: nil, subject: nil, reason: nil)
+    create!(kind: kind, actor: actor, user: user, subject: subject, reason: reason, data: data)
+  end
+
+  def readonly? = persisted?
+end
+# One row, enforced by a check constraint on id = 1. Holds the global flags the PRD calls out:
+# shadow mode (on by default), the manual halt, and why sync is paused.
+class SystemSettings < ApplicationRecord
+  def self.instance = find_or_create_by!(id: 1)
+
+  def halted? = manual_halt
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,180p' app/controllers/concerns/authentication.rb && sed -n '1,140p' app/controllers/application_controller.rb && rg -n \"resource :session|schwab|fake_authorize|authorize\" config/routes.rb app/controllers" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+module Authentication
+  extend ActiveSupport::Concern
+
+  included do
+    before_action :require_authentication
+    helper_method :authenticated?
+  end
+
+  class_methods do
+    def allow_unauthenticated_access(**options)
+      skip_before_action :require_authentication, **options
+    end
+  end
+
+  private
+    def authenticated?
+      resume_session
+    end
+
+    def require_authentication
+      resume_session || request_authentication
+    end
+
+    def resume_session
+      Current.session ||= find_session_by_cookie
+    end
+
+    def find_session_by_cookie
+      Session.current.find_by(id: cookies.signed[:session_id]) if cookies.signed[:session_id]
+    end
+
+    def request_authentication
+      session[:return_to_after_authenticating] = request.url
+      redirect_to new_session_path
+    end
+
+    def after_authentication_url
+      session.delete(:return_to_after_authenticating) || root_url
+    end
+
+    def start_new_session_for(user)
+      return_to = session[:return_to_after_authenticating]
+      reset_session
+      session[:return_to_after_authenticating] = return_to if return_to
+
+      user.sessions.create!(user_agent: request.user_agent, ip_address: request.remote_ip).tap do |session|
+        Current.session = session
+        cookies.signed[:session_id] = { value: session.id, expires: Session::LIFETIME, httponly: true, same_site: :lax }
+      end
+    end
+
+    def terminate_session
+      Current.session.destroy
+      cookies.delete(:session_id)
+    end
+end
+class ApplicationController < ActionController::Base
+  include Authentication
+  # Only allow modern browsers supporting webp images, web push, badges, import maps, CSS nesting, and CSS :has.
+  allow_browser versions: :modern
+
+  # Changes to the importmap will invalidate the etag for HTML responses
+  stale_when_importmap_changes
+end
+config/routes.rb:4:  resource :session, only: %i[ new create destroy ]
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,80p' db/migrate/20260901220020_create_schwab_tokens.rb && sed -n '1,80p' db/migrate/20260901220014_create_audit_events.rb && sed -n '1,80p' db/migrate/20260901220019_create_system_settings.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+class CreateSchwabTokens < ActiveRecord::Migration[8.1]
+  def change
+    create_table :schwab_tokens do |t|
+      t.text :access_token, null: false
+      t.text :refresh_token, null: false
+      t.datetime :access_expires_at, null: false
+      t.datetime :refresh_expires_at, null: false # issued_at + 7 days; never moved by a refresh
+      t.datetime :issued_at, null: false
+      t.datetime :last_refreshed_at
+      t.text :last_refresh_error
+      t.string :scope
+
+      t.timestamps
+    end
+  end
+end
+class CreateAuditEvents < ActiveRecord::Migration[8.1]
+  def up
+    create_table :audit_events do |t|
+      t.string :kind, null: false
+      t.string :actor, null: false
+      t.references :user, foreign_key: true
+      t.references :subject, polymorphic: true
+      t.jsonb :data, null: false, default: {}
+      t.text :reason
+      t.datetime :created_at, null: false
+    end
+    add_index :audit_events, :kind
+    add_index :audit_events, :created_at
+
+    execute <<~SQL
+      CREATE FUNCTION audit_events_append_only() RETURNS trigger AS $$
+      BEGIN
+        RAISE EXCEPTION 'audit_events is append-only';
+      END;
+      $$ LANGUAGE plpgsql;
+
+      CREATE TRIGGER audit_events_append_only
+        BEFORE UPDATE OR DELETE ON audit_events
+        FOR EACH ROW EXECUTE FUNCTION audit_events_append_only();
+
+      CREATE TRIGGER audit_events_no_truncate
+        BEFORE TRUNCATE ON audit_events
+        FOR EACH STATEMENT EXECUTE FUNCTION audit_events_append_only();
+    SQL
+  end
+
+  def down
+    execute "DROP TRIGGER audit_events_no_truncate ON audit_events; DROP TRIGGER audit_events_append_only ON audit_events; DROP FUNCTION audit_events_append_only();"
+    drop_table :audit_events
+  end
+end
+class CreateSystemSettings < ActiveRecord::Migration[8.1]
+  def change
+    create_table :system_settings do |t|
+      t.boolean :shadow_mode, null: false, default: true
+      t.boolean :manual_halt, null: false, default: false
+      t.text :manual_halt_reason
+      t.datetime :manual_halt_at
+      t.string :sync_paused_reason
+
+      t.timestamps
+      t.check_constraint "id = 1", name: "system_settings_singleton"
+    end
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The partial implementation is only the encrypted token columns today; the planned lifecycle logic is not written yet. I’m now turning that into an operational review: what must change before coding step 4, especially around race boundaries and expired-token behavior.
+codex
+**Verdict**
+
+The planned step 4 is close on the happy path, but it is not operationally safe yet. The main failure mode is not just “token expires”; it is “an old token actor changes global system state after a newer re-auth succeeded.” That can silently pause automation even though the user did the right thing.
+
+**Critical Issues**
+
+1. **Old refresh jobs can pause sync after successful re-auth.**
+
+A refresh job may load token row A, then the user completes re-auth and `issue!` creates token row B. If the old refresh later receives a token-endpoint 4xx, the planned `refresh!` pauses sync globally via `system_settings.sync_paused_reason`.
+
+That is the exact operational failure the PRD is trying to avoid: valid current token, automation paused anyway.
+
+Required fix: every refresh failure path must check “am I still the current token?” before writing global pause state or health state. Use a token epoch/current-token guard, not just `SchwabToken.current` informally.
+
+Best pattern:
+- Add an explicit `active` boolean or `token_generation`.
+- Enforce one active token with a partial unique index.
+- `issue!` atomically deactivates old rows and activates the new row.
+- `refresh!` may update/audit/pause only if its row is still active at commit time.
+
+2. **Two refresh workers can still double-refresh unless the lock reloads and rechecks.**
+
+A row lock is necessary but not sufficient. If two jobs enter, the second must reload inside the lock and skip if the first already refreshed recently. Otherwise it may immediately reuse the newly returned refresh token or, worse, a stale token captured before the lock.
+
+Required fix:
+- Build the Schwab client inside the lock, after reload.
+- Recheck `access_expires_at`.
+- Return early if the token is no longer active or no longer near expiry.
+- Never capture `refresh_token` before the lock.
+
+3. **The Mon/Tue escalation rule is mathematically wrong as written.**
+
+The phase plan says Monday/Tuesday nag if `refresh_expires_at` is before the coming Sunday 18:00 email plus 12h buffer. A token issued Sunday evening can never survive until the following Monday 06:00, so this rule will nag even after a successful Sunday re-auth.
+
+This conflicts with the PRD’s Sunday ritual in [investment-copilot-prd.md](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-prd.md:211).
+
+Required fix: define escalation in terms of whether the last Sunday ritual was completed, not whether the token survives past next Sunday plus 12h. For example:
+- Sunday email always includes re-auth.
+- Monday/Tuesday escalation fires if `issued_at < most_recent_sunday_18_et`.
+- T-24h nags remain separate.
+
+4. **Refresh-token expiry must be treated as duration, not calendar math.**
+
+Schwab’s refresh token is valid for 7 elapsed days. Do not use wall-clock “7 days” semantics across DST. Use `168.hours` from issuance, and use a safety margin when making decisions.
+
+Also, `access_expires_at` should be `expires_in.seconds.from_now - safety_margin`, not the exact 30-minute value. A 25-minute recurring job leaves too little room for Solid Queue delay, retries, `Retry-After`, deploy restarts, or a stuck worker.
+
+5. **Callback idempotency is missing.**
+
+A browser refresh, double click, back button, or retry can hit the callback twice. The second hit will likely produce `invalid_grant`, causing a visible failure and a `re_auth_failed` audit immediately after success.
+
+Required fix:
+- Consume OAuth state exactly once.
+- Bind state to user/session.
+- On duplicate callback after success, show the already-successful token result instead of auditing failure.
+- Delete the session state before exchange, but persist enough state server-side to distinguish duplicate success from attack/failure.
+
+**High-Risk Gaps**
+
+6. **Transport/5xx refresh failures are not a re-auth problem, but they still break automation.**
+
+The contract says token-endpoint 4xx means re-auth; 5xx and transport errors are retried. After retries fail, the planned design does not say what jobs see.
+
+Required behavior:
+- Do not pause as “re-auth required” on 5xx/transport.
+- Record `last_refresh_error`.
+- Alert if repeated or near refresh expiry.
+- If access token is expired and refresh cannot be obtained, scheduled sync must degrade/queue visibly instead of repeatedly failing.
+
+7. **`TokenGated` is too blunt.**
+
+The PRD says scheduled work degrades gracefully and queues; the phase plan says only `Sync::TickJob` writes hourly `skipped_token`, agent jobs run degraded, and no queue growth occurs.
+
+A generic concern that “skips jobs when refresh expired” risks silent loss and duplicate skip rows. Token gating should be role-specific:
+- Sync tick: records one skipped episode/hour and enqueues nothing.
+- Agent jobs: run degraded with stale timestamps.
+- Catch-up: runs only after current valid token.
+- Phase 2 submission: hard-blocks with re-auth required.
+
+8. **Unauthenticated callback handling can leak or preserve the OAuth code.**
+
+The default authentication concern stores `request.url` as `return_to_after_authenticating`. If `/schwab/callback?code=...` is hit unauthenticated, the code can be stored in session and appear in app/request logs unless filtering is explicit.
+
+Required fix:
+- Callback should reject unauthenticated access without storing return-to.
+- Add parameter filtering for `code`, `access_token`, `refresh_token`, `id_token`.
+- Never include raw Schwab errors, codes, tokens, or callback URLs in rendered retry links.
+
+9. **Exact redirect URI must be config-driven and tested.**
+
+The client correctly uses the configured callback URL for authorize and exchange. The controller must not derive callback URLs from the request host, proxy headers, or current URL. Add a boot/test assertion that `Schwab.callback_url` exactly matches the registered HTTPS URL.
+
+10. **`fake_authorize` must be impossible in production.**
+
+Do not merely hide the link. The route/action should 404 unless the adapter is fake and Rails is not production. Also fail boot if production runs with `SCHWAB_ADAPTER=fake`.
+
+**Phase 2 Missing Piece**
+
+Order submission will need the same token lifecycle, but stricter. Before submitting, Phase 2 must:
+- Require active current token.
+- Refresh proactively if access token is near expiry.
+- Block approval/submission if re-auth is required.
+- Prevent stale in-flight jobs using an old token from pausing or mutating submission state after re-auth.
+
+**Tests I Would Require Before Step 4 Is Accepted**
+
+- Two refresh jobs race; only one HTTP refresh happens.
+- Old token refresh fails after new `issue!`; sync remains unpaused.
+- Callback hit twice; first succeeds, second does not audit failure.
+- Callback with missing/mismatched state fails and consumes nothing.
+- Code ending in `@` is exchanged without extra decoding.
+- Refresh endpoint 400 pauses only if token row is still active.
+- Refresh endpoint 500/timeout records transient failure but does not demand re-auth.
+- Monday after successful Sunday re-auth does not nag.
+- Monday after missed Sunday ritual does nag.
+- Production cannot reach `fake_authorize`.
+
+Step 4 should not be written until the token “currentness” model and escalation clock math are fixed. Those are design-level bugs, not implementation details.
+hook: Stop
+hook: Stop Completed
+tokens used
+44,725

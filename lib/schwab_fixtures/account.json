@@ -1,0 +1,35 @@
+{
+  "securitiesAccount": {
+    "type": "CASH",
+    "accountNumber": "12345678",
+    "roundTrips": 0,
+    "isDayTrader": false,
+    "isClosingOnlyRestricted": false,
+    "pfcbFlag": false,
+    "positions": [
+      {
+        "shortQuantity": 0, "averagePrice": 51.18, "longQuantity": 40, "settledLongQuantity": 40,
+        "marketValue": 2120.0, "currentDayProfitLoss": 24.0, "currentDayProfitLossPercentage": 1.15,
+        "instrument": { "assetType": "EQUITY", "cusip": "037833100", "symbol": "XYZ", "description": "XYZ CORP", "instrumentId": 1001, "netChange": 0.6 }
+      },
+      {
+        "shortQuantity": 0, "averagePrice": 88.02, "longQuantity": 15, "settledLongQuantity": 15,
+        "marketValue": 1298.55,
+        "instrument": { "assetType": "EQUITY", "cusip": "594918104", "symbol": "DEF", "description": "DEF INC", "instrumentId": 1002, "netChange": -1.4 }
+      },
+      {
+        "shortQuantity": 0, "averagePrice": 1.0, "longQuantity": 2110.5, "settledLongQuantity": 2110.5,
+        "marketValue": 2110.5,
+        "instrument": { "assetType": "CASH_EQUIVALENT", "symbol": "SWVXX", "description": "SCHWAB VALUE ADVANTAGE MONEY", "type": "MONEY_MARKET_FUND" }
+      }
+    ],
+    "initialBalances": { "cashAvailableForTrading": 3090.0, "liquidationValue": 6485.05 },
+    "currentBalances": {
+      "cashAvailableForTrading": 3090.0, "cashAvailableForWithdrawal": 2110.0, "unsettledCash": 980.0,
+      "totalCash": 3090.0, "cashBalance": 3090.0, "liquidationValue": 6508.55, "longMarketValue": 3418.55,
+      "accruedInterest": 0, "cashCall": 0, "pendingDeposits": 0, "moneyMarketFund": 2110.5
+    },
+    "projectedBalances": { "cashAvailableForTrading": 3090.0, "cashAvailableForWithdrawal": 2110.0 }
+  },
+  "aggregatedBalance": { "currentLiquidationValue": 6508.55, "liquidationValue": 6508.55 }
+}
