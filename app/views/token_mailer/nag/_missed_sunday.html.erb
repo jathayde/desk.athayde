@@ -1,0 +1,1 @@
+The current Schwab token was issued <%= time_ago_in_words(token.issued_at) %> ago and expires <%= l(token.refresh_expires_at, format: :weekday_time) %>, before next Sunday's re-auth email. Re-authenticate now so sync does not pause mid-week.

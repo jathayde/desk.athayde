@@ -1,0 +1,7 @@
+<% content_for :title, "Schwab connection failed" %>
+<section class="auth">
+  <h1>Schwab connection failed</h1>
+  <p><%= @message %></p>
+  <p>Your previous connection, if any, is unchanged.</p>
+  <%= link_to "Try again", schwab_authorize_path, class: "button" %>
+</section>

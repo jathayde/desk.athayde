@@ -1,15 +1,16 @@
-# examples:
-#   periodic_cleanup:
-#     class: CleanSoftDeletedRecordsJob
-#     queue: background
-#     args: [ 1000, { batch_size: 500 } ]
-#     schedule: every hour
-#   periodic_cleanup_with_command:
-#     command: "SoftDeletedRecord.due.delete_all"
-#     priority: 2
-#     schedule: at 5am every day
+# Solid Queue recurring tasks. Cron with an explicit zone so a config.time_zone change cannot shift them,
+# and because Solid Queue skips a schedule it cannot parse without failing boot (spec/config/recurring_spec.rb).
+shared: &shared
+  schwab_refresh_access_token:
+    class: Schwab::RefreshAccessTokenJob
+    queue: critical
+    schedule: "*/25 * * * * America/New_York"
+  schwab_token_health:
+    class: Schwab::TokenHealthJob
+    schedule: "0 8,20 * * * America/New_York"
+
+development:
+  <<: *shared
 
 production:
-  clear_solid_queue_finished_jobs:
-    command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
-    schedule: every hour at minute 12
+  <<: *shared

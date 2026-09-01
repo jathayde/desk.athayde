@@ -50,3 +50,18 @@ Everything the app assumes about Schwab that has not been checked against the po
 31. Refresh-token rotation under a dropped connection: refresh, kill the connection mid-response, refresh again. If the second call returns `invalid_grant`, the refresh grant is not safely retriable and the client must stop retrying it.
 32. Whether issuing a new token via the authorization-code grant invalidates the previous refresh token immediately.
 33. Whether the individual Trader API product's single `api` scope covers order placement (Phase 2).
+
+## Added by the step 5 review
+34. Whether `toEnteredTime`/`endDate` filter by timestamp or by calendar date (the app sends end of the UTC day either way).
+35. Whether `/orders/{orderId}` returns orders older than the list lookback.
+36. Whether a replacement order also appears top-level with its own `enteredTime`.
+37. Orders list with `status=WORKING` and a one-year lookback (Schwabdev claims it works); this is how GTC stops older than 60 days become visible on first sync.
+38. Whether `positions` is omitted entirely on an empty account versus returned as an empty array.
+
+## Added by the step 5 review
+34. Whether `toEnteredTime`/`endDate` filter by timestamp or by calendar date (the app sends end of the UTC day either way).
+35. Whether `/orders/{orderId}` returns orders older than the list lookback.
+36. Whether a replacement order also appears top-level with its own `enteredTime`.
+37. Orders list with `status=WORKING` and a one-year lookback (Schwabdev claims it works); this is how GTC stops older than 60 days become visible on first sync.
+38. Whether `positions` is omitted entirely on an empty account versus returned as an empty array.
+39. Whether Schwab echoes `state` on an error redirect (`error=access_denied`); if not, a cancelled login reads as a state mismatch.

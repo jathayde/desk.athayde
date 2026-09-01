@@ -2,7 +2,7 @@ module Schwab
   # Plaintext account numbers arrive in the body of every Trader API response. They are removed
   # here, in the client, before any body reaches raw columns, cassettes, or logs.
   module Scrub
-    REDACTED_KEYS = %w[ accountNumber user ].freeze
+    REDACTED_KEYS = %w[ accountNumber user access_token refresh_token id_token client_secret ].freeze
     ACCOUNT_HASH = /[0-9A-F]{64}/i
     LONG_DIGIT_RUN = /\b\d{8,}\b/
 

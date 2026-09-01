@@ -33,8 +33,8 @@ module Schwab
 
     # ---- OAuth: the fake authorize page lives in the app (step 4) and redirects straight back
     def authorize_url(state:) = "/schwab/fake_authorize?#{ { state: state }.to_query }"
-    def exchange_code(code) = scripted(:exchange_code, code) { code == FAKE_CODE ? fixture("token").except("id_token") : raise(ReauthRequired.new("invalid_grant", status: 400)) }
-    def refresh(refresh_token) = scripted(:refresh, refresh_token) { fixture("token").except("id_token") }
+    def exchange_code(code) = scripted(:exchange_code, code) { code == FAKE_CODE ? token_fixture : raise(ReauthRequired.new("invalid_grant", status: 400)) }
+    def refresh(refresh_token) = scripted(:refresh, refresh_token) { token_fixture }
 
     # ---- Trader API
     def account_numbers = scripted(:account_numbers) { fixture("account_numbers").map { |row| row["hashValue"] } }
@@ -69,6 +69,9 @@ module Schwab
       end
 
       def fixture(name) = Scrub.json(JSON.parse(FIXTURES.join("#{name}.json").read))
+
+      # The token response is the one body that legitimately carries tokens; the real client never scrubs it either.
+      def token_fixture = JSON.parse(FIXTURES.join("token.json").read).except("id_token")
 
       def find_order(orders, order_id)
         orders.each do |raw|

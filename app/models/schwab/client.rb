@@ -134,7 +134,7 @@ module Schwab
         request["Accept"] = "application/json"
         response, attempts = perform(request, template: Scrub.path(uri.path), idempotent: true)
         if response.code.to_i == 401 && !refreshed && @token.respond_to?(:refresh!)
-          @token.refresh!
+          @token.refresh!(wait: @wait)
           return authorized(uri, refreshed: true)
         end
         [ response, attempts ]

@@ -1,0 +1,8 @@
+<% content_for :title, "Schwab connected" %>
+<section class="auth">
+  <h1>Schwab connected</h1>
+  <% if @token %>
+    <p>Sync resumes now. This connection is good until <strong><%= l(@token.refresh_expires_at, format: :connection) %></strong>. The Sunday email will remind you to renew it.</p>
+  <% end %>
+  <%= link_to "Back to the dashboard", root_path %>
+</section>

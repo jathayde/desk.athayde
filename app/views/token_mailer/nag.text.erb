@@ -1,0 +1,3 @@
+<%= render "token_mailer/nag/#{@reason}", token: @token, formats: [ :text ] %>
+
+Re-authenticate with Schwab: <%= @reauth_url %>

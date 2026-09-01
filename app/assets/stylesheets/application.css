@@ -39,3 +39,5 @@ body {
 .auth input[type="email"] { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 0.75rem; }
 .auth input[type="submit"] { padding: 0.6rem 1rem; font: inherit; font-weight: 600; color: #fff; background: var(--azure); border: 0; border-radius: 6px; cursor: pointer; }
 .empty-state { color: var(--mid); }
+
+.button { display: inline-block; padding: 0.6rem 1rem; font-weight: 600; color: #fff; background: var(--azure); border-radius: 6px; text-decoration: none; }

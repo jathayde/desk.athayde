@@ -522,7 +522,8 @@ CREATE TABLE public.schwab_tokens (
     last_refresh_error text,
     scope character varying,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    revoked_at timestamp(6) with time zone
 );
 
 
@@ -1555,6 +1556,13 @@ CREATE UNIQUE INDEX index_risk_rules_one_active_per_type_and_setup ON public.ris
 
 
 --
+-- Name: index_schwab_tokens_on_issued_at_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_schwab_tokens_on_issued_at_and_id ON public.schwab_tokens USING btree (issued_at DESC, id DESC);
+
+
+--
 -- Name: index_sessions_on_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1964,6 +1972,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260901230001'),
 ('20260901220020'),
 ('20260901220019'),
 ('20260901220018'),
