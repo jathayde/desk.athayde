@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 116" role="img" aria-label="Athayde family arms: azure, four bends argent">
+  <defs>
+    <path id="shield" d="M6 8 Q50 1 94 8 L94 66 Q94 100 50 112 Q6 100 6 66 Z"/>
+    <clipPath id="shield-clip"><use href="#shield"/></clipPath>
+  </defs>
+  <use href="#shield" fill="#0B5FAE"/>
+  <g clip-path="url(#shield-clip)"><g fill="#F4F5F7" transform="rotate(45 50 58)">
+    <rect x="-150" y="17" width="400" height="10"/>
+    <rect x="-150" y="43" width="400" height="10"/>
+    <rect x="-150" y="69" width="400" height="10"/>
+    <rect x="-150" y="95" width="400" height="10"/>
+  </g></g>
+  <use href="#shield" fill="none" stroke="#2B2B2B" stroke-width="3.5" stroke-linejoin="round"/>
+</svg>

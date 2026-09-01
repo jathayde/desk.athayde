@@ -1,0 +1,53 @@
+**Verdict:** the plan is a faithful reading of Phase 1 scope and its table list covers every §5.2 table. It is not yet complete or Phase 2 safe. Six problems will force schema or model rewrites, and two of them will produce wrong journal data on day one with the real account.
+
+## Critical: fix before writing migrations
+
+**1. CUSIP is not a stable key across corporate actions, and the plan treats it as one.** Reverse splits, mergers, and spinoffs issue a new CUSIP. The PRD says CUSIP so ticker changes cannot break linking, which is true, but the plan's journal rule only handles "symbol changes on a known CUSIP". A CUSIP change arrives as an out on the old instrument and an in on a new one. The zero-to-zero builder will close the old trade with a phantom exit and open a new incomplete trade with no history. Add `predecessor_instrument_id` to instruments now and a builder rule that carries the open trade across a succession event. Also drop `not null` on cusip or add a fallback natural key. Schwab positions and transaction items for cash equivalents, sweeps, and possibly options may arrive without a CUSIP. Store Schwab's integer `instrumentId` alongside. Mark all of this as shape unverified.
+
+**2. Nothing bootstraps trades for positions that already exist.** The account has holdings today. schwab-py documents that the transactions start date must be within 60 days of now, so the opening fills for older positions are unreachable. The builder rule "no open trade and a buy fill opens a trade" says nothing about a sell fill with no open trade. On the first sale of a legacy holding the fill is either dropped or crashes the job. Add a first-sync bootstrap that creates an incomplete trade per existing position, marked as bootstrapped with entry from the broker's average price and no opened_at. The Monarch-style orphan review modal in the flows doc is the right UI for these.
+
+**3. Fill to order to proposal linkage has no column.** The builder says "if the fill's order maps to a proposal". Schwab transactions carry an `orderId`, and orders carry the proposal id, but the plan gives transactions no order foreign key. Without it, orphan detection and `placed_via` are guesses against raw JSON. Add `transactions.order_id` now. It is also the only reliable way Phase 2 reconciliation matches a fill back to a proposal.
+
+**4. The flow-adjusted equity math is wrong for the account it serves.** Subtracting cumulative net flows produces an additive series. On a small account that receives meaningful deposits, the adjusted series stays near the starting balance while daily dollar moves scale with the real balance, so drawdown percent explodes. A 1 percent move on a book that grew tenfold through deposits reads as a 10 percent drawdown. Phase 2's drawdown halt will trip on that number. Use a chain-linked daily return index, with each day's return computed net of that day's flows, and compute HWM and drawdown on the index. Two more problems in the same table: `snapshots` has no account_id, so IRA equity pollutes the trading account's drawdown, and there is no recompute path when a deposit's transaction record lands a day after the balance moved. Make snapshots per account and rebuildable from balances plus transactions.
+
+**5. The MCP transport assumes a bearer header the Claude app may not send.** Anthropic's connector docs say static request headers for custom connectors are in beta and available to a limited set of organizations. The rest of the UI offers OAuth fields only. If John's org lacks the beta, step 8 is blocked. Verify access before step 8. If it is missing, the fallback is a minimal OAuth 2.1 authorization endpoint on the Rails app that issues the same bearer token after magic-link login. Design the token check so either path lands in the same place.
+
+**6. Splits cannot be represented.** `trade_legs.direction` is in or out, each with a price. A 2-for-1 split changes quantity with no cash. With only in and out, the running quantity never matches the broker again and the trade never returns to zero. Add a third leg type for quantity adjustments with a ratio and zero cash, and adjust `avg_entry` and `planned_stop` on the trade accordingly.
+
+## Significant: Phase 2 will undo it, or Phase 1 behaves wrong
+
+- **`trades.status` conflates lifecycle with completeness.** Incomplete trades can be open or closed. Once an orphan trade closes without a stop, which status wins? Keep status as open or closed and add a boolean for needs review.
+- **`order_proposals` is not "the full §5.2 shape" as claimed.** Stop tightening in §5.4.2 is a stop-adjustment proposal targeting an existing order, so the table needs a kind enum and a target order id. The submission attempt columns hold one attempt, but reconcile-then-retry implies several. Flow 2 needs acknowledged warnings stored per proposal. Add these now or drop the claim.
+- **`orders` needs a `replaces_order_id`.** Schwab cancel and replace produces a new order id and marks the old one REPLACED. Tracking the working stop through replacements needs the chain.
+- **Transactions are flattened.** A Schwab activity carries multiple transfer items, typically the security and one or more fee items. The plan has one instrument, quantity, and price per row and no fee column. Either add commission and fee columns explicitly or add a child table. The PRD lists fees as transactions, so pick one deliberately.
+- **Dividends do not adjust cost basis.** Cash dividends are income. Only reinvestments and return of capital touch basis. Record dividends as an income leg that feeds realized P&L, and reserve basis adjustments for actual basis events. Realized R is also undefined under scale-ins. Write the formula down: initial risk equals initial quantity times entry minus planned stop, or state a different rule.
+- **IRA fills will create journal trades.** The builder runs "for each account and instrument". Restrict it to accounts with `trading_enabled`. IRA transactions still sync for Phase 2 wash-sale checks.
+- **Positions are upserted, never removed.** A closed position stays on the dashboard forever. Delete or zero rows absent from the broker response.
+- **Token gating will spawn a job storm.** The tick job enqueues every 5 minutes, and every gated job re-enqueues itself 15 minutes later, so the queue grows without bound during a multi-day expiry. Replace re-enqueue with a paused state and a single catch-up sync enqueued from the re-auth callback, with the transactions window widened to cover the gap. Decide explicitly whether brief jobs run degraded with stale data or wait. Running them with an "as of" disclaimer is more useful and still satisfies §5.1.
+- **State that the 7-day clock never resets on access refresh.** The schema separates `issued_at` from `last_refreshed_at`, which is right, but one community source found in my search claims refreshes roll the window forward. That is wrong per Schwab's own docs. Write the rule into the plan so nobody "fixes" it later. Also define the Mon and Tue escalation condition precisely: escalate when `refresh_expires_at` falls before the next Sunday email plus a buffer.
+- **The morning brief has no source for earnings or econ events.** FMP is deferred and Schwab has no calendar. The prompt must say these are unavailable, or the model will invent them.
+- **Job-failure digests are missing.** The flows doc lists one email per failure type per day and §5.5a names failure alerts as a reason for keeping the scheduler in Rails. Nothing in the plan sends them.
+- **Two seeded users contradicts §3 and §7.** The PRD says single user, John only. If a second login stays, `audit_events` needs a `user_id` now, because Phase 2 approvals must be attributable to a person.
+- **Every MCP read call as an audit row** turns the append-only table into telemetry. The PRD's "logged" list is approvals, rejections, overrides, rule edits, toggles, and re-auths. Put tool calls in `agent_runs` or a tool-calls table.
+- **Sync windows are undefined.** The orders and transactions rows say `fromEnteredTime=…` and nothing else. Working GTC orders older than the window will vanish from sync unless you also query by status. Transactions need an overlapping cursor. Mark the 60-day limit as unverified and design for it.
+- **Retry, backoff, and rate-limit handling** are required by §5.1 and absent from the client description.
+
+## Minor and assumptions to mark unverified
+
+- `balances` "one current row plus history" is two designs. Pick a time series with a current view. `settled_cash` is not a Schwab field. It is derived from cash available for trading and unsettled cash, and Phase 2's guardrail 4 depends on getting that mapping right.
+- The market-hours endpoint takes a single date, so the 7-day lookahead is 8 calls. Say what the calendar does when the token is expired and the cache runs out. Weekday-open is the conservative default.
+- Orders can fill in extended sessions. Base the 5-minute cadence on the full session window, not regular hours only.
+- The tick job's "due" check at exactly 5 minutes will drift to 10 minutes effective. Compare against last started time with slack.
+- Magic-link login depends on Resend, and re-auth depends on login. An email outage locks John out of the one action that keeps the system alive. Add a console-generated login link as a fallback.
+- Add the daily offsite DB dump from §5.9 to the dokku setup script.
+- `encrypted_hash_id` is Schwab's opaque hash, not something the app encrypts. Call it `schwab_hash`.
+- `setups` stores stats and `get_setup_stats` recomputes them. Pick one.
+- The PRD contradicts itself on where the Schwab app key lives. §5.1 says credentials and §5.9 says dokku config. The plan's credentials choice is correct and matches the house rule.
+
+**What the plan gets right and should keep:** one tool registry with two transports, market calendar as the only source of "market hours", the append-only trigger on audits, `sync_runs` per feed, the fake client boundary for Playwright and seeds, the shape-unverified marker convention, and the decision to omit `evaluate_hypothetical_order` until the guardrail engine exists.
+
+Sources:
+- [Authentication for connectors, Claude.ai docs](https://claude.com/docs/connectors/building/authentication)
+- [Custom MCP connector incompatible with Bearer token auth, GitHub issue](https://github.com/anthropics/claude-ai-mcp/issues/411)
+- [schwab-py HTTP Client docs, get_transactions 60-day limit](https://schwab-py.readthedocs.io/en/latest/client.html)
+- [The Unofficial Guide to Charles Schwab's Trader APIs](https://medium.com/@carstensavage/the-unofficial-guide-to-charles-schwabs-trader-apis-14c1f5bc1d57)

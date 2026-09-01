@@ -40,6 +40,10 @@ Rails.application.configure do
   # Set localhost to be used by links generated in mailer templates.
   config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
 
+  # Mail is written to tmp/mails so sign-in links can be read without a mail server.
+  config.action_mailer.delivery_method = :file
+  config.action_mailer.file_settings = { location: Rails.root.join("tmp/mails") }
+
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
 

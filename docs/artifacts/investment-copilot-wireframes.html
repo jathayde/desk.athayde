@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Investment Copilot — Wireframes v1</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --mid:#8a8a8a; --line:#c9c9c9; --faint:#efefef;
+    --warn:#7a7a7a; --frame-w:320px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font:13px/1.45 "Helvetica Neue", Arial, sans-serif; color:var(--ink); background:#fff; padding:32px;}
+  h1{font-size:18px; font-weight:700; margin-bottom:4px;}
+  .meta{color:var(--mid); margin-bottom:28px; font-size:12px;}
+  h2{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; margin:40px 0 6px; border-top:1px solid var(--ink); padding-top:10px;}
+  .flowdesc{color:var(--mid); font-size:12px; margin-bottom:16px; max-width:70ch;}
+  .row{display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;}
+  .cell{width:var(--frame-w);}
+  .cell.wide{width:calc(var(--frame-w)*2 + 24px);}
+  .frame{border:2px solid var(--ink); border-radius:14px; padding:14px 12px; background:#fff; min-height:200px;}
+  .cap{font-size:11px; font-weight:700; margin:8px 0 2px;}
+  .note{font-size:11px; color:var(--mid);}
+  /* wire atoms */
+  .bar{height:10px; background:var(--faint); border-radius:3px; margin:4px 0;}
+  .bar.w40{width:40%;} .bar.w60{width:60%;} .bar.w80{width:80%;}
+  .hd{display:flex; justify-content:space-between; align-items:baseline; padding-bottom:8px; border-bottom:1px solid var(--line); margin-bottom:8px;}
+  .hd b{font-size:12px;}
+  .hd span{font-size:10px; color:var(--mid);}
+  .banner{border:1px dashed var(--ink); padding:6px 8px; font-size:11px; margin-bottom:8px; border-radius:4px;}
+  .num{font-size:20px; font-weight:700;}
+  .lbl{font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--mid);}
+  .kv{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--faint); font-size:12px;}
+  .kv b{font-variant-numeric:tabular-nums;}
+  .pos{padding:7px 0; border-bottom:1px solid var(--faint);}
+  .pos .top{display:flex; justify-content:space-between; font-size:12px; font-weight:700;}
+  .pos .sub{display:flex; justify-content:space-between; font-size:11px; color:var(--mid);}
+  .rule{display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--faint); font-size:11px;}
+  .chip{flex:0 0 auto; border:1px solid var(--ink); border-radius:3px; font-size:9px; padding:1px 5px; text-transform:uppercase; letter-spacing:.05em;}
+  .chip.pass{background:var(--faint); border-color:var(--line); color:var(--mid);}
+  .chip.warn{background:#fff;}
+  .chip.fail{background:var(--ink); color:#fff;}
+  .btn{display:block; width:100%; text-align:center; border:2px solid var(--ink); border-radius:8px; padding:9px 0; font-size:12px; font-weight:700; margin-top:8px; background:#fff;}
+  .btn.primary{background:var(--ink); color:#fff;}
+  .btn.ghost{border-style:dashed; font-weight:400; color:var(--mid);}
+  .btn.disabled{border-color:var(--line); color:var(--line); background:var(--faint);}
+  .field{border:1px solid var(--line); border-radius:6px; padding:7px 8px; font-size:12px; color:var(--mid); margin:5px 0;}
+  .collar{margin:10px 0;}
+  .collar .track{position:relative; height:8px; background:var(--faint); border-radius:4px;}
+  .collar .band{position:absolute; left:25%; width:45%; top:0; bottom:0; background:var(--line); border-radius:4px;}
+  .collar .dot{position:absolute; top:-4px; width:2px; height:16px; background:var(--ink);}
+  .collar .ends{display:flex; justify-content:space-between; font-size:10px; color:var(--mid); margin-top:3px;}
+  .sec{margin:10px 0 4px; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--mid);}
+  .thesis{font-size:11px; color:var(--mid); border-left:2px solid var(--line); padding-left:8px; margin:4px 0;}
+  .timeline li{list-style:none; font-size:11px; padding:5px 0 5px 14px; border-left:1px solid var(--line); position:relative;}
+  .timeline li::before{content:""; position:absolute; left:-4px; top:9px; width:7px; height:7px; border-radius:50%; background:var(--ink);}
+  .timeline li.pending::before{background:#fff; border:1px solid var(--line);}
+  .timeline li span{display:block; color:var(--mid); font-size:10px;}
+  .ack{border:1px solid var(--ink); border-radius:6px; padding:7px 8px; font-size:11px; margin:6px 0;}
+  .ack .lbl{margin-bottom:2px;}
+  .check{display:inline-block; width:11px; height:11px; border:1px solid var(--ink); border-radius:2px; margin-right:6px; vertical-align:-1px;}
+  .empty{border:1px dashed var(--line); border-radius:8px; padding:22px 10px; text-align:center; color:var(--mid); font-size:11px; margin-top:8px;}
+  table.wt{width:100%; border-collapse:collapse; font-size:11px;}
+  table.wt th{text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--mid); border-bottom:1px solid var(--ink); padding:4px 6px;}
+  table.wt td{border-bottom:1px solid var(--faint); padding:5px 6px; font-variant-numeric:tabular-nums;}
+  table.wt tr.flag td{font-weight:700;}
+  .footer-note{margin-top:48px; padding-top:12px; border-top:1px solid var(--ink); font-size:11px; color:var(--mid); max-width:80ch;}
+</style>
+</head>
+<body>
+
+<h1>Investment Copilot — Wireframes v1</h1>
+<p class="meta">Lo-fi springboard. Grayscale on purpose: structure and hierarchy only, zero visual design decisions made. Frames are 320px (phone). Numbers are placeholder-real, not advice.</p>
+
+<!-- ============ FLOW 2: PROPOSAL DETAIL STATES ============ -->
+<h2>Flow 2 — Proposal detail, five action-area states</h2>
+<p class="flowdesc">The core screen. Sections in fixed order: order → thesis → guardrails → action area. Only the action area changes between states. Approve is never one tap.</p>
+
+<div class="row">
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Proposal #241</b><span>agent · 9:42a</span></div>
+      <div class="lbl">Order</div>
+      <div class="kv"><span>BUY 40 XYZ · limit</span><b>51.20</b></div>
+      <div class="kv"><span>Stop / Target</span><b>48.90 / 56.40</b></div>
+      <div class="kv"><span>Risk if stopped</span><b>$92 · 0.9% eq</b></div>
+      <div class="sec">Thesis · setup: breakout-A</div>
+      <p class="thesis">Two-line agent reasoning renders here. Tappable to expand.</p>
+      <div class="sec">Guardrails</div>
+      <div class="rule"><span class="chip pass">pass</span><span>Risk/trade 0.9% (limit 1.0%)</span></div>
+      <div class="rule"><span class="chip pass">pass</span><span>Settled cash $2,110 ≥ $2,048</span></div>
+      <div class="rule"><span class="chip pass">pass</span><span>Stop inside collar</span></div>
+      <div class="collar"><div class="track"><div class="band"></div><div class="dot" style="left:44%"></div></div><div class="ends"><span>47.10</span><span>50.05</span></div></div>
+      <a class="btn primary">Approve…</a>
+      <a class="btn">Reject</a>
+    </div>
+    <p class="cap">2a · All pass</p>
+    <p class="note">"Approve…" leads to a second, changed confirm control (slide or re-tap). That confirm = order goes to Schwab.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Proposal #242</b><span>agent · 10:15a</span></div>
+      <div class="lbl">Order</div>
+      <div class="kv"><span>BUY 25 ABC · limit</span><b>33.80</b></div>
+      <div class="kv"><span>Risk if stopped</span><b>$85 · 0.8% eq</b></div>
+      <div class="sec">Guardrails</div>
+      <div class="rule"><span class="chip pass">pass</span><span>Risk/trade, cash, collar</span></div>
+      <div class="rule"><span class="chip warn">warn</span><span>Wash sale: loss realized in IRA 12d ago</span></div>
+      <div class="ack"><div class="lbl">Acknowledge to continue</div><span class="check"></span>I understand the $114 loss may be disallowed.</div>
+      <a class="btn disabled">Approve… (locked until ack)</a>
+      <a class="btn">Reject</a>
+    </div>
+    <p class="cap">2b · Warn present</p>
+    <p class="note">Each warning expands and must be individually acknowledged before Approve unlocks.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Proposal #243</b><span>you · 11:02a</span></div>
+      <div class="kv"><span>BUY 60 QRS · limit</span><b>18.45</b></div>
+      <div class="kv"><span>Stop</span><b>16.10</b></div>
+      <div class="sec">Guardrails</div>
+      <div class="rule"><span class="chip warn">warn</span><span>Stop outside collar (16.90 – 17.80)</span></div>
+      <div class="collar"><div class="track"><div class="band"></div><div class="dot" style="left:8%"></div></div><div class="ends"><span>16.90</span><span>17.80</span></div></div>
+      <div class="sec">Override reason (required, logged)</div>
+      <div class="field">Why this stop is right anyway…</div>
+      <a class="btn disabled">Approve… (locked until reason)</a>
+      <a class="btn">Reject</a>
+    </div>
+    <p class="cap">2c · Stop outside collar</p>
+    <p class="note">Dot plotted outside band. Typed reason gates approval and is stored on the proposal.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Proposal #244</b><span>agent · 1:20p</span></div>
+      <div class="kv"><span>BUY 90 LMN · market</span><b>~24.10</b></div>
+      <div class="sec">Guardrails</div>
+      <div class="rule"><span class="chip fail">fail</span><span>Settled cash $1,020 &lt; $2,169 required (GFV)</span></div>
+      <div class="rule"><span class="chip pass">pass</span><span>All other rules</span></div>
+      <div class="banner">No approve action exists for hard fails. Settles Tue 8/18 — funds available then.</div>
+      <a class="btn">Reject</a>
+      <a class="btn ghost">Edit &amp; resubmit → new proposal</a>
+    </div>
+    <p class="cap">2d · Hard fail</p>
+    <p class="note">Approve control absent, not disabled. Failing rule states its numbers and, where knowable, when it clears.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Proposal #241</b><span>filled</span></div>
+      <ul class="timeline">
+        <li>Proposed <span>agent · 9:42a</span></li>
+        <li>Validated — all pass <span>9:42a · rules v14</span></li>
+        <li>Approved <span>you · 9:58a</span></li>
+        <li>Submitted to Schwab <span>9:58a · #SW-88213</span></li>
+        <li>Filled 40 @ 51.18 <span>10:03a → journal row #67</span></li>
+        <li class="pending">Post-mortem pending <span>EOD nag if empty</span></li>
+      </ul>
+      <a class="btn ghost">View journal row</a>
+    </div>
+    <p class="cap">2e · Post-approval timeline</p>
+    <p class="note">Read-only. Rule version stamped at validation. Fill links forward to the journal.</p>
+  </div>
+
+</div>
+
+<!-- ============ FLOW 1: DASHBOARD ============ -->
+<h2>Flow 1 — Dashboard, banner states</h2>
+<p class="flowdesc">Glance screen. One banner max. Distance-to-stop is the primary per-position number; P&amp;L is secondary.</p>
+
+<div class="row">
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Dashboard</b><span>live · 10:04a</span></div>
+      <div style="display:flex; gap:18px; margin:6px 0 10px;">
+        <div><div class="num">$10,240</div><div class="lbl">Equity · +0.6% today</div></div>
+        <div><div class="num">2.4%</div><div class="lbl">Open risk</div></div>
+      </div>
+      <div class="kv"><span>Settled / unsettled</span><b>$2,110 / $980</b></div>
+      <div class="sec">Positions</div>
+      <div class="pos"><div class="top"><span>XYZ · 40</span><span>4.4% to stop</span></div><div class="sub"><span>in @ 51.18</span><span>+$38</span></div></div>
+      <div class="pos"><div class="top"><span>DEF · 15</span><span>1.1% to stop</span></div><div class="sub"><span>in @ 88.02</span><span>−$21</span></div></div>
+      <div class="kv" style="margin-top:8px;"><span>Pending proposals</span><b>1 →</b></div>
+    </div>
+    <p class="cap">1a · Healthy</p>
+    <p class="note">No banner. DEF's 1.1%-to-stop is the loudest number on screen by design.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Dashboard</b><span>paused</span></div>
+      <div class="banner"><b>Halted:</b> daily loss −2.1% tripped 11:14a. New entries resume tomorrow. Exits remain available.</div>
+      <div style="display:flex; gap:18px; margin:6px 0 10px;">
+        <div><div class="num">$9,905</div><div class="lbl">Equity · −2.1% today</div></div>
+        <div><div class="num">1.0%</div><div class="lbl">Open risk</div></div>
+      </div>
+      <div class="sec">Positions</div>
+      <div class="pos"><div class="top"><span>XYZ · 40</span><span>3.0% to stop</span></div><div class="sub"><span>in @ 51.18</span><span>−$64</span></div></div>
+      <a class="btn disabled">New proposal (halted)</a>
+    </div>
+    <p class="cap">1b · Halted</p>
+    <p class="note">Banner names the rule and the reset time. Entry points disabled, exits untouched. Rule editor also locks.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Dashboard</b><span>read-only</span></div>
+      <div class="banner"><b>Token expired.</b> Sync paused Sun 6:12p. Re-auth to resume.</div>
+      <a class="btn primary">Re-authenticate with Schwab</a>
+      <div style="display:flex; gap:18px; margin:10px 0;">
+        <div><div class="num">$10,180</div><div class="lbl">Equity · as of Sun 6:12p</div></div>
+      </div>
+      <div class="pos"><div class="top"><span>XYZ · 40</span><span>as of Sun 6:12p</span></div><div class="sub"><span>every number carries its age</span><span></span></div></div>
+    </div>
+    <p class="cap">1c · Token expired</p>
+    <p class="note">Single call to action. All data stamped stale. App is read-only for anything needing fresh Schwab data.</p>
+  </div>
+
+</div>
+
+<!-- ============ FLOW 3 + 4 ============ -->
+<h2>Flows 3 &amp; 4 — Manual proposal · Journal quick entry</h2>
+<p class="flowdesc">Left: the form computes collar and size live as the stop is typed. Right: the 30-second phone task.</p>
+
+<div class="row">
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>New proposal</b><span>you</span></div>
+      <div class="field">Symbol — QRS · 18.42 live</div>
+      <div class="field">Entry — 18.45</div>
+      <div class="field">Stop — 17.20 ▍</div>
+      <div class="collar"><div class="track"><div class="band"></div><div class="dot" style="left:52%"></div></div><div class="ends"><span>16.90</span><span>17.80</span></div></div>
+      <div class="kv"><span>Size (from 1% risk rule)</span><b>81 shares</b></div>
+      <div class="kv"><span>Position value</span><b>$1,494</b></div>
+      <div class="kv"><span>Settled cash check</span><b>ok</b></div>
+      <div class="field">Target — optional</div>
+      <div class="field">Setup — pick list</div>
+      <a class="btn primary">Create proposal</a>
+    </div>
+    <p class="cap">3 · Manual proposal</p>
+    <p class="note">Collar band + dot update per keystroke on stop. Size is computed, not typed. Submits into the same Flow-2 pipeline.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Trade #67 · XYZ</b><span>closed +1.8R</span></div>
+      <div class="kv"><span>Setup</span><b>breakout-A</b></div>
+      <div class="kv"><span>Planned / actual stop</span><b>48.90 / 48.90</b></div>
+      <div class="kv"><span>Entry → exit</span><b>51.18 → 55.31</b></div>
+      <div class="sec">Post-mortem (one line)</div>
+      <div class="field">What actually happened…</div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <a class="btn" style="margin:0;">Followed setup</a>
+        <a class="btn" style="margin:0;">Improvised</a>
+      </div>
+      <a class="btn primary">Save</a>
+    </div>
+    <p class="cap">4 · Journal entry</p>
+    <p class="note">Two inputs total. Everything else read-only. +1.8R and −1R get identical visual treatment.</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>Proposals</b><span>queue</span></div>
+      <div class="empty">Nothing waiting on you.<br>Next scheduled brief: 4:30p.</div>
+      <div class="sec">Recent</div>
+      <div class="kv"><span>#241 XYZ · filled</span><b>10:03a</b></div>
+      <div class="kv"><span>#240 DEF · rejected</span><b>yesterday</b></div>
+    </div>
+    <p class="cap">Queue · empty state</p>
+    <p class="note">Empty is the normal state; it should feel calm, not broken. Recent history keeps the screen useful.</p>
+  </div>
+
+</div>
+
+<!-- ============ FLOW 5 + 8 ============ -->
+<h2>Flows 5 &amp; 8 — Edge review (desktop) · System health</h2>
+<p class="flowdesc">Edge review is the Sunday screen and can assume desktop width. Health is the ops page with the kill switch.</p>
+
+<div class="row">
+
+  <div class="cell wide">
+    <div class="frame">
+      <div class="hd"><b>Edge review</b><span>Sun 8/16 · trailing 20 per setup</span></div>
+      <table class="wt">
+        <tr><th>Setup</th><th>N</th><th>Win%</th><th>Avg R</th><th>Expectancy</th><th></th></tr>
+        <tr><td>breakout-A</td><td>14</td><td>57%</td><td>+0.62</td><td>+0.35R</td><td>active</td></tr>
+        <tr><td>pullback-B</td><td>11</td><td>45%</td><td>+0.20</td><td>+0.09R</td><td>active</td></tr>
+        <tr class="flag"><td>gap-fade-C</td><td>9</td><td>22%</td><td>−0.48</td><td>−0.31R ⚑</td><td><a class="btn ghost" style="display:inline-block; width:auto; padding:2px 8px; margin:0;">Deactivate…</a></td></tr>
+      </table>
+      <p class="note" style="margin-top:8px;">Deactivate confirm states the effect: "Agent stops proposing gap-fade-C." Small N gets an insufficient-sample mark rather than a verdict.</p>
+    </div>
+    <p class="cap">5 · Edge review</p>
+  </div>
+
+  <div class="cell">
+    <div class="frame">
+      <div class="hd"><b>System</b><span>health</span></div>
+      <div class="kv"><span>Refresh token age</span><b>4d 02h / 7d</b></div>
+      <div class="kv"><span>Next re-auth</span><b>Sun (email)</b></div>
+      <div class="kv"><span>Positions sync</span><b>2m ago</b></div>
+      <div class="kv"><span>Transactions sync</span><b>4m ago</b></div>
+      <div class="kv"><span>Job failures (7d)</span><b>0</b></div>
+      <div class="kv"><span>API spend (Aug)</span><b>$6.40</b></div>
+      <a class="btn">Pause system…</a>
+    </div>
+    <p class="cap">8 · Health + kill switch</p>
+    <p class="note">Pause stops proposal creation and submission. Unpause requires typed confirmation.</p>
+  </div>
+
+</div>
+
+<p class="footer-note">Not wireframed yet (lower stakes, design directly): journal browser, watchlist, risk-rule editor with effect preview, re-auth success/failure, pre-first-sync empty states. Open design questions these frames surface: (1) what the deliberate confirm on Approve physically is; (2) whether the collar band is a horizontal track (as here) or plotted on a mini price axis; (3) whether the halted state should mute the whole palette or just banner it.</p>
+
+</body>
+</html>

@@ -1,0 +1,5 @@
+Hi <%= @user.name %>,
+
+Sign in to Athayde Desk: <%= @url %>
+
+This link works once and expires in <%= distance_of_time_in_words(User::MAGIC_LINK_TTL) %>. If you didn't request it, ignore this email.

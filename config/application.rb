@@ -33,7 +33,10 @@ module AthaydeDesk
     # These settings can be overridden in specific environments using the files
     # in config/environments, which are processed later.
     #
-    # config.time_zone = "Central Time (US & Canada)"
+    config.time_zone = "Eastern Time (US & Canada)"
+
+    # structure.sql so the append-only trigger on audit_events survives db:prepare
+    config.active_record.schema_format = :sql
     # config.eager_load_paths << Rails.root.join("extras")
 
     # Don't generate system test files.

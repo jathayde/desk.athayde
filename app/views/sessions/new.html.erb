@@ -1,0 +1,9 @@
+<% content_for :title, "Sign in" %>
+<section class="auth">
+  <h1>Sign in</h1>
+  <%= form_with url: session_path do |form| %>
+    <%= form.label :email_address, "Email" %>
+    <%= form.email_field :email_address, required: true, autofocus: true, autocomplete: "email", inputmode: "email", value: params[:email_address] %>
+    <%= form.submit "Email me a sign-in link" %>
+  <% end %>
+</section>

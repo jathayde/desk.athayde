@@ -1,0 +1,8 @@
+<% content_for :title, "Sign in" %>
+<section class="auth">
+  <h1>Continue to Athayde Desk</h1>
+  <%= form_with url: magic_link_path do |form| %>
+    <%= form.hidden_field :token, value: @token %>
+    <%= form.submit "Sign in" %>
+  <% end %>
+</section>

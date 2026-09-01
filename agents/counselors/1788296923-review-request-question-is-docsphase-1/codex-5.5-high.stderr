@@ -1,0 +1,1108 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a05ecd-9f8b-7e21-845b-6cad0de42c39
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788296923-review-request-question-is-docsphase-1/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the prompt first and then follow whatever workflow it specifies.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788296923-review-request-question-is-docsphase-1/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Second Opinion Request
+
+## Question
+# Review Request
+
+## Question
+Is `docs/phase-1-plan.md` a faithful, complete, and well-designed reading of Phase 1 of the Investment Copilot PRD? Find gaps, contradictions, and design decisions that will have to be undone in Phase 2. The PRD is the source of truth; where the kickoff brief and the PRD disagree, the PRD wins.
+
+## Context
+
+### Files to Review
+- @docs/artifacts/investment-copilot-prd.md (PRD v9, source of truth)
+- @docs/phase-1-plan.md (the plan under review)
+- @docs/artifacts/claude-code-kickoff.md (Phase 1 scope brief and constraints)
+- @docs/artifacts/investment-copilot-ui-flows.md (screen states; Phase 1 needs dashboard banners, re-auth, health, journal quick entry)
+
+### State of the repo
+A freshly generated Rails 8.1 app (Postgres, Solid Queue, Hotwire, importmap), no application code yet. The plan is the only design document. No Schwab API access yet (app registration pending), so every Schwab response shape is an assumption drawn from community client libraries such as schwab-py.
+
+### Phase 1 scope reminder
+Read-only: Schwab OAuth + token lifecycle, sync (accounts, positions, balances, orders, transactions, market hours), journal auto-population from fills using the zero-to-zero trade definition keyed by CUSIP, dashboard with four banner states, MCP read tools over HTTPS with bearer auth, scheduled Anthropic Messages API runs (07:00 brief, 16:30 EOD, Sunday stub) with read-only tools and a hard tool-turn cap, shadow-mode flag, memory-repo pull. Migrations for every §5.2 table even where Phase 1 does not populate them. Not in Phase 1: guardrails, proposals, approval UI, submission, brackets, allocation module, FMP.
+
+## Instructions
+You are providing an independent review. Be critical and thorough.
+- Read the referenced files to understand the full context
+- Check the plan's migrations against PRD §5.2 column by column: missing tables, missing columns, columns that will force a Phase 2 schema change, wrong key choices (instrument identity must be CUSIP, account identity must be the encrypted hash, never a plaintext number)
+- Check the token lifecycle design against §5.1 and §5.10 (25-minute refresh, 7-day hard expiry, degrade-and-queue rather than skip, Sunday ritual and Mon/Tue escalation)
+- Check the journal builder rules against §5.2 `trades`/`trade_legs` and the corporate-action, dividend, scale-in/out, orphan-fill, and ticker-change cases
+- Check the sync cadence and market-calendar design against §5.3
+- Check the MCP and scheduled-runtime design against §5.5 and §5.5a: one tool registry, two transports, unattended runs read-only with a turn cap
+- Check the flow-adjusted snapshot math against §5.2 `snapshots`
+- Flag any Schwab endpoint behavior the plan assumes without evidence
+- Flag anything the plan builds that the PRD explicitly defers, and anything the PRD requires in Phase 1 that the plan omits
+- Identify risks, tradeoffs, and blind spots; suggest alternatives if you see better approaches
+- Be direct and opinionated; do not hedge
+- Structure your response with clear headings, and order findings by severity
+
+## Instructions
+You are providing an independent second opinion. Be critical and thorough.
+- Analyze the question in the context provided
+- Identify risks, tradeoffs, and blind spots
+- Suggest alternatives if you see better approaches
+- Be direct and opinionated — don't hedge
+- Structure your response with clear headings
+- Keep your response focused and actionable
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The prompt asks for an independent design review against the PRD as source of truth. I’m going to read the PRD, phase plan, kickoff brief, and UI flows, then compare the plan against the specific Phase 1 requirements.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'wc -l docs/artifacts/investment-copilot-prd.md docs/phase-1-plan.md docs/artifacts/claude-code-kickoff.md docs/artifacts/investment-copilot-ui-flows.md' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     300 docs/artifacts/investment-copilot-prd.md
+     174 docs/phase-1-plan.md
+      50 docs/artifacts/claude-code-kickoff.md
+     184 docs/artifacts/investment-copilot-ui-flows.md
+     708 total
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'rg -n "''^##|''^###|§5'"\\.2|5\\.2|Token|token|snapshot|MCP|market|journal|trade|CUSIP|account|Phase 1|Schwab|Sunday|Anthropic|Messages|guardrail|proposal|FMP|allocation\" docs/artifacts/investment-copilot-prd.md" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'rg -n "''^##|''^###|migration|create_table|Token|token|snapshot|MCP|market|journal|trade|CUSIP|account|Phase 1|Schwab|Sunday|Anthropic|Messages|guardrail|proposal|FMP|allocation|encrypted" docs/phase-1-plan.md' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+7:## 1. Summary
+9:A personal investment operating system for a Schwab taxable brokerage account. A Rails application acts as the system of record and the sole gateway to Schwab's Trader API. Claude acts as the analysis and workflow agent on top of it, via an MCP server the Rails app exposes. The human approves every order.
+11:This replaces the "folder of markdown files + FMP connector" pattern with a real backend, while keeping the file-based memory layer as the strategy/context store the agent reads.
+13:## 2. Goals
+15:- Positions, balances, orders, and transactions synced from Schwab automatically. No hand-maintained portfolio.csv.
+16:- A trade journal with per-setup expectancy stats that is populated from actual fills, not memory.
+17:- A guardrail engine (risk rules as data, not vibes) that evaluates every proposed order before it can reach Schwab.
+18:- Daily pre-market and end-of-day briefs generated by the agent from live synced data.
+21:## 3. Non-Goals (v1)
+23:- Fully autonomous trading. No order reaches Schwab without explicit human approval.
+25:- Options strategies beyond the account's approved option level.
+27:- Trading other linked accounts (read-only visibility into the IRA and any other accounts is in scope for wash-sale awareness; trading them is not).
+29:## 4. Architecture
+32:┌─────────────┐     MCP (tools)      ┌──────────────────────────┐
+35:└─────────────┘                      │  - OAuth token lifecycle  │
+36:      │                              │  - Schwab API client      │
+40:│ memory files │                      │  - Order proposal queue  │
+45:                                     api.schwabapi.com/trader/v1
+46:                                     api.schwabapi.com/marketdata/v1
+49:**Why Rails and not just an agent:** the agent cannot be trusted with credentials, token refresh timing, idempotent order submission, or rule enforcement. Those are deterministic jobs. The agent is good at synthesis, briefs, screening, and post-mortems. Split accordingly.
+51:**Why an MCP server and not the agent hitting Schwab directly:** one credential holder, one audit log, one place guardrails run. The MCP tool surface is the contract.
+53:## 5. Components
+55:### 5.1 Schwab Integration (Rails)
+57:- **App registration:** Schwab Developer Portal, Trader API - Individual product. Manual approval, 1-3 business days. Callback URL must be HTTPS and match exactly.
+58:- **OAuth:** three-legged OAuth 2.0. Access token ~30 min, refresh token hard-expires at 7 days with no programmatic renewal.
+59:  - Background job refreshes the access token every ~25 minutes while a valid refresh token exists.
+60:  - Re-auth flow: when the refresh token is within 24h of expiry, the app notifies (email/SMS/push) with a one-click link to redo the browser login. Track refresh-token age as a first-class health metric on the dashboard.
+61:  - All scheduled work checks token health first and degrades gracefully (queues, does not silently skip).
+62:- **Account numbers:** call `/accounts/accountNumbers` first; use encrypted account values for all subsequent calls. Never store or log plaintext account numbers.
+63:- **Client generation:** the api-evangelist OpenAPI specs turned out to be skeletal (minimal order schema, no response schemas for chains), so treat them as scaffolding only. Better references for the real shapes: the schwab-py order-builder docs and community client libraries that model the full schema; replace with Schwab's official schemas once portal access is approved. Wrap in a thin service layer with retry/backoff and rate-limit awareness.
+64:- **Secrets:** app key/secret in Rails credentials; tokens encrypted at rest (Active Record Encryption). Nothing broker-related in the memory files repo.
+65:- **Order submission idempotency:** the Schwab order POST has no client-supplied order id (per community clients; confirm post-approval), so dedupe is local. The approved → submitted transition runs under a row lock and is the only code path that can call the order endpoint. On an ambiguous outcome (timeout, 5xx, connection drop after send), the proposal enters `submission_unknown`; a reconciliation job queries the orders endpoint for a matching order (instrument, qty, side, price, time window) before any retry. No blind retries, ever.
+67:### 5.2 Data Model (core tables)
+69:- `accounts` (encrypted hash id, type: ira/taxable, trading_enabled boolean)
+70:- `instruments` (CUSIP as the stable key; current symbol, symbol history, asset type, leveraged flag). Every other table references instrument_id, never a raw ticker, so ticker changes cannot break linking.
+71:- `positions` (account, instrument, qty, cost basis, synced_at): always broker-derived
+73:- `order_proposals` (agent- or human-initiated; status: proposed → validated/rejected → approved → submitted → filled/cancelled; stores guardrail evaluation results as JSON; carries a submission_attempt record for the ambiguous-outcome path in 5.1)
+75:- `trades` (journal). A trade is one instrument's position lifecycle from zero back to zero; scale-ins and scale-outs are `trade_legs` linked to transactions. Fields: setup tag, thesis, planned stop/target, realized R-multiple, post_mortem. Fills with no originating proposal (orders placed at Schwab directly) create a trade in `incomplete` state with no planned stop; the EOD brief asks for the missing stop/setup rather than computing a bogus R.
+78:- `snapshots` (daily equity, open risk $, open risk %, drawdown from HWM). Equity series is flow-adjusted: deposits/withdrawals (from transactions) are excluded from HWM/drawdown math so a deposit never resets a drawdown and a withdrawal never fakes one.
+81:### 5.3 Sync Jobs
+83:- Positions + balances: every 15 min during market hours, hourly otherwise.
+84:- Orders + transactions: every 5 min during market hours (drives journal auto-population).
+85:- Corporate actions/dividends: from transactions feed; adjust journal cost basis automatically.
+86:- Market data (quotes for holdings + watchlist): on demand from agent tools, cached 1-5 min. Schwab Market Data API is primary; FMP optional secondary for fundamentals/screening not covered by Schwab.
+87:- **Market calendar:** "market hours" everywhere in this doc resolves through Schwab's market-hours endpoint (holidays, early closes), cached daily. Job schedules and blackout windows derive from it; nothing hardcodes 9:30-16:00.
+89:### 5.4 Guardrail Engine
+91:Rules stored as data, evaluated server-side against every `order_proposal`. Every evaluation is logged with pass/fail per rule. Starting set:
+93:1. Max risk per trade: X% of equity (size derived from entry-stop distance).
+95:3. Daily loss halt and max-drawdown halt (blocks new proposals, not exits).
+96:4. **Account-type specific (decided: cash account):** settled-cash check before any buy. Source of truth is the balances endpoint (settled cash / cash available for trading), not a local settlement ledger; the app only projects the effect of pending approved proposals on top of the broker figure. Rule is deliberately the conservative form: a buy must be fully covered by settled cash. (Buying with unsettled funds is legal if you don't sell before settlement; that path is intentionally not supported in v1 because it creates a second, time-dependent constraint on exits.) No shorting, no margin order types. PDT counter not needed.
+98:6. **Wash-sale awareness:** now a first-order tax concern, not just a flag. If a loss was realized in this account within 30 days, warn on repurchase of the same instrument in this account and in the linked IRA (an IRA repurchase disallows the loss permanently). Configurable warn vs block. Detection is instrument-match only; "substantially identical" (e.g., two ETFs on the same index) is not detected, and the doc and UI say so.
+102:8. **Stop collar (see 5.4.1):** every entry proposal must include a stop, and the stop must fall within the computed collar or the proposal is flagged for override.
+104:Hard rule: guardrails are enforced in Rails. The agent can read them and reason about them; it cannot bypass or edit them through MCP.
+106:#### 5.4.1 Stop Collar Engine
+108:Purpose: replace gut-feel stop placement with a computed acceptable range ("collar") derived from several standard methods, evaluated against price history from Schwab Market Data (FMP fallback).
+121:- Proposal evaluation returns each method's value, the collar bounds, where the proposed stop sits, and the resulting position size under the max-risk-per-trade rule for the chosen stop.
+128:Configuration lives in `risk_rules` (method on/off, k, p, N per setup). Method parameters are data, not code, so they can be tuned as the journal accumulates evidence about which stop style fits each setup.
+130:#### 5.4.2 Stop Order Placement (decided: real stops at Schwab)
+132:An app-only stop with 5-15 minute polling is not protection. Every approved entry is submitted as a bracket: the entry order with a one-triggers-another child stop order (Schwab order strategies support this; confirm exact strategy type names post-approval). Consequences:
+135:- "Tighten stop" is a cancel/replace of the child order, which goes through the proposal pipeline as a stop-adjustment proposal (guardrails: new stop must be tighter than current for the Phase 3 auto-submit class; any loosening is human-only with a logged reason).
+137:- Working stops are reconciled against Schwab on every orders sync; a stop that disappears at the broker (cancelled out-of-band) flags the position `unprotected`.
+139:### 5.5 MCP Tool Surface (agent-facing)
+143:- `get_account_health` (equity, settled cash, drawdown, token status)
+145:- `get_journal(filters)`, `get_setup_stats`
+146:- `get_risk_rules`, `evaluate_hypothetical_order(params)` (dry-run guardrails)
+148:Write tools (all create records; none touch Schwab directly):
+149:- `propose_order(params, thesis, setup)` → creates order_proposal, runs guardrails, returns evaluation
+150:- `annotate_trade(trade_id, post_mortem)`
+153:Explicitly absent from MCP: submit_order, cancel_order, edit_risk_rules, token operations. Submission happens only in the Rails approval UI (or a signed confirmation link), by the human.
+155:### 5.5a Agent Runtime (where Claude actually runs)
+159:- **Interactive (human present):** the Claude app (desktop/Cowork/web) with the Rails MCP server registered as a remote connector. Rails exposes MCP over HTTPS with bearer-token auth (token in dokku config, rotatable). This is where ad hoc analysis, screening, and order proposals happen, billed through the Claude subscription seat.
+160:- **Scheduled (unattended):** Solid Queue jobs on the VPS call the Anthropic Messages API directly with an API key, passing tool definitions that map to the same internal service layer the MCP server uses (in-process, no MCP hop). Output is rendered to email. This covers the 07:00 brief, 16:30 EOD, and Sunday review. **Unattended runs get read-only tools only.** These runs ingest untrusted text (transcripts, news, fetched pages), so `propose_order`, `add_watchlist_item`, and `annotate_trade` are not in their tool set; anything a brief wants to suggest is rendered as text in the email, and the human creates the proposal interactively. Write tools exist only in the interactive runtime. Each scheduled job also has a hard cap on tool turns. Rationale: unattended runs can't depend on a desktop app being open, and keeping the scheduler in Rails means the VPS is the single ops surface (one place for cron, retries, failure alerts, and the token-health gate).
+164:One tool surface, two transports: the MCP server (remote, for the app) and the API tool definitions (in-process, for jobs) both delegate to the same service objects, so guardrails and read models cannot diverge between runtimes.
+166:### 5.6 Memory Layer (git repo, read by agent)
+171:- Removed from files because Rails owns them now: portfolio.csv, trades.csv, risk.md (risk rules live in the DB and are surfaced read-only to the agent).
+172:- Repo is git-versioned with one writer: John. Rails never commits to it. Generated context (setup stats, edge summary) is served through the `get_setup_stats` MCP tool and injected into scheduled-run prompts at runtime, so `edge.md` stays a human-authored narrative and there is no second writer to conflict with. The VPS pulls the repo on a schedule (or post-receive hook) for the agent's read access.
+174:### 5.7 Scheduled Workflows (agent, via Rails-triggered runs)
+176:- 07:00 ET pre-market brief: overnight moves on holdings/watchlist, gaps, today's earnings/econ events touching the book, stops at risk, settled-cash status. Delivered by email.
+177:- 16:30 ET end-of-day: fills recap, journal rows created, missing post-mortems flagged, equity snapshot.
+178:- Sunday edge review: per-setup expectancy over trailing sample, flag negative-expectancy setups, propose deactivation (human confirms).
+179:- Token-health nag when refresh token < 24h from expiry.
+181:### 5.8 UI (Rails, Hotwire)
+183:Mobile is in scope: everything renders on a phone; proposal detail, dashboard glance, and journal quick-entry are mobile-first. Full screen inventory, flows, and per-screen states live in the companion doc `investment-copilot-ui-flows.md`; John designs against that. Summary:
+186:- Proposal queue + proposal detail (the approve/reject decision; deliberate-confirm on approve; warn-acknowledge, collar-override-with-reason, and hard-fail states)
+187:- Manual proposal form with live collar + auto-sizing feedback
+188:- Trade detail / 30-second journal entry
+193:### 5.8a iOS App (decided: native, private, iOS only)
+196:- **What the native shell adds:** APNs push, Face ID / device passcode as the deliberate confirm on Approve (resolves the open question in the flows doc: the second gesture is biometric, not a slide), app icon and home-screen presence, native navigation stack. Path configuration marks proposal detail, dashboard, and journal entry as the mobile-first routes.
+197:- **Notifications, revised:** time-sensitive alerts move from email to push once the app exists: new proposal, fill/cancel, halt tripped, `unprotected` position, token expiring. Briefs and the Sunday ritual stay email (long-form, read on a desktop anyway). Push payloads carry no financial figures; they deep-link and the app fetches.
+198:- **Distribution:** TestFlight internal testing (no beta review for internal testers; builds expire after 90 days, so the CI pipeline produces a fresh build on a cadence) or direct dev-signed install from Xcode. TestFlight is the default; direct install is the fallback if the developer account state makes TestFlight awkward.
+199:- **Auth to the Rails app:** the native shell holds a session like the browser does; no separate API auth. The MCP bearer token is never on the phone.
+200:- **Timing:** Phase 2, alongside the approval UI, since approving from the phone is the reason the app exists. Phase 1 web screens are built mobile-responsive so the native wrapper has nothing to redo.
+202:### 5.9 Deployment (decided)
+205:- HTTPS via dokku letsencrypt plugin; the app's OAuth callback URL is a stable route on the app's domain, registered exactly in the Schwab app config.
+207:- Schwab app key/secret in dokku config vars; tokens encrypted at rest in Postgres.
+208:- The Sunday re-auth (see 5.10) happens from any browser; only the callback needs to reach the VPS.
+209:- **Shadow mode (Schwab has no sandbox):** a global flag, on by default in production until deliberately turned off. In shadow mode the entire pipeline runs, including human approval, but the submission step writes a `would_have_submitted` audit event and the order payload instead of calling Schwab. Playwright runs in shadow mode. Phase 2 ships with shadow mode on; it is turned off only after a stated number of shadowed approvals reconcile cleanly against what would have been sent. Toggling it is an audit event.
+211:### 5.10 Weekly Ritual (decided: Sundays, email)
+213:The 7-day refresh token becomes a scheduled habit instead of a surprise:
+215:- Sunday evening email bundles: (a) the weekly edge review, (b) a re-auth link to redo the Schwab browser login, (c) system health summary (last sync times, job failures, token age).
+216:- Re-authing every Sunday resets the 7-day clock so it never expires mid-week. Caveat: expiry is 7 days from issuance, so the email lands earlier than the prior week's auth time, and a daily health check escalates (Mon, then Tue) if the re-auth hasn't happened. On expiry, sync jobs pause and queue rather than erroring.
+218:### 5.11 Testing & CI (mirrors Talos / Patchvault conventions)
+221:  1. Guardrail engine: exhaustive unit specs per rule, including the interaction cases (CSP-style cash reservation vs GFV check is Phase 3, but settled-cash math, wash-sale window, and stop-collar bounds are Phase 1-2). Table-driven specs so each rule's edge cases are enumerable.
+222:  2. Order proposal state machine: every legal and illegal transition (proposed → validated/rejected → approved → submitted → filled/cancelled), plus idempotency (double-submit of the same proposal must be impossible).
+223:  3. Token lifecycle: refresh-at-25-min, 7-day expiry, degrade-and-queue behavior. Use time travel (ActiveSupport::Testing::TimeHelpers); never sleep.
+224:  4. Schwab client service layer: VCR/WebMock cassettes only. The suite never touches the live API; cassettes get scrubbed of tokens and encrypted account values before commit.
+225:  5. Sync jobs: fixture payloads for positions/transactions, including corporate-action and dividend events, verifying journal linking.
+226:- **Playwright** for clickable UI: approval queue flow (approve/reject a proposal, override a stop outside the collar with a logged reason), dashboard renders with seeded data, risk-rule editor. These run against a seeded test DB with a fake Schwab adapter, not cassettes.
+230:### 5.12 Allocation Module (cycle-pattern mechanics)
+232:A second rule set alongside the trading guardrails, covering the book-level behaviors from post-crash market research (concentration of best days, lump-sum vs staged deployment, threshold rebalancing, correlation breakdown, leveraged-proxy discipline). Kept structurally separate from per-trade guardrails: trading rules judge one order, allocation rules judge the whole book. Both feed the same proposal → approval pipeline; nothing here auto-executes.
+234:**Data model additions:** `allocation_targets` (asset or class, target weight, drift band), `instrument_tags` (leveraged/amplified flag per symbol), `deployment_policies` (per cash-inflow handling).
+238:1. **Threshold rebalancing.** Nightly drift check against `allocation_targets`. When any weight drifts beyond its band (default 5 percentage points, per-target configurable), the agent generates rebalance proposals (sell overweight, buy underweight) through the normal pipeline with guardrail evaluation. The rule is mechanical; the approval is still human. A minimum trade notional (configurable, e.g., $100) suppresses churn on a small account; drift that would require a sub-minimum order is reported, not proposed. Fractional-share support in the order API is unverified; until confirmed, quantities round down to whole shares.
+239:2. **Leveraged-proxy exception.** Symbols tagged leveraged/amplified are excluded from mechanical rebalance proposals. Drift on those instead triggers a thesis-review task: the proposal renders the original thesis from the journal/watchlist next to current numbers, and the human decides deploy / hold / exit. Encodes "the discipline is the same, the decision is not mechanical."
+240:3. **Deployment policy for new cash.** Cash inflows (detected via transactions sync) trigger a deployment proposal per the policy John sets in `deployment_policies` (immediate, staged over N weeks, or ask-each-time). The proposal renders the relevant base rates (lump-sum vs staged historical win rates) as context; the policy itself is John's call, stored as data, and changeable only in the rule editor.
+241:4. **Cash-drag diagnostic.** The Sunday review computes time-in-cash vs the deployment policy and flags divergence ("policy says deployed; book is 40% cash for 3 weeks"). Informational, never a forced action.
+242:5. **Correlation stress check.** Weekly job computes rolling 60-day correlations between each holding (and tagged "diversifier" instruments) and SPY from price history. When a diversifier's correlation exceeds a threshold (default 0.6), the Sunday review flags that the diversification assumption is currently failing. Diagnostic only.
+243:6. **Flow/sentiment input.** Weekly fund-flow datapoint (ICI weekly long-term fund flows; source via FMP if available, else fetched from ICI's published release) rendered in the Sunday review as context alongside the edge stats. Data in, judgment human.
+245:**Boundary:** the module surfaces mechanics and base rates; it does not embed a market view. Which patterns become policy (rebalance bands, deployment policy, what counts as a diversifier) is authored by John in the rule editor and versioned like every other rule.
+247:**UI:** allocation targets + drift live on the dashboard below positions; rebalance and deployment proposals use the standard Flow-2 proposal detail; thesis-review proposals add the original-thesis panel. Rule authoring goes in the (desktop) rule editor.
+249:## 6. Phasing
+251:**Phase 1 (read-only):** Schwab OAuth + token lifecycle, account/position/transaction sync, dashboard, journal auto-population from fills, memory repo, MCP read tools, daily briefs.
+252:**Phase 2 (propose + approve):** guardrail engine, order proposals via MCP, approval UI, bracket submission (entry + child stop, 5.4.2) from UI, ambiguous-outcome reconciliation, settlement checks from broker balances, wash-sale checks against the linked IRA, Hotwire Native iOS app with push and Face ID confirm (5.8a). Ships with shadow mode on.
+253:**Phase 2.5 (allocation module):** targets, drift checks, rebalance/deployment proposals, correlation and cash-drag diagnostics in the Sunday review (§5.12).
+254:**Phase 3 (earned automation):** conditional auto-submit for a narrow class (e.g., pre-approved stop adjustments) only after the journal shows positive expectancy over a real sample; kill-switch; per-day order caps.
+256:## 7. Decisions Log
+260:- Notifications: email only for now; Sunday ritual bundles re-auth + edge review (see 5.10).
+261:- FMP: kept as secondary connector (fundamentals, screeners, anything Schwab market data lacks).
+263:- Agent never submits orders; proposal/approval split confirmed.
+264:- Stop collar engine added as guardrail 8 / section 5.4.1.
+265:- IRA linked read-only for cross-account wash-sale checks.
+267:- Greeks: Schwab option chains and option quotes include delta, gamma, theta, vega, rho, plus implied volatility, theoretical value, and time value. No local greeks computation needed for the eventual options module.
+269:- Review v8 (Sep 1): real bracket stops at Schwab; local idempotency with reconcile-before-retry; unattended runtime is read-only; trades defined as zero-to-zero lifecycles keyed by CUSIP; shadow mode on by default; broker balances as settled-cash source; market calendar from Schwab; flow-adjusted equity series; min rebalance notional; single-writer memory repo; one append-only audit table.
+271:## 8. Options Scope (expanded from open question 2)
+275:**Data (resolved):** Schwab Market Data API provides option chains with greeks (delta, gamma, theta, vega, rho), implied volatility, theoretical value, and time value per contract. No local computation needed. Option symbols use OSI format (e.g., `AAPL  250117C00150000`), which touches the symbol handling everywhere: positions sync, journal linking, quotes.
+277:**What a cash account can do (level-dependent):** long calls/puts, covered calls, cash-secured puts. No spreads without margin. Two of these create obligations the guardrail engine must model:
+279:- **Cash-secured puts:** the engine must reserve settled cash equal to strike × 100 per contract and exclude it from "spendable" in every other proposal's GFV check.
+282:**Journal complexity:** R-multiple math changes (risk is premium paid for long options; assignment risk for short options). Expiration and assignment arrive as transaction events that must be linked back to the originating trade, and assignment of a CSP creates a new stock position mid-trade. This is the largest chunk of real work.
+286:**Recommendation:** equities-only through Phase 2. Add a Phase 3 "options module" limited to long options and covered calls first (no CSP collateral logic yet), then CSPs. Rationale: assignment/expiration lifecycle handling and collateral reservation are each roughly the size of the whole equity journal feature, and a tiny cash account gets limited benefit from CSPs anyway (collateral lockup is large relative to account size).
+288:**Tax lots (2a, resolved):** the order object carries a TaxLotMethod field, so per-order lot method selection is possible. Default FIFO for v1; expose the method dropdown on sell proposals. Exact enum values to confirm against official docs post-approval.
+290:## 9. Open Questions (remaining)
+294:## 10. Risks
+296:- **7-day refresh token** is the top operational risk; a missed re-auth silently kills all automation. Mitigated by health checks and nags, but it cannot be engineered away.
+297:- Schwab individual-tier API terms: this is fine for personal use; anything multi-user requires their commercial review.
+298:- Order idempotency: no client order id on the Schwab side, so dedupe is local (row-locked single submission path, `submission_unknown` state, reconcile-before-retry; see 5.1). Duplicate submission is the one bug this system cannot afford.
+299:- Agent hallucination and prompt injection are contained by design: the agent never computes position size or submits orders, and unattended runs cannot create proposals at all (5.5a).
+
+ succeeded in 0ms:
+1:# Phase 1 Plan: Investment Copilot (read-only)
+3:Source of truth: `docs/artifacts/investment-copilot-prd.md` (v9). Screen states from `docs/artifacts/investment-copilot-ui-flows.md` and the wireframes. This plan covers only PRD §6 Phase 1 as scoped in the kickoff brief.
+5:Sections: decisions needed before code, migrations, jobs, MCP tools, scheduled runtime, UI, testing, deploy, build order, deferred items, working method.
+9:## 0. Decisions (resolved 2026-09-01)
+11:1. **Secrets in Rails credentials**, production-only file (`config/credentials/production.yml.enc`), keys `schwab.app_key`, `schwab.app_secret`, `mcp.bearer_token`, `anthropic.api_key`, `resend.api_key`, plus Active Record Encryption keys. `SCHWAB_CALLBACK_URL` and `MEMORY_REPO_PATH` stay in dokku ENV (not secret). The dokku `SCHWAB_APP_KEY`/`SCHWAB_APP_SECRET` vars get unset once the credentials file is on the server.
+13:3. **Web login is passwordless magic link**, built on the Rails 8 auth generator with `generates_token_for :magic_link` (15 min, single use). Users are seeded, not self-registered: john@athayde.com and whitney@athayde.com only. No gem.
+15:5. **`evaluate_hypothetical_order` omitted** from Phase 1. `get_risk_rules` ships and returns the (empty) `risk_rules` rows.
+16:6. **§5.12 allocation tables deferred** to Phase 2.5.
+21:## 1. Migrations (in creation order)
+25:| # | Table | Key columns | Phase 1 populated? |
+27:| 1 | `users`, `sessions` | Rails 8 auth generator, password column removed; `email_address` unique. Magic-link tokens via `generates_token_for`, no table. | yes (two seeded users) |
+28:| 2 | `schwab_tokens` | `access_token` (encrypted), `refresh_token` (encrypted), `access_expires_at`, `refresh_expires_at`, `issued_at`, `last_refreshed_at`, `last_refresh_error`, `scope` | yes |
+29:| 3 | `accounts` | `encrypted_hash_id` (Schwab's hashValue, unique), `account_type` enum (taxable/ira), `trading_enabled` bool, `nickname`, `last_synced_at`. Plaintext number is never a column. | yes |
+31:| 5 | `positions` | `account_id`, `instrument_id`, `quantity`, `average_price`, `cost_basis`, `market_value`, `last_price`, `synced_at`, `raw` jsonb. Unique on (account, instrument). Always overwritten by sync, never edited. | yes |
+32:| 6 | `balances` | `account_id`, `equity`, `cash_available_for_trading`, `settled_cash`, `unsettled_cash`, `buying_power`, `synced_at`, `raw` jsonb. One current row per account plus history (`as_of` date). | yes |
+33:| 7 | `orders` | `account_id`, `instrument_id`, `broker_order_id` (unique per account), `status` enum incl. Phase 2 states, `side`, `quantity`, `filled_quantity`, `order_type`, `limit_price`, `stop_price`, `duration`, `session`, `tax_lot_method`, `placed_via` enum (schwab_direct/app), `parent_order_id` (self FK), `order_proposal_id` (nullable), `entered_at`, `closed_at`, `raw` jsonb | yes (sync only) |
+34:| 8 | `order_proposals` | Full §5.2 shape now: `account_id`, `instrument_id`, `origin` enum (agent/human), `status` enum (proposed, validated, rejected, approved, submitted, submission_unknown, filled, cancelled), `side`, `quantity`, `order_type`, `limit_price`, `stop_price`, `target_price`, `thesis`, `setup_id`, `guardrail_results` jsonb, `risk_rule_version`, `override_reason`, `reject_reason`, `submission_attempted_at`, `submission_payload` jsonb, `submission_response` jsonb, `reconciled_order_id`, `approved_at`, `submitted_at` | no |
+35:| 9 | `transactions` | `account_id`, `instrument_id` (nullable for cash-only), `broker_transaction_id` (unique), `kind` enum (fill, dividend, interest, fee, deposit, withdrawal, corporate_action, other), `sub_type` string (raw Schwab type), `side`, `quantity`, `price`, `net_amount`, `settlement_date`, `executed_at`, `raw` jsonb, `journaled_at` | yes |
+37:| 11 | `trades` | `account_id`, `instrument_id`, `setup_id` (nullable), `order_proposal_id` (nullable), `status` enum (open, closed, incomplete), `opened_at`, `closed_at`, `avg_entry`, `avg_exit`, `peak_quantity`, `planned_stop`, `planned_target`, `realized_pnl`, `realized_r`, `thesis`, `post_mortem`, `followed_setup` (nullable bool) | yes |
+38:| 12 | `trade_legs` | `trade_id`, `transaction_id` (unique), `direction` enum (in/out), `quantity`, `price`, `executed_at`, `basis_adjustment` (for corporate actions/dividend reinvest) | yes |
+40:| 14 | `snapshots` | `as_of` date (unique), `equity`, `net_flows` (day), `cumulative_net_flows`, `flow_adjusted_equity`, `high_water_mark` (on adjusted series), `drawdown_pct`, `open_risk_amount`, `open_risk_pct` | yes (open risk is 0 until stops exist; column stays) |
+42:| 16 | `market_days` | `date` (unique), `open` bool, `opens_at`, `closes_at`, `raw` jsonb, `fetched_at`. Populated from Schwab market-hours endpoint. | yes |
+43:| 17 | `sync_runs` | `feed` enum (accounts, positions, balances, orders, transactions, market_hours, memory_repo), `status` (running, succeeded, failed, skipped_token), `started_at`, `finished_at`, `error`, `records_touched`. Drives "last successful sync per feed" on health screen. | yes |
+44:| 18 | `agent_runs` | `kind` enum (morning_brief, eod, sunday_review), `status`, `started_at`, `finished_at`, `tool_turns`, `input_tokens`, `output_tokens`, `estimated_cost`, `output_markdown`, `error`, `model` | yes |
+49:Phase 2 columns are present now so `orders`/`order_proposals` never need a shape change: `parent_order_id`, `order_proposal_id`, `submission_unknown` state, submission attempt columns, `guardrail_results`, `risk_rule_version`.
+53:## 2. Jobs (Solid Queue, `config/recurring.yml`, all times America/New_York)
+55:Every Schwab-touching job includes `TokenGated`: if the refresh token is expired it writes a `sync_runs` row with `skipped_token`, audits once per expiry episode, and re-enqueues itself for 15 minutes later. Nothing silently skips.
+59:| `Schwab::RefreshAccessTokenJob` | every 25 min | POST refresh grant; update `schwab_tokens`; on failure audit `token_refresh_failed` |
+60:| `Schwab::TokenHealthJob` | daily 08:00 + 20:00 | Email nag when refresh token < 24h from expiry; escalations Mon and Tue if Sunday re-auth missed; audit each nag |
+61:| `Sync::MarketHoursJob` | daily 06:00, and on demand when `market_days` lacks today | Fetch equity market hours for today and the next 7 days into `market_days` |
+63:| `Sync::AccountsJob` | daily 06:05 and after every re-auth | `/accounts/accountNumbers` then `/accounts`; upsert `accounts` by hash |
+64:| `Sync::PositionsJob` | via tick | `/accounts/{hash}?fields=positions`; upsert instruments (CUSIP), positions, balances |
+65:| `Sync::OrdersJob` | via tick | `/accounts/{hash}/orders?fromEnteredTime=…`; upsert orders, set `placed_via: schwab_direct` when no proposal matches |
+66:| `Sync::TransactionsJob` | via tick | `/accounts/{hash}/transactions`; upsert transactions, classify kind; then enqueue `Journal::LinkFillsJob` |
+67:| `Journal::LinkFillsJob` | after transactions sync | Zero-to-zero trade builder (see §4 below) |
+68:| `Snapshots::DailyJob` | 16:20 on market days, after final sync | Write the day's snapshot with flow adjustment |
+70:| `Agent::MorningBriefJob` | 07:00 market days | See §3 |
+71:| `Agent::EndOfDayJob` | 16:30 market days | See §3 |
+72:| `Agent::SundayReviewJob` | Sunday 18:00 | Phase 1 stub: emails re-auth link, token age, sync health, job failures |
+76:## 3. Tool surface (one registry, two transports)
+78:`app/models/agent/tools/*` each defines `name`, `description`, `input_schema`, `call(**args)`. The MCP server registers them; the scheduled runtime passes the same definitions to the Messages API. Phase 1 tools, all read-only:
+82:| `get_portfolio` | Positions with last price, unrealized P&L, working stop (nil in Phase 1), distance to stop (nil), open risk, synced_at per row |
+83:| `get_account_health` | Equity, settled/unsettled cash, drawdown from HWM, token status and age, last sync per feed, shadow mode, halt state |
+84:| `get_quotes(symbols)` | Schwab `/marketdata/v1/quotes`, cached 2 min in Solid Cache, each quote stamped with fetched_at |
+85:| `get_price_history(symbol, range)` | Schwab `/marketdata/v1/pricehistory`, cached 5 min |
+86:| `get_journal(filters)` | Trades with legs; filters: status, setup, instrument, date range, missing_post_mortem |
+87:| `get_setup_stats` | Rows from `setups` with rolling stats recomputed from `trades` |
+88:| `get_risk_rules` | Active `risk_rules` rows (empty in Phase 1) |
+90:Omitted pending decision 0.5: `evaluate_hypothetical_order`. Write tools do not exist in Phase 1.
+92:**MCP server:** `POST /mcp` (Streamable HTTP, JSON-RPC 2.0), bearer token compared with `ActiveSupport::SecurityUtils.secure_compare`, 401 renders a plain "MCP auth failed" page (Playwright target). Every tool call writes an `audit_events` row (`mcp_tool_called`, actor: agent).
+94:**Scheduled runtime:** `Agent::Run` wraps one Messages API conversation: system prompt = memory repo markdown files + setup stats + token health; tools = registry above; hard cap `MAX_TOOL_TURNS = 12`; result stored in `agent_runs` and emailed via `BriefMailer`. Prompts live in `app/models/agent/prompts/*.md.erb`. Morning brief and EOD are real; Sunday review stub does not call the API.
+98:## 4. Journal builder (zero-to-zero)
+100:For each account and instrument, process fills in `executed_at` order:
+101:- No open trade and a buy fill: open a trade. If the fill's order maps to a proposal, copy setup/thesis/planned stop; otherwise `status: incomplete`, no planned stop.
+102:- Each fill becomes a `trade_leg` (in/out by side). Running quantity updated; `avg_entry`/`avg_exit` recomputed.
+103:- Running quantity returns to zero: close the trade, compute `realized_pnl`; `realized_r` only when `planned_stop` exists, else nil.
+104:- Dividends and corporate actions with a CUSIP link to the open trade as a `basis_adjustment` leg; symbol changes on a known CUSIP update `instruments.symbol` and append to `symbol_history` without touching trades.
+105:- Idempotent: keyed on `transactions.id` via the unique index on `trade_legs.transaction_id`.
+109:## 5. UI (Hotwire, mobile-responsive, no JS routers, no hover-dependent modals)
+111:| Screen | Route | Phase 1 content |
+113:| Dashboard | `/` | Banner (healthy / expiring / expired / halted), equity + day change, open risk, settled/unsettled cash, positions list (distance-to-stop column shows "no stop" in Phase 1), pending proposals count (0, links nowhere yet), staleness stamps on every number, empty state before first sync |
+114:| System health | `/system` | Token age vs 7d, next Sunday, last sync per feed, job failures (7d), API spend (month, from `agent_runs`), shadow mode indicator, manual halt toggle with reason (audited) |
+115:| Re-auth | `/schwab/authorize` → Schwab → `/schwab/callback` | Success page with new expiry; failure page with error and retry |
+116:| Journal (minimal) | `/trades`, `/trades/:id` | List and detail; the Flow 4 quick-entry form (post-mortem + followed/improvised) so incomplete trades can be completed |
+117:| Login | `/session/new` → email → `/session/magic/:token` | Passwordless; unknown emails get the same "check your inbox" response |
+119:Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 comes only from `system_settings.manual_halt`.
+123:## 6. Testing
+125:- **RSpec**, in the kickoff's priority order: token lifecycle with `travel_to`; sync jobs with fixture payloads (positions, orders, transactions incl. dividend, split, symbol change); journal linking (scale-in/out, orphan fill → incomplete, ticker change on same CUSIP); MCP tool contracts (request specs for auth + each tool's schema and output); scheduled runtime with a stubbed Messages API (tool-turn cap enforced).
+126:- **VCR cassettes** in `spec/cassettes`, recorded against Schwab only once the app is Ready For Use, with a scrubber that replaces bearer tokens, refresh tokens, and account hash values before write. Until then, cassettes are hand-built from community-client response shapes and marked `# SCHWAB_SHAPE_UNVERIFIED`.
+127:- **`Schwab::FakeClient`** implements the same interface as `Schwab::Client`, returns canned payloads, selected by `config.x.schwab.adapter`. Used by dev seeds and Playwright.
+128:- **Playwright** (`e2e/`, `@playwright/test` via npm, the only Node dependency): dashboard in four banner states via a test-env-only `/playwright/scenarios/:name` reseed route, MCP 401 page, re-auth success and failure (FakeClient scripted).
+133:## 7. Deploy
+142:## 8. Build order (green `bin/ci` at each step)
+146:3. Schwab adapter: `Schwab::Client` (OAuth, accounts, positions, orders, transactions, market hours, quotes, price history), `Schwab::FakeClient`, response mappers, `docs/verify-on-approval.md` started.
+147:4. OAuth controller + token model + refresh job + token health job + re-auth pages + audit events.
+148:5. Sync jobs, market calendar, tick scheduler, `sync_runs`.
+149:6. Journal builder + snapshots.
+150:7. Dashboard, system health, journal screens; Playwright added to `bin/ci`.
+151:8. MCP server + tool registry.
+157:## 9. Explicitly not built in Phase 1
+159:Guardrail engine, order proposals (table only), approval UI, submission, brackets, reconciliation job, allocation module, FMP, watchlist screen (watchlist.md in the memory repo is read as text), push notifications, iOS shell.
+163:## 10. Working method, per phase and per build step
+174:Counselors runs are long (10 to 20 minutes) and run in the background while unrelated work continues. Whole-phase gates: a counselors PRD review before step 1, and a DHH pass plus counselors review over the full Phase 1 diff after step 10.
+
+exec
+/bin/zsh -lc 'rg -n "''^##|''^###|dashboard|banner|re-auth|health|journal|quick|MCP|scheduled|Sunday|token|market" docs/artifacts/investment-copilot-ui-flows.md docs/artifacts/claude-code-kickoff.md' in /Users/jathayde/Development/Personal/desk.athayde
+hook: PostToolUse
+ succeeded in 0ms:
+docs/artifacts/claude-code-kickoff.md:9:## Phase 1 scope (read-only)
+docs/artifacts/claude-code-kickoff.md:14:2. Schwab OAuth (three-legged) and the full token lifecycle from §5.1: 25-minute access refresh job, 7-day refresh-token expiry tracking, `submission_unknown` and reconciliation are Phase 2 but design the `orders` table for them now.
+docs/artifacts/claude-code-kickoff.md:15:3. Sync jobs from §5.3: accounts, positions, balances, orders, transactions. Market calendar from Schwab's market-hours endpoint; no hardcoded market hours.
+docs/artifacts/claude-code-kickoff.md:18:6. Dashboard with all four banner states (healthy / token expiring / token expired / halted). Halted can be reached via a manual flag in Phase 1 since no guardrails run yet.
+docs/artifacts/claude-code-kickoff.md:19:7. MCP server (read tools only, §5.5) over HTTPS with bearer auth.
+docs/artifacts/claude-code-kickoff.md:20:8. Scheduled runtime (§5.5a): Solid Queue jobs calling the Anthropic Messages API with read-only tool definitions, hard tool-turn cap, email output. Implement the 07:00 brief and 16:30 EOD; Sunday review can be a stub that emails the re-auth link and token age.
+docs/artifacts/claude-code-kickoff.md:22:10. Memory repo read access: the app pulls a git repo path on a schedule and exposes its markdown files to the scheduled runtime's prompt.
+docs/artifacts/claude-code-kickoff.md:26:## Constraints
+docs/artifacts/claude-code-kickoff.md:28:- **No live Schwab calls in tests.** VCR/WebMock cassettes only, scrubbed of tokens and encrypted account values. A `FakeSchwab` adapter backs Playwright and dev seeds.
+docs/artifacts/claude-code-kickoff.md:32:- **Every "logged" action is an `audit_events` row.** Re-auth, token refresh failures, shadow-mode toggles, manual halt flag.
+docs/artifacts/claude-code-kickoff.md:36:## Conventions (house standard)
+docs/artifacts/claude-code-kickoff.md:38:- RSpec full suite. Priority order from PRD §5.11: token lifecycle with time travel, sync jobs with fixture payloads including dividends and corporate actions, journal linking (scale-in/out, orphan fills, ticker change on the same CUSIP), MCP tool contracts.
+docs/artifacts/claude-code-kickoff.md:39:- Playwright for the clickable UI: dashboard in all four banner states against seeded data, MCP auth failure page, re-auth success/failure.
+docs/artifacts/claude-code-kickoff.md:44:## Working method
+docs/artifacts/claude-code-kickoff.md:46:1. Start by writing `docs/phase-1-plan.md`: the migration list, job list, MCP tool list, and the order you'll build in. Stop and show it before writing code.
+docs/artifacts/claude-code-kickoff.md:47:2. Build vertically: migrations → Schwab adapter with cassettes → OAuth + token jobs → sync jobs → journal builder → dashboard → MCP → scheduled runtime. Green `bin/ci` at each step.
+docs/artifacts/investment-copilot-ui-flows.md:5:## Actors and entry points
+docs/artifacts/investment-copilot-ui-flows.md:9:1. **Push/email notification** → deep link to a specific proposal, trade, or health alert. This is the primary mobile entry.
+docs/artifacts/investment-copilot-ui-flows.md:10:2. **Direct visit** → dashboard.
+docs/artifacts/investment-copilot-ui-flows.md:11:3. **Sunday email** → re-auth link and edge review link.
+docs/artifacts/investment-copilot-ui-flows.md:13:## Screen inventory
+docs/artifacts/investment-copilot-ui-flows.md:21:| Trade detail / journal entry | **Mobile-first** | Post-mortem quick entry |
+docs/artifacts/investment-copilot-ui-flows.md:26:| System health | Mobile + desktop | Token age, sync status, jobs, kill switch |
+docs/artifacts/investment-copilot-ui-flows.md:28:## Flow 1: Morning glance (mobile, read-only)
+docs/artifacts/investment-copilot-ui-flows.md:32:Dashboard states (mutually exclusive banners, one at a time):
+docs/artifacts/investment-copilot-ui-flows.md:33:- **Healthy:** no banner.
+docs/artifacts/investment-copilot-ui-flows.md:34:- **Token expiring:** refresh token < 24h. Banner links to re-auth flow.
+docs/artifacts/investment-copilot-ui-flows.md:42:## Flow 2: Review and approve a proposal (mobile-first, the core flow)
+docs/artifacts/investment-copilot-ui-flows.md:57:- **Approved → submitted → filled/cancelled:** read-only timeline view. Fill pushes a notification and links to the new journal row.
+docs/artifacts/investment-copilot-ui-flows.md:61:## Flow 3: Manual proposal (human-initiated)
+docs/artifacts/investment-copilot-ui-flows.md:72:## Flow 4: Post-trade journal entry (mobile-first, 30-second task)
+docs/artifacts/investment-copilot-ui-flows.md:74:Fill detected → journal row auto-created from transactions (entry/exit, R-multiple computed). EOD email lists rows missing post-mortems → tap → **Trade detail**.
+docs/artifacts/investment-copilot-ui-flows.md:78:Rationale: if the journal entry takes more than 30 seconds on a phone, it stops happening.
+docs/artifacts/investment-copilot-ui-flows.md:80:## Flow 5: Sunday ritual
+docs/artifacts/investment-copilot-ui-flows.md:82:Sunday email contains: edge review summary, system health summary, re-auth button.
+docs/artifacts/investment-copilot-ui-flows.md:84:- **Re-auth:** button → Schwab OAuth (their hosted login) → callback → success screen showing new token expiry date. Failure state: retry with the error shown.
+docs/artifacts/investment-copilot-ui-flows.md:87:## Flow 6: Risk rule editing (desktop, rare, deliberate)
+docs/artifacts/investment-copilot-ui-flows.md:91:No bulk edit. No editing while a halt is active (prevents mood-driven loosening on a bad day; the halt banner says so).
+docs/artifacts/investment-copilot-ui-flows.md:93:## Flow 7: Watchlist
+docs/artifacts/investment-copilot-ui-flows.md:97:## Flow 8: System health & kill switch
+docs/artifacts/investment-copilot-ui-flows.md:99:Token age (days:hours, with the Sunday cadence marked), last successful sync per feed, recent job failures, API spend this month. One control: **Pause system** (kill switch): stops all proposal creation and submission until unpaused. Unpause requires typed confirmation.
+docs/artifacts/investment-copilot-ui-flows.md:101:## Cross-cutting states
+docs/artifacts/investment-copilot-ui-flows.md:104:- **Stale data:** any market number older than its cache window shows a staleness mark with timestamp. Never render a price without its age being discoverable.
+docs/artifacts/investment-copilot-ui-flows.md:105:- **Token expired:** global banner, read-only mode for anything requiring fresh Schwab data.
+docs/artifacts/investment-copilot-ui-flows.md:106:- **Empty states:** pre-first-sync dashboard, empty journal, empty queue each need a designed state (the queue's empty state is the normal state most of the time).
+docs/artifacts/investment-copilot-ui-flows.md:108:## Notification inventory (revised: push in the iOS app for time-sensitive items, email for long-form)
+docs/artifacts/investment-copilot-ui-flows.md:110:Push (deep-link only, no figures in the payload): new proposal, fill/cancel, halt tripped, unprotected position, token expiring. Email: morning brief, EOD summary, Sunday ritual, job-failure digests. Original list:
+docs/artifacts/investment-copilot-ui-flows.md:112:- Morning brief (07:00), EOD summary (16:30), Sunday ritual
+docs/artifacts/investment-copilot-ui-flows.md:116:- Token expiring (T-24h), escalations Mon/Tue if Sunday re-auth missed
+docs/artifacts/investment-copilot-ui-flows.md:119:## What's deliberately not designed
+docs/artifacts/investment-copilot-ui-flows.md:122:- No P&L celebration/loss states. The journal treats +2R and −1R rows identically.
+docs/artifacts/investment-copilot-ui-flows.md:124:## Reference direction: Mercury (web)
+docs/artifacts/investment-copilot-ui-flows.md:128:- **Home → Dashboard.** Balance hero with a 30-day sparkline, accounts card to the right, a paired "money in / money out" block below, and a quick-action pill row under the greeting. Our mapping: equity + equity curve as the hero, positions as the side card, "open risk / settled cash" as the pair, and "pending proposals" as the first pill.
+docs/artifacts/investment-copilot-ui-flows.md:130:- **Transactions table → Journal browser.** Summary strip (net change / in / out) above a dense table with Data Views, Filters, Date, Keywords, Amount as inline dropdowns, group-by rows with expand chevrons. Direct lift for journal: R this month / wins / losses strip, then trades with setup filter as the first dropdown.
+docs/artifacts/investment-copilot-ui-flows.md:138:## Reference direction, revised: Midday shell + Mercury detail
+docs/artifacts/investment-copilot-ui-flows.md:140:- **Midday (web) → app shell and dashboard.** Icon-only collapsed left rail (~40px) with a top search bar; dark theme; chart cards with a headline number, legend (current / previous / average), dashed average line, and a timeframe dropdown plus "Customize" at the card row's top right. Layout: one full-width primary chart, then a 2-up row of smaller chart cards. Our mapping: equity curve as the primary chart with HWM as the dashed line; the 2-up row is open risk over time and drawdown from HWM. The rail holds our five areas: dashboard, proposals, journal, watchlist, system.
+docs/artifacts/investment-copilot-ui-flows.md:141:- **Mercury (web) → detail panel, journal table, confirm pattern.** Unchanged from the section above: right-hand slide-over for proposal detail, transactions table for the journal, authorization-line-above-one-button for Approve, inline "similar item exists" callout for warn and reconciliation states.
+docs/artifacts/investment-copilot-ui-flows.md:142:- **Copilot Money (web), supplemental.** Three cards worth lifting: "Transactions to review" with its reviewed-everything empty state (our proposal queue on the dashboard), the range-chip row (1W / 1M / 3M / YTD / 1Y / ALL) on the net-worth chart, and "Next two weeks" as a dated upcoming list (our earnings/econ events touching the book).
+docs/artifacts/investment-copilot-ui-flows.md:143:- **Mobile supplements (iOS).** Revolut Business approval detail for the proposal screen structure; Navan's in-policy / out-of-policy idiom for pass/warn/fail rows and the override-with-reason sentence; Life Reset's Quick Add for the journal entry.
+docs/artifacts/investment-copilot-ui-flows.md:145:Open interaction with the earlier question: a dark shell makes "halt mutes the whole palette" a weaker signal than on a light UI; the halt banner probably has to carry the state on its own.
+docs/artifacts/investment-copilot-ui-flows.md:147:## Reference addendum: Origin (web)
+docs/artifacts/investment-copilot-ui-flows.md:151:- **Benchmark overlay on the performance chart.** Legend row of portfolio vs S&P 500 vs component ETFs, each with its return, and a hover tooltip comparing "your portfolio" against the benchmark on a given date. Lift for the dashboard equity curve (portfolio vs SPY), and it doubles as the visual for the allocation module's correlation check.
+docs/artifacts/investment-copilot-ui-flows.md:152:- **Holding detail page.** Price chart with range chips, a "Your position" strip (balance, shares, cost basis, return, allocation), then a right-column card with News / About tabs and a stats row below. This is our **Position detail** screen, which the inventory above omits. Our version of the strip: shares, cost basis, unrealized P&L, working stop, distance to stop, this position's share of open risk. Right column tabs become Thesis (from the originating proposal) and History (journal legs for this instrument).
+docs/artifacts/investment-copilot-ui-flows.md:155:- **"Pro view" toggle** on the holdings table: a dense-mode switch for the journal browser.
+docs/artifacts/investment-copilot-ui-flows.md:160:**Monarch** is not on Mobbin. Worth screenshotting directly for the board: its transactions "needs review" queue and the net worth / holdings views are the closest consumer analogues to our proposal queue and dashboard.
+docs/artifacts/investment-copilot-ui-flows.md:162:Screen inventory addition: **Position detail** (mobile + desktop), reached from any position row on the dashboard.
+docs/artifacts/investment-copilot-ui-flows.md:164:## Reference addendum: Monarch (web, John's screenshots)
+docs/artifacts/investment-copilot-ui-flows.md:170:**Guardrail headroom as budget bars.** Budget card rows (label, planned amount right-aligned, progress bar, spent left / remaining right in green). Direct lift for a "Risk budget" card on the dashboard: risk-per-trade used, daily loss used vs halt threshold, sector exposure vs cap, concurrent positions vs max. Remaining headroom in green; the bar goes to the warn color as it approaches the cap. This makes the guardrail engine visible before a proposal trips it.
+docs/artifacts/investment-copilot-ui-flows.md:172:**Review modal → orphan-fill and incomplete-journal review.** "Is this merchant recurring? There are 9 more to review": entity card with recent transactions, a few form fields, and three actions (Skip / Not recurring / Save as recurring). Ours: "Is this fill part of a setup? N more to review", recent fills for the instrument, setup dropdown and planned stop, actions Skip / Not a trade / Save. The orange top banner with "Review now" is the pending-review entry point; the nav badge count (Recurring 10) is the proposals count on the rail.
+docs/artifacts/investment-copilot-ui-flows.md:178:**Cash Flow analytics → journal analytics.** Segmented Monthly / Quarterly / Yearly, paired positive/negative bars per period with a net line and a dashed projection for the current period, then four stat tiles. Ours: winning R / losing R bars per period, expectancy line, tiles for net R, win rate, avg winner, avg loser. Skip the Sankey.
+docs/artifacts/investment-copilot-ui-flows.md:182:**Also worth keeping:** "Your Weekly Recap · date range" card as the in-app entry to the Sunday review; "this month vs last year" comparison line for equity vs prior period; Recurring's "in 1 day" countdown for upcoming earnings/econ events and "settles Tue".
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+I’ve got the high-level map. Next I’m pulling the exact table lists and Phase 1 boundaries with line numbers so the review can call out concrete mismatches rather than general concerns.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+exec
+/bin/zsh -lc "nl -ba docs/artifacts/investment-copilot-prd.md | sed -n '202,255p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+   202	### 5.9 Deployment (decided)
+   203	
+   204	- Host: Meticulous Greencloud VPS, Ubuntu 24, deployed via dokku (matches existing Meticulous infra).
+   205	- HTTPS via dokku letsencrypt plugin; the app's OAuth callback URL is a stable route on the app's domain, registered exactly in the Schwab app config.
+   206	- Postgres and Solid Queue as dokku services; daily DB dump to offsite storage.
+   207	- Schwab app key/secret in dokku config vars; tokens encrypted at rest in Postgres.
+   208	- The Sunday re-auth (see 5.10) happens from any browser; only the callback needs to reach the VPS.
+   209	- **Shadow mode (Schwab has no sandbox):** a global flag, on by default in production until deliberately turned off. In shadow mode the entire pipeline runs, including human approval, but the submission step writes a `would_have_submitted` audit event and the order payload instead of calling Schwab. Playwright runs in shadow mode. Phase 2 ships with shadow mode on; it is turned off only after a stated number of shadowed approvals reconcile cleanly against what would have been sent. Toggling it is an audit event.
+   210	
+   211	### 5.10 Weekly Ritual (decided: Sundays, email)
+   212	
+   213	The 7-day refresh token becomes a scheduled habit instead of a surprise:
+   214	
+   215	- Sunday evening email bundles: (a) the weekly edge review, (b) a re-auth link to redo the Schwab browser login, (c) system health summary (last sync times, job failures, token age).
+   216	- Re-authing every Sunday resets the 7-day clock so it never expires mid-week. Caveat: expiry is 7 days from issuance, so the email lands earlier than the prior week's auth time, and a daily health check escalates (Mon, then Tue) if the re-auth hasn't happened. On expiry, sync jobs pause and queue rather than erroring.
+   217	
+   218	### 5.11 Testing & CI (mirrors Talos / Patchvault conventions)
+   219	
+   220	- **RSpec** full suite: models, services, request specs. Priority coverage, in order:
+   221	  1. Guardrail engine: exhaustive unit specs per rule, including the interaction cases (CSP-style cash reservation vs GFV check is Phase 3, but settled-cash math, wash-sale window, and stop-collar bounds are Phase 1-2). Table-driven specs so each rule's edge cases are enumerable.
+   222	  2. Order proposal state machine: every legal and illegal transition (proposed → validated/rejected → approved → submitted → filled/cancelled), plus idempotency (double-submit of the same proposal must be impossible).
+   223	  3. Token lifecycle: refresh-at-25-min, 7-day expiry, degrade-and-queue behavior. Use time travel (ActiveSupport::Testing::TimeHelpers); never sleep.
+   224	  4. Schwab client service layer: VCR/WebMock cassettes only. The suite never touches the live API; cassettes get scrubbed of tokens and encrypted account values before commit.
+   225	  5. Sync jobs: fixture payloads for positions/transactions, including corporate-action and dividend events, verifying journal linking.
+   226	- **Playwright** for clickable UI: approval queue flow (approve/reject a proposal, override a stop outside the collar with a logged reason), dashboard renders with seeded data, risk-rule editor. These run against a seeded test DB with a fake Schwab adapter, not cassettes.
+   227	- **bin/ci** as the single entry point, running in order: rubocop (per DHH skill conventions), rspec, brakeman, `bin/importmap audit`, `bundle exec bundle-audit check --update`, then Playwright. Fails fast; CI green is the merge gate.
+   228	- **DHH skill** run on the codebase as a review pass: idiomatic Rails, thin controllers, no needless service-object ceremony, Hotwire-first UI. Applied at the end of each phase, not per-commit.
+   229	
+   230	### 5.12 Allocation Module (cycle-pattern mechanics)
+   231	
+   232	A second rule set alongside the trading guardrails, covering the book-level behaviors from post-crash market research (concentration of best days, lump-sum vs staged deployment, threshold rebalancing, correlation breakdown, leveraged-proxy discipline). Kept structurally separate from per-trade guardrails: trading rules judge one order, allocation rules judge the whole book. Both feed the same proposal → approval pipeline; nothing here auto-executes.
+   233	
+   234	**Data model additions:** `allocation_targets` (asset or class, target weight, drift band), `instrument_tags` (leveraged/amplified flag per symbol), `deployment_policies` (per cash-inflow handling).
+   235	
+   236	**Mechanics:**
+   237	
+   238	1. **Threshold rebalancing.** Nightly drift check against `allocation_targets`. When any weight drifts beyond its band (default 5 percentage points, per-target configurable), the agent generates rebalance proposals (sell overweight, buy underweight) through the normal pipeline with guardrail evaluation. The rule is mechanical; the approval is still human. A minimum trade notional (configurable, e.g., $100) suppresses churn on a small account; drift that would require a sub-minimum order is reported, not proposed. Fractional-share support in the order API is unverified; until confirmed, quantities round down to whole shares.
+   239	2. **Leveraged-proxy exception.** Symbols tagged leveraged/amplified are excluded from mechanical rebalance proposals. Drift on those instead triggers a thesis-review task: the proposal renders the original thesis from the journal/watchlist next to current numbers, and the human decides deploy / hold / exit. Encodes "the discipline is the same, the decision is not mechanical."
+   240	3. **Deployment policy for new cash.** Cash inflows (detected via transactions sync) trigger a deployment proposal per the policy John sets in `deployment_policies` (immediate, staged over N weeks, or ask-each-time). The proposal renders the relevant base rates (lump-sum vs staged historical win rates) as context; the policy itself is John's call, stored as data, and changeable only in the rule editor.
+   241	4. **Cash-drag diagnostic.** The Sunday review computes time-in-cash vs the deployment policy and flags divergence ("policy says deployed; book is 40% cash for 3 weeks"). Informational, never a forced action.
+   242	5. **Correlation stress check.** Weekly job computes rolling 60-day correlations between each holding (and tagged "diversifier" instruments) and SPY from price history. When a diversifier's correlation exceeds a threshold (default 0.6), the Sunday review flags that the diversification assumption is currently failing. Diagnostic only.
+   243	6. **Flow/sentiment input.** Weekly fund-flow datapoint (ICI weekly long-term fund flows; source via FMP if available, else fetched from ICI's published release) rendered in the Sunday review as context alongside the edge stats. Data in, judgment human.
+   244	
+   245	**Boundary:** the module surfaces mechanics and base rates; it does not embed a market view. Which patterns become policy (rebalance bands, deployment policy, what counts as a diversifier) is authored by John in the rule editor and versioned like every other rule.
+   246	
+   247	**UI:** allocation targets + drift live on the dashboard below positions; rebalance and deployment proposals use the standard Flow-2 proposal detail; thesis-review proposals add the original-thesis panel. Rule authoring goes in the (desktop) rule editor.
+   248	
+   249	## 6. Phasing
+   250	
+   251	**Phase 1 (read-only):** Schwab OAuth + token lifecycle, account/position/transaction sync, dashboard, journal auto-population from fills, memory repo, MCP read tools, daily briefs.
+   252	**Phase 2 (propose + approve):** guardrail engine, order proposals via MCP, approval UI, bracket submission (entry + child stop, 5.4.2) from UI, ambiguous-outcome reconciliation, settlement checks from broker balances, wash-sale checks against the linked IRA, Hotwire Native iOS app with push and Face ID confirm (5.8a). Ships with shadow mode on.
+   253	**Phase 2.5 (allocation module):** targets, drift checks, rebalance/deployment proposals, correlation and cash-drag diagnostics in the Sunday review (§5.12).
+   254	**Phase 3 (earned automation):** conditional auto-submit for a narrow class (e.g., pre-approved stop adjustments) only after the journal shows positive expectancy over a real sample; kill-switch; per-day order caps.
+   255	
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba docs/artifacts/investment-copilot-prd.md | sed -n '139,180p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+   139	### 5.5 MCP Tool Surface (agent-facing)
+   140	
+   141	Read tools:
+   142	- `get_portfolio` (positions with live marks, distance to stop, open risk)
+   143	- `get_account_health` (equity, settled cash, drawdown, token status)
+   144	- `get_quotes(symbols)`, `get_price_history(symbol, range)`
+   145	- `get_journal(filters)`, `get_setup_stats`
+   146	- `get_risk_rules`, `evaluate_hypothetical_order(params)` (dry-run guardrails)
+   147	
+   148	Write tools (all create records; none touch Schwab directly):
+   149	- `propose_order(params, thesis, setup)` → creates order_proposal, runs guardrails, returns evaluation
+   150	- `annotate_trade(trade_id, post_mortem)`
+   151	- `add_watchlist_item(symbol, trigger)`
+   152	
+   153	Explicitly absent from MCP: submit_order, cancel_order, edit_risk_rules, token operations. Submission happens only in the Rails approval UI (or a signed confirmation link), by the human.
+   154	
+   155	### 5.5a Agent Runtime (where Claude actually runs)
+   156	
+   157	Two runtimes, split by whether a human is present:
+   158	
+   159	- **Interactive (human present):** the Claude app (desktop/Cowork/web) with the Rails MCP server registered as a remote connector. Rails exposes MCP over HTTPS with bearer-token auth (token in dokku config, rotatable). This is where ad hoc analysis, screening, and order proposals happen, billed through the Claude subscription seat.
+   160	- **Scheduled (unattended):** Solid Queue jobs on the VPS call the Anthropic Messages API directly with an API key, passing tool definitions that map to the same internal service layer the MCP server uses (in-process, no MCP hop). Output is rendered to email. This covers the 07:00 brief, 16:30 EOD, and Sunday review. **Unattended runs get read-only tools only.** These runs ingest untrusted text (transcripts, news, fetched pages), so `propose_order`, `add_watchlist_item`, and `annotate_trade` are not in their tool set; anything a brief wants to suggest is rendered as text in the email, and the human creates the proposal interactively. Write tools exist only in the interactive runtime. Each scheduled job also has a hard cap on tool turns. Rationale: unattended runs can't depend on a desktop app being open, and keeping the scheduler in Rails means the VPS is the single ops surface (one place for cron, retries, failure alerts, and the token-health gate).
+   161	
+   162	Cowork Scheduled Tasks could run the unattended loops instead, but that couples automation to a second scheduler outside the VPS and to the attached-folder pattern; not used here.
+   163	
+   164	One tool surface, two transports: the MCP server (remote, for the app) and the API tool definitions (in-process, for jobs) both delegate to the same service objects, so guardrails and read models cannot diverge between runtimes.
+   165	
+   166	### 5.6 Memory Layer (git repo, read by agent)
+   167	
+   168	Keep the file pattern from the original concept, but only for things that are genuinely human-authored strategy/context:
+   169	
+   170	- `investor-profile.md`, `strategy.md`, `watchlist.md`, `prompts.md`, `instructions.md`, `edge.md` (narrative layer over setup stats)
+   171	- Removed from files because Rails owns them now: portfolio.csv, trades.csv, risk.md (risk rules live in the DB and are surfaced read-only to the agent).
+   172	- Repo is git-versioned with one writer: John. Rails never commits to it. Generated context (setup stats, edge summary) is served through the `get_setup_stats` MCP tool and injected into scheduled-run prompts at runtime, so `edge.md` stays a human-authored narrative and there is no second writer to conflict with. The VPS pulls the repo on a schedule (or post-receive hook) for the agent's read access.
+   173	
+   174	### 5.7 Scheduled Workflows (agent, via Rails-triggered runs)
+   175	
+   176	- 07:00 ET pre-market brief: overnight moves on holdings/watchlist, gaps, today's earnings/econ events touching the book, stops at risk, settled-cash status. Delivered by email.
+   177	- 16:30 ET end-of-day: fills recap, journal rows created, missing post-mortems flagged, equity snapshot.
+   178	- Sunday edge review: per-setup expectancy over trailing sample, flag negative-expectancy setups, propose deactivation (human confirms).
+   179	- Token-health nag when refresh token < 24h from expiry.
+   180	
+
+hook: PostToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba docs/artifacts/investment-copilot-prd.md | sed -n '55,90p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+    55	### 5.1 Schwab Integration (Rails)
+    56	
+    57	- **App registration:** Schwab Developer Portal, Trader API - Individual product. Manual approval, 1-3 business days. Callback URL must be HTTPS and match exactly.
+    58	- **OAuth:** three-legged OAuth 2.0. Access token ~30 min, refresh token hard-expires at 7 days with no programmatic renewal.
+    59	  - Background job refreshes the access token every ~25 minutes while a valid refresh token exists.
+    60	  - Re-auth flow: when the refresh token is within 24h of expiry, the app notifies (email/SMS/push) with a one-click link to redo the browser login. Track refresh-token age as a first-class health metric on the dashboard.
+    61	  - All scheduled work checks token health first and degrades gracefully (queues, does not silently skip).
+    62	- **Account numbers:** call `/accounts/accountNumbers` first; use encrypted account values for all subsequent calls. Never store or log plaintext account numbers.
+    63	- **Client generation:** the api-evangelist OpenAPI specs turned out to be skeletal (minimal order schema, no response schemas for chains), so treat them as scaffolding only. Better references for the real shapes: the schwab-py order-builder docs and community client libraries that model the full schema; replace with Schwab's official schemas once portal access is approved. Wrap in a thin service layer with retry/backoff and rate-limit awareness.
+    64	- **Secrets:** app key/secret in Rails credentials; tokens encrypted at rest (Active Record Encryption). Nothing broker-related in the memory files repo.
+    65	- **Order submission idempotency:** the Schwab order POST has no client-supplied order id (per community clients; confirm post-approval), so dedupe is local. The approved → submitted transition runs under a row lock and is the only code path that can call the order endpoint. On an ambiguous outcome (timeout, 5xx, connection drop after send), the proposal enters `submission_unknown`; a reconciliation job queries the orders endpoint for a matching order (instrument, qty, side, price, time window) before any retry. No blind retries, ever.
+    66	
+    67	### 5.2 Data Model (core tables)
+    68	
+    69	- `accounts` (encrypted hash id, type: ira/taxable, trading_enabled boolean)
+    70	- `instruments` (CUSIP as the stable key; current symbol, symbol history, asset type, leveraged flag). Every other table references instrument_id, never a raw ticker, so ticker changes cannot break linking.
+    71	- `positions` (account, instrument, qty, cost basis, synced_at): always broker-derived
+    72	- `orders` (broker order id, status, side, instrument, qty, type, limit/stop, placed_via, parent_order_id for bracket children; see 5.4.2)
+    73	- `order_proposals` (agent- or human-initiated; status: proposed → validated/rejected → approved → submitted → filled/cancelled; stores guardrail evaluation results as JSON; carries a submission_attempt record for the ambiguous-outcome path in 5.1)
+    74	- `transactions` (fills, dividends, corporate actions, fees)
+    75	- `trades` (journal). A trade is one instrument's position lifecycle from zero back to zero; scale-ins and scale-outs are `trade_legs` linked to transactions. Fields: setup tag, thesis, planned stop/target, realized R-multiple, post_mortem. Fills with no originating proposal (orders placed at Schwab directly) create a trade in `incomplete` state with no planned stop; the EOD brief asks for the missing stop/setup rather than computing a bogus R.
+    76	- `setups` (name, definition, rolling stats: win rate, avg R, expectancy, sample size, active boolean)
+    77	- `risk_rules` (rule type, params, active, version): see 5.4
+    78	- `snapshots` (daily equity, open risk $, open risk %, drawdown from HWM). Equity series is flow-adjusted: deposits/withdrawals (from transactions) are excluded from HWM/drawdown math so a deposit never resets a drawdown and a withdrawal never fakes one.
+    79	- `audit_events` (append-only: approvals, rejections, collar overrides with reason, rule edits with before/after, kill-switch toggles, re-auths, shadow-mode toggles). Every mention of "logged" elsewhere in this doc means a row here.
+    80	
+    81	### 5.3 Sync Jobs
+    82	
+    83	- Positions + balances: every 15 min during market hours, hourly otherwise.
+    84	- Orders + transactions: every 5 min during market hours (drives journal auto-population).
+    85	- Corporate actions/dividends: from transactions feed; adjust journal cost basis automatically.
+    86	- Market data (quotes for holdings + watchlist): on demand from agent tools, cached 1-5 min. Schwab Market Data API is primary; FMP optional secondary for fundamentals/screening not covered by Schwab.
+    87	- **Market calendar:** "market hours" everywhere in this doc resolves through Schwab's market-hours endpoint (holidays, early closes), cached daily. Job schedules and blackout windows derive from it; nothing hardcodes 9:30-16:00.
+    88	
+    89	### 5.4 Guardrail Engine
+    90	
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "nl -ba docs/phase-1-plan.md | sed -n '1,180p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Phase 1 Plan: Investment Copilot (read-only)
+     2	
+     3	Source of truth: `docs/artifacts/investment-copilot-prd.md` (v9). Screen states from `docs/artifacts/investment-copilot-ui-flows.md` and the wireframes. This plan covers only PRD §6 Phase 1 as scoped in the kickoff brief.
+     4	
+     5	Sections: decisions needed before code, migrations, jobs, MCP tools, scheduled runtime, UI, testing, deploy, build order, deferred items, working method.
+     6	
+     7	---
+     8	
+     9	## 0. Decisions (resolved 2026-09-01)
+    10	
+    11	1. **Secrets in Rails credentials**, production-only file (`config/credentials/production.yml.enc`), keys `schwab.app_key`, `schwab.app_secret`, `mcp.bearer_token`, `anthropic.api_key`, `resend.api_key`, plus Active Record Encryption keys. `SCHWAB_CALLBACK_URL` and `MEMORY_REPO_PATH` stay in dokku ENV (not secret). The dokku `SCHWAB_APP_KEY`/`SCHWAB_APP_SECRET` vars get unset once the credentials file is on the server.
+    12	2. **Gems beyond defaults:** `rspec-rails`, `factory_bot_rails`, `vcr`, `webmock`, `bundler-audit`, `mcp` (official Ruby SDK), `anthropic` (official Ruby SDK). No claude-on-rails.
+    13	3. **Web login is passwordless magic link**, built on the Rails 8 auth generator with `generates_token_for :magic_link` (15 min, single use). Users are seeded, not self-registered: john@athayde.com and whitney@athayde.com only. No gem.
+    14	4. **Email via Resend over SMTP**, no gem; API key in credentials. Production login and re-auth depend on it, so Resend DNS is a prerequisite for the first production deploy.
+    15	5. **`evaluate_hypothetical_order` omitted** from Phase 1. `get_risk_rules` ships and returns the (empty) `risk_rules` rows.
+    16	6. **§5.12 allocation tables deferred** to Phase 2.5.
+    17	7. **Off-hours cadence** for orders/transactions sync: hourly.
+    18	
+    19	---
+    20	
+    21	## 1. Migrations (in creation order)
+    22	
+    23	All money columns `decimal(18,4)`, quantities `decimal(18,6)` (fractional shares unverified, PRD §5.12). All timestamps `timestamptz`. No table stores a bare ticker as a key; instrument references are `instrument_id`.
+    24	
+    25	| # | Table | Key columns | Phase 1 populated? |
+    26	|---|---|---|---|
+    27	| 1 | `users`, `sessions` | Rails 8 auth generator, password column removed; `email_address` unique. Magic-link tokens via `generates_token_for`, no table. | yes (two seeded users) |
+    28	| 2 | `schwab_tokens` | `access_token` (encrypted), `refresh_token` (encrypted), `access_expires_at`, `refresh_expires_at`, `issued_at`, `last_refreshed_at`, `last_refresh_error`, `scope` | yes |
+    29	| 3 | `accounts` | `encrypted_hash_id` (Schwab's hashValue, unique), `account_type` enum (taxable/ira), `trading_enabled` bool, `nickname`, `last_synced_at`. Plaintext number is never a column. | yes |
+    30	| 4 | `instruments` | `cusip` (unique, not null), `symbol`, `symbol_history` jsonb `[{symbol, seen_at}]`, `asset_type`, `leveraged` bool default false, `description`. Index on `symbol` (non-unique). | yes |
+    31	| 5 | `positions` | `account_id`, `instrument_id`, `quantity`, `average_price`, `cost_basis`, `market_value`, `last_price`, `synced_at`, `raw` jsonb. Unique on (account, instrument). Always overwritten by sync, never edited. | yes |
+    32	| 6 | `balances` | `account_id`, `equity`, `cash_available_for_trading`, `settled_cash`, `unsettled_cash`, `buying_power`, `synced_at`, `raw` jsonb. One current row per account plus history (`as_of` date). | yes |
+    33	| 7 | `orders` | `account_id`, `instrument_id`, `broker_order_id` (unique per account), `status` enum incl. Phase 2 states, `side`, `quantity`, `filled_quantity`, `order_type`, `limit_price`, `stop_price`, `duration`, `session`, `tax_lot_method`, `placed_via` enum (schwab_direct/app), `parent_order_id` (self FK), `order_proposal_id` (nullable), `entered_at`, `closed_at`, `raw` jsonb | yes (sync only) |
+    34	| 8 | `order_proposals` | Full §5.2 shape now: `account_id`, `instrument_id`, `origin` enum (agent/human), `status` enum (proposed, validated, rejected, approved, submitted, submission_unknown, filled, cancelled), `side`, `quantity`, `order_type`, `limit_price`, `stop_price`, `target_price`, `thesis`, `setup_id`, `guardrail_results` jsonb, `risk_rule_version`, `override_reason`, `reject_reason`, `submission_attempted_at`, `submission_payload` jsonb, `submission_response` jsonb, `reconciled_order_id`, `approved_at`, `submitted_at` | no |
+    35	| 9 | `transactions` | `account_id`, `instrument_id` (nullable for cash-only), `broker_transaction_id` (unique), `kind` enum (fill, dividend, interest, fee, deposit, withdrawal, corporate_action, other), `sub_type` string (raw Schwab type), `side`, `quantity`, `price`, `net_amount`, `settlement_date`, `executed_at`, `raw` jsonb, `journaled_at` | yes |
+    36	| 10 | `setups` | `name` (unique), `definition`, `active` bool, `win_rate`, `avg_r`, `expectancy`, `sample_size`, `stats_computed_at` | table yes, rows via seed |
+    37	| 11 | `trades` | `account_id`, `instrument_id`, `setup_id` (nullable), `order_proposal_id` (nullable), `status` enum (open, closed, incomplete), `opened_at`, `closed_at`, `avg_entry`, `avg_exit`, `peak_quantity`, `planned_stop`, `planned_target`, `realized_pnl`, `realized_r`, `thesis`, `post_mortem`, `followed_setup` (nullable bool) | yes |
+    38	| 12 | `trade_legs` | `trade_id`, `transaction_id` (unique), `direction` enum (in/out), `quantity`, `price`, `executed_at`, `basis_adjustment` (for corporate actions/dividend reinvest) | yes |
+    39	| 13 | `risk_rules` | `rule_type`, `params` jsonb, `active`, `version`, `setup_id` (nullable, for collar params), `superseded_by_id` | no |
+    40	| 14 | `snapshots` | `as_of` date (unique), `equity`, `net_flows` (day), `cumulative_net_flows`, `flow_adjusted_equity`, `high_water_mark` (on adjusted series), `drawdown_pct`, `open_risk_amount`, `open_risk_pct` | yes (open risk is 0 until stops exist; column stays) |
+    41	| 15 | `audit_events` | `kind` string, `actor` enum (human/system/agent), `subject` polymorphic (nullable), `data` jsonb, `reason`, `created_at` only. Postgres trigger rejects UPDATE/DELETE. | yes |
+    42	| 16 | `market_days` | `date` (unique), `open` bool, `opens_at`, `closes_at`, `raw` jsonb, `fetched_at`. Populated from Schwab market-hours endpoint. | yes |
+    43	| 17 | `sync_runs` | `feed` enum (accounts, positions, balances, orders, transactions, market_hours, memory_repo), `status` (running, succeeded, failed, skipped_token), `started_at`, `finished_at`, `error`, `records_touched`. Drives "last successful sync per feed" on health screen. | yes |
+    44	| 18 | `agent_runs` | `kind` enum (morning_brief, eod, sunday_review), `status`, `started_at`, `finished_at`, `tool_turns`, `input_tokens`, `output_tokens`, `estimated_cost`, `output_markdown`, `error`, `model` | yes |
+    45	| 19 | `system_settings` | Singleton row: `shadow_mode` bool default true, `manual_halt` bool default false, `manual_halt_reason`, `manual_halt_at` | yes |
+    46	
+    47	Also the Solid Queue / Cache / Cable schemas already generated. Active Record Encryption keys go in the production credentials file (generated with `bin/rails db:encryption:init`); dev/test use fixed keys in their own credentials files.
+    48	
+    49	Phase 2 columns are present now so `orders`/`order_proposals` never need a shape change: `parent_order_id`, `order_proposal_id`, `submission_unknown` state, submission attempt columns, `guardrail_results`, `risk_rule_version`.
+    50	
+    51	---
+    52	
+    53	## 2. Jobs (Solid Queue, `config/recurring.yml`, all times America/New_York)
+    54	
+    55	Every Schwab-touching job includes `TokenGated`: if the refresh token is expired it writes a `sync_runs` row with `skipped_token`, audits once per expiry episode, and re-enqueues itself for 15 minutes later. Nothing silently skips.
+    56	
+    57	| Job | Schedule | Does |
+    58	|---|---|---|
+    59	| `Schwab::RefreshAccessTokenJob` | every 25 min | POST refresh grant; update `schwab_tokens`; on failure audit `token_refresh_failed` |
+    60	| `Schwab::TokenHealthJob` | daily 08:00 + 20:00 | Email nag when refresh token < 24h from expiry; escalations Mon and Tue if Sunday re-auth missed; audit each nag |
+    61	| `Sync::MarketHoursJob` | daily 06:00, and on demand when `market_days` lacks today | Fetch equity market hours for today and the next 7 days into `market_days` |
+    62	| `Sync::TickJob` | every 5 min | The only scheduled sync entry point. Consults `MarketCalendar` + `sync_runs` and enqueues: positions+balances if due (15 min in-hours, 60 min otherwise); orders+transactions if due (5 min in-hours, 60 min otherwise) |
+    63	| `Sync::AccountsJob` | daily 06:05 and after every re-auth | `/accounts/accountNumbers` then `/accounts`; upsert `accounts` by hash |
+    64	| `Sync::PositionsJob` | via tick | `/accounts/{hash}?fields=positions`; upsert instruments (CUSIP), positions, balances |
+    65	| `Sync::OrdersJob` | via tick | `/accounts/{hash}/orders?fromEnteredTime=…`; upsert orders, set `placed_via: schwab_direct` when no proposal matches |
+    66	| `Sync::TransactionsJob` | via tick | `/accounts/{hash}/transactions`; upsert transactions, classify kind; then enqueue `Journal::LinkFillsJob` |
+    67	| `Journal::LinkFillsJob` | after transactions sync | Zero-to-zero trade builder (see §4 below) |
+    68	| `Snapshots::DailyJob` | 16:20 on market days, after final sync | Write the day's snapshot with flow adjustment |
+    69	| `Memory::PullRepoJob` | every 30 min | `git -C $MEMORY_REPO_PATH pull --ff-only`; record `sync_runs` |
+    70	| `Agent::MorningBriefJob` | 07:00 market days | See §3 |
+    71	| `Agent::EndOfDayJob` | 16:30 market days | See §3 |
+    72	| `Agent::SundayReviewJob` | Sunday 18:00 | Phase 1 stub: emails re-auth link, token age, sync health, job failures |
+    73	
+    74	---
+    75	
+    76	## 3. Tool surface (one registry, two transports)
+    77	
+    78	`app/models/agent/tools/*` each defines `name`, `description`, `input_schema`, `call(**args)`. The MCP server registers them; the scheduled runtime passes the same definitions to the Messages API. Phase 1 tools, all read-only:
+    79	
+    80	| Tool | Returns |
+    81	|---|---|
+    82	| `get_portfolio` | Positions with last price, unrealized P&L, working stop (nil in Phase 1), distance to stop (nil), open risk, synced_at per row |
+    83	| `get_account_health` | Equity, settled/unsettled cash, drawdown from HWM, token status and age, last sync per feed, shadow mode, halt state |
+    84	| `get_quotes(symbols)` | Schwab `/marketdata/v1/quotes`, cached 2 min in Solid Cache, each quote stamped with fetched_at |
+    85	| `get_price_history(symbol, range)` | Schwab `/marketdata/v1/pricehistory`, cached 5 min |
+    86	| `get_journal(filters)` | Trades with legs; filters: status, setup, instrument, date range, missing_post_mortem |
+    87	| `get_setup_stats` | Rows from `setups` with rolling stats recomputed from `trades` |
+    88	| `get_risk_rules` | Active `risk_rules` rows (empty in Phase 1) |
+    89	
+    90	Omitted pending decision 0.5: `evaluate_hypothetical_order`. Write tools do not exist in Phase 1.
+    91	
+    92	**MCP server:** `POST /mcp` (Streamable HTTP, JSON-RPC 2.0), bearer token compared with `ActiveSupport::SecurityUtils.secure_compare`, 401 renders a plain "MCP auth failed" page (Playwright target). Every tool call writes an `audit_events` row (`mcp_tool_called`, actor: agent).
+    93	
+    94	**Scheduled runtime:** `Agent::Run` wraps one Messages API conversation: system prompt = memory repo markdown files + setup stats + token health; tools = registry above; hard cap `MAX_TOOL_TURNS = 12`; result stored in `agent_runs` and emailed via `BriefMailer`. Prompts live in `app/models/agent/prompts/*.md.erb`. Morning brief and EOD are real; Sunday review stub does not call the API.
+    95	
+    96	---
+    97	
+    98	## 4. Journal builder (zero-to-zero)
+    99	
+   100	For each account and instrument, process fills in `executed_at` order:
+   101	- No open trade and a buy fill: open a trade. If the fill's order maps to a proposal, copy setup/thesis/planned stop; otherwise `status: incomplete`, no planned stop.
+   102	- Each fill becomes a `trade_leg` (in/out by side). Running quantity updated; `avg_entry`/`avg_exit` recomputed.
+   103	- Running quantity returns to zero: close the trade, compute `realized_pnl`; `realized_r` only when `planned_stop` exists, else nil.
+   104	- Dividends and corporate actions with a CUSIP link to the open trade as a `basis_adjustment` leg; symbol changes on a known CUSIP update `instruments.symbol` and append to `symbol_history` without touching trades.
+   105	- Idempotent: keyed on `transactions.id` via the unique index on `trade_legs.transaction_id`.
+   106	
+   107	---
+   108	
+   109	## 5. UI (Hotwire, mobile-responsive, no JS routers, no hover-dependent modals)
+   110	
+   111	| Screen | Route | Phase 1 content |
+   112	|---|---|---|
+   113	| Dashboard | `/` | Banner (healthy / expiring / expired / halted), equity + day change, open risk, settled/unsettled cash, positions list (distance-to-stop column shows "no stop" in Phase 1), pending proposals count (0, links nowhere yet), staleness stamps on every number, empty state before first sync |
+   114	| System health | `/system` | Token age vs 7d, next Sunday, last sync per feed, job failures (7d), API spend (month, from `agent_runs`), shadow mode indicator, manual halt toggle with reason (audited) |
+   115	| Re-auth | `/schwab/authorize` → Schwab → `/schwab/callback` | Success page with new expiry; failure page with error and retry |
+   116	| Journal (minimal) | `/trades`, `/trades/:id` | List and detail; the Flow 4 quick-entry form (post-mortem + followed/improvised) so incomplete trades can be completed |
+   117	| Login | `/session/new` → email → `/session/magic/:token` | Passwordless; unknown emails get the same "check your inbox" response |
+   118	
+   119	Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 comes only from `system_settings.manual_halt`.
+   120	
+   121	---
+   122	
+   123	## 6. Testing
+   124	
+   125	- **RSpec**, in the kickoff's priority order: token lifecycle with `travel_to`; sync jobs with fixture payloads (positions, orders, transactions incl. dividend, split, symbol change); journal linking (scale-in/out, orphan fill → incomplete, ticker change on same CUSIP); MCP tool contracts (request specs for auth + each tool's schema and output); scheduled runtime with a stubbed Messages API (tool-turn cap enforced).
+   126	- **VCR cassettes** in `spec/cassettes`, recorded against Schwab only once the app is Ready For Use, with a scrubber that replaces bearer tokens, refresh tokens, and account hash values before write. Until then, cassettes are hand-built from community-client response shapes and marked `# SCHWAB_SHAPE_UNVERIFIED`.
+   127	- **`Schwab::FakeClient`** implements the same interface as `Schwab::Client`, returns canned payloads, selected by `config.x.schwab.adapter`. Used by dev seeds and Playwright.
+   128	- **Playwright** (`e2e/`, `@playwright/test` via npm, the only Node dependency): dashboard in four banner states via a test-env-only `/playwright/scenarios/:name` reseed route, MCP 401 page, re-auth success and failure (FakeClient scripted).
+   129	- **`bin/ci`**: Rails 8.1 `ActiveSupport::ContinuousIntegration` with steps in `config/ci.rb`, the pattern borrowed from Patchvault. Kickoff order: rubocop → rspec → brakeman (strict, warnings fail) → `bin/importmap audit` → `bundle exec bundle-audit check --update` → Playwright (`bin/playwright`, which boots a test-env server with the FakeClient, runs `npx playwright test`, and tears down). Fails on the first red step.
+   130	
+   131	---
+   132	
+   133	## 7. Deploy
+   134	
+   135	- `Procfile`: `web: bundle exec puma -C config/puma.rb`, `worker: bin/jobs`, `release: bin/rails db:prepare`.
+   136	- `app.json` for the release phase.
+   137	- `bin/dokku-setup`: documents postgres plugin, letsencrypt, config vars (`RAILS_MASTER_KEY`, `SCHWAB_CALLBACK_URL`, `MEMORY_REPO_PATH`, plus whatever decision 0.1 leaves in ENV), storage mount for the memory repo, `ps:scale worker=1`.
+   138	- App time zone `Eastern Time (US & Canada)`; Solid Queue recurring schedules use the same.
+   139	
+   140	---
+   141	
+   142	## 8. Build order (green `bin/ci` at each step)
+   143	
+   144	1. Tooling: RSpec, rubocop config, brakeman, bundler-audit, `bin/ci` (without Playwright), authentication generator, AR encryption keys, credentials layout.
+   145	2. Migrations 1–19, models with validations/enums, `AuditEvent` append-only trigger, `SystemSettings` singleton.
+   146	3. Schwab adapter: `Schwab::Client` (OAuth, accounts, positions, orders, transactions, market hours, quotes, price history), `Schwab::FakeClient`, response mappers, `docs/verify-on-approval.md` started.
+   147	4. OAuth controller + token model + refresh job + token health job + re-auth pages + audit events.
+   148	5. Sync jobs, market calendar, tick scheduler, `sync_runs`.
+   149	6. Journal builder + snapshots.
+   150	7. Dashboard, system health, journal screens; Playwright added to `bin/ci`.
+   151	8. MCP server + tool registry.
+   152	9. Scheduled runtime + mailers + memory repo pull.
+   153	10. Seeds for dev via FakeClient; `Procfile`, `app.json`, `bin/dokku-setup`; DHH-skill review pass.
+   154	
+   155	---
+   156	
+   157	## 9. Explicitly not built in Phase 1
+   158	
+   159	Guardrail engine, order proposals (table only), approval UI, submission, brackets, reconciliation job, allocation module, FMP, watchlist screen (watchlist.md in the memory repo is read as text), push notifications, iOS shell.
+   160	
+   161	---
+   162	
+   163	## 10. Working method, per phase and per build step
+   164	
+   165	Each numbered step in §8 that ships a feature runs this loop:
+   166	
+   167	1. **PRD review with counselors** (`counselors run`, agents `codex-5.5-high` and `claude-fable`): the relevant PRD sections plus this plan's section for the step. Findings are folded into the plan before code.
+   168	2. **Build** the feature vertically per §8.
+   169	3. **RSpec green** and reviewed for coverage against the §6 priority list, not just passing.
+   170	4. **DHH skill review pass** (`dhh-code-reviewer` agent) on the step's diff; fix what it flags.
+   171	5. **Counselors review of the build** (same two agents) on the diff; fix or explicitly decline each finding in the commit message.
+   172	6. **`bin/ci` green.** Commit.
+   173	
+   174	Counselors runs are long (10 to 20 minutes) and run in the background while unrelated work continues. Whole-phase gates: a counselors PRD review before step 1, and a DHH pass plus counselors review over the full Phase 1 diff after step 10.
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The plan is mostly aligned on the obvious Phase 1 items, but the migration table and runtime boundaries have several places where it quietly narrows the PRD or bakes in assumptions. I’m checking those now against the UI flow doc and kickoff constraints.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba docs/artifacts/investment-copilot-ui-flows.md | sed -n '119,184p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+   119	## What's deliberately not designed
+   120	
+   121	- No live-updating tickers or streaming charts. Numbers refresh on load and on Turbo-stream events (fills, sync completions). This is a decision system, not a terminal.
+   122	- No P&L celebration/loss states. The journal treats +2R and −1R rows identically.
+   123	
+   124	## Reference direction: Mercury (web)
+   125	
+   126	Mercury patterns that map directly onto our screens, from the Mobbin screen set:
+   127	
+   128	- **Home → Dashboard.** Balance hero with a 30-day sparkline, accounts card to the right, a paired "money in / money out" block below, and a quick-action pill row under the greeting. Our mapping: equity + equity curve as the hero, positions as the side card, "open risk / settled cash" as the pair, and "pending proposals" as the first pill.
+   129	- **Transaction detail slide-over → Proposal detail.** Amount hero at top, then a vertical timeline (source → destination with timestamps), then metadata fields, then notes/attachments/comments. Our order is the same: order hero, thesis, guardrail rows where Mercury has GL code and notes, timeline once approved. On desktop the proposal opens as a right-hand panel over the queue, as Mercury does; on mobile it is the full screen.
+   130	- **Transactions table → Journal browser.** Summary strip (net change / in / out) above a dense table with Data Views, Filters, Date, Keywords, Amount as inline dropdowns, group-by rows with expand chevrons. Direct lift for journal: R this month / wins / losses strip, then trades with setup filter as the first dropdown.
+   131	- **Payment confirmation → the deliberate confirm.** Mercury puts an authorization sentence directly above a single primary button ("By clicking Schedule Payment, I authorize…"). That is our Approve pattern: a plain-language line stating exactly what will be sent to Schwab, then one primary button. Given the stakes, keep a second gesture, but model it on this rather than a modal.
+   132	- **"A similar payment has been created" callout → duplicate and warn states.** Mercury surfaces a possible duplicate inline in the form with the prior item embedded. Same component serves the wash-sale warn-acknowledge and the `submission_unknown` reconciliation notice.
+   133	- **Status pills in rows** (Pending, Failed) → proposal states in the queue and `unprotected` on positions.
+   134	- **Reimbursement approval modal** (document left, status timeline right, one cancel action) → the post-approval timeline state, with the thesis panel where the invoice preview sits.
+   135	
+   136	Not lifting: Mercury's left-rail IA (we have five top-level areas, not fourteen), the multi-account structure, and the light-purple accent. Reference screens are on Mobbin under the Mercury web app.
+   137	
+   138	## Reference direction, revised: Midday shell + Mercury detail
+   139	
+   140	- **Midday (web) → app shell and dashboard.** Icon-only collapsed left rail (~40px) with a top search bar; dark theme; chart cards with a headline number, legend (current / previous / average), dashed average line, and a timeframe dropdown plus "Customize" at the card row's top right. Layout: one full-width primary chart, then a 2-up row of smaller chart cards. Our mapping: equity curve as the primary chart with HWM as the dashed line; the 2-up row is open risk over time and drawdown from HWM. The rail holds our five areas: dashboard, proposals, journal, watchlist, system.
+   141	- **Mercury (web) → detail panel, journal table, confirm pattern.** Unchanged from the section above: right-hand slide-over for proposal detail, transactions table for the journal, authorization-line-above-one-button for Approve, inline "similar item exists" callout for warn and reconciliation states.
+   142	- **Copilot Money (web), supplemental.** Three cards worth lifting: "Transactions to review" with its reviewed-everything empty state (our proposal queue on the dashboard), the range-chip row (1W / 1M / 3M / YTD / 1Y / ALL) on the net-worth chart, and "Next two weeks" as a dated upcoming list (our earnings/econ events touching the book).
+   143	- **Mobile supplements (iOS).** Revolut Business approval detail for the proposal screen structure; Navan's in-policy / out-of-policy idiom for pass/warn/fail rows and the override-with-reason sentence; Life Reset's Quick Add for the journal entry.
+   144	
+   145	Open interaction with the earlier question: a dark shell makes "halt mutes the whole palette" a weaker signal than on a light UI; the halt banner probably has to carry the state on its own.
+   146	
+   147	## Reference addendum: Origin (web)
+   148	
+   149	Origin adds two things neither Midday nor Mercury has, and it surfaces a screen missing from the inventory above.
+   150	
+   151	- **Benchmark overlay on the performance chart.** Legend row of portfolio vs S&P 500 vs component ETFs, each with its return, and a hover tooltip comparing "your portfolio" against the benchmark on a given date. Lift for the dashboard equity curve (portfolio vs SPY), and it doubles as the visual for the allocation module's correlation check.
+   152	- **Holding detail page.** Price chart with range chips, a "Your position" strip (balance, shares, cost basis, return, allocation), then a right-column card with News / About tabs and a stats row below. This is our **Position detail** screen, which the inventory above omits. Our version of the strip: shares, cost basis, unrealized P&L, working stop, distance to stop, this position's share of open risk. Right column tabs become Thesis (from the originating proposal) and History (journal legs for this instrument).
+   153	- **"Allocation & risk" card** with Asset allocation / Risk assessment tabs over a stacked bar: the allocation module's targets-vs-actual drift view, with the risk tab showing guardrail status.
+   154	- **"Market recap" summary card**: the morning brief rendered in-app, not only emailed.
+   155	- **"Pro view" toggle** on the holdings table: a dense-mode switch for the journal browser.
+   156	- Small-caps eyebrow section labels (PORTFOLIO, HOLDINGS, ALLOCATION & RISK) as the sectioning device across cards.
+   157	
+   158	Origin ships both light and dark screens; the dark Reports screen earlier in this doc's search set is the same product, so it can inform either palette decision.
+   159	
+   160	**Monarch** is not on Mobbin. Worth screenshotting directly for the board: its transactions "needs review" queue and the net worth / holdings views are the closest consumer analogues to our proposal queue and dashboard.
+   161	
+   162	Screen inventory addition: **Position detail** (mobile + desktop), reached from any position row on the dashboard.
+   163	
+   164	## Reference addendum: Monarch (web, John's screenshots)
+   165	
+   166	Monarch resolves two open questions and contributes more directly usable components than any of the Mobbin sources.
+   167	
+   168	**Resolves the collar question.** The credit-score band: a horizontal track segmented at labeled breakpoints (300 / 580 / 670 / 740 / 800 / 850) with the current value as a marker and the filled portion in a single color. That is the collar: breakpoints are the method outputs (percent floor, ATR, swing, Chandelier), the filled band is the acceptable range, the marker is the proposed stop. Horizontal track wins over the mini price axis.
+   169	
+   170	**Guardrail headroom as budget bars.** Budget card rows (label, planned amount right-aligned, progress bar, spent left / remaining right in green). Direct lift for a "Risk budget" card on the dashboard: risk-per-trade used, daily loss used vs halt threshold, sector exposure vs cap, concurrent positions vs max. Remaining headroom in green; the bar goes to the warn color as it approaches the cap. This makes the guardrail engine visible before a proposal trips it.
+   171	
+   172	**Review modal → orphan-fill and incomplete-journal review.** "Is this merchant recurring? There are 9 more to review": entity card with recent transactions, a few form fields, and three actions (Skip / Not recurring / Save as recurring). Ours: "Is this fill part of a setup? N more to review", recent fills for the instrument, setup dropdown and planned stop, actions Skip / Not a trade / Save. The orange top banner with "Review now" is the pending-review entry point; the nav badge count (Recurring 10) is the proposals count on the rail.
+   173	
+   174	**Positions list, from the Accounts screen.** Per row: logo, name, sub-line, inline warning ("Account disconnected") where relevant, a small horizontal bar, a mini sparkline, amount, and a freshness stamp ("4 hours ago"). Ours: symbol, position size, inline "unprotected" warning, distance-to-stop bar, price sparkline, unrealized P&L, synced-at stamp. Collapsible group headers with group-level change and total serve the allocation view (positions grouped by target class).
+   175	
+   176	**Benchmark comparison row, from Investments.** Four equal cards (Your Portfolio | S&P 500 | US Stocks | US Bonds), each with period return and today, radio-toggle to overlay on the chart below. Better than Origin's legend for our purpose: portfolio vs SPY, with the allocation module's "diversifier" instruments as the toggleable extras. Holdings table grouped by asset class with Weight and a period-change pill is the allocation drift table.
+   177	
+   178	**Cash Flow analytics → journal analytics.** Segmented Monthly / Quarterly / Yearly, paired positive/negative bars per period with a net line and a dashed projection for the current period, then four stat tiles. Ours: winning R / losing R bars per period, expectancy line, tiles for net R, win rate, avg winner, avg loser. Skip the Sankey.
+   179	
+   180	**AI-origin marker.** Monarch marks AI-generated content with a sparkle glyph next to the title (Weekly Recap, Budget, Spending). Adopt it: every agent-authored element (thesis, brief, review suggestion) carries the glyph, so human vs agent origin is legible at a glance. Ties to the origin field on proposals.
+   181	
+   182	**Also worth keeping:** "Your Weekly Recap · date range" card as the in-app entry to the Sunday review; "this month vs last year" comparison line for equity vs prior period; Recurring's "in 1 day" countdown for upcoming earnings/econ events and "settles Tue".
+   183	
+   184	Palette note: Monarch's near-black surfaces with slightly lighter cards, orange accent, green/red only for signed deltas, is close to where Midday sits; the two are compatible as a single direction.
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba docs/artifacts/claude-code-kickoff.md | sed -n '1,50p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Claude Code Kickoff: Investment Copilot, Phase 1
+     2	
+     3	Paste this as the opening prompt in Claude Code, with `investment-copilot-prd.md` and `investment-copilot-ui-flows.md` in the repo root (or `/docs`). The PRD is the source of truth; where this brief and the PRD disagree, the PRD wins.
+     4	
+     5	---
+     6	
+     7	You are building Phase 1 of the system specified in `docs/investment-copilot-prd.md`. Read the PRD in full before writing anything. Then read `docs/investment-copilot-ui-flows.md` for screen states.
+     8	
+     9	## Phase 1 scope (read-only)
+    10	
+    11	From PRD §6, Phase 1 only:
+    12	
+    13	1. Rails 8 app, Postgres, Solid Queue, Hotwire, importmap. No SPA, no build step.
+    14	2. Schwab OAuth (three-legged) and the full token lifecycle from §5.1: 25-minute access refresh job, 7-day refresh-token expiry tracking, `submission_unknown` and reconciliation are Phase 2 but design the `orders` table for them now.
+    15	3. Sync jobs from §5.3: accounts, positions, balances, orders, transactions. Market calendar from Schwab's market-hours endpoint; no hardcoded market hours.
+    16	4. Data model from §5.2, all tables, including `instruments` keyed by CUSIP, `trade_legs`, `audit_events`, and flow-adjusted `snapshots`. Migrations complete even for tables Phase 1 doesn't populate.
+    17	5. Journal auto-population from fills using the zero-to-zero trade definition; orphan fills land in `incomplete` state.
+    18	6. Dashboard with all four banner states (healthy / token expiring / token expired / halted). Halted can be reached via a manual flag in Phase 1 since no guardrails run yet.
+    19	7. MCP server (read tools only, §5.5) over HTTPS with bearer auth.
+    20	8. Scheduled runtime (§5.5a): Solid Queue jobs calling the Anthropic Messages API with read-only tool definitions, hard tool-turn cap, email output. Implement the 07:00 brief and 16:30 EOD; Sunday review can be a stub that emails the re-auth link and token age.
+    21	9. Shadow mode flag exists and is on (nothing to submit yet, but the flag, the audit event, and the UI indicator ship now).
+    22	10. Memory repo read access: the app pulls a git repo path on a schedule and exposes its markdown files to the scheduled runtime's prompt.
+    23	
+    24	Not in Phase 1: guardrail engine, proposals, approval UI, order submission, bracket stops, allocation module, FMP. Do not scaffold them beyond the migrations.
+    25	
+    26	## Constraints
+    27	
+    28	- **No live Schwab calls in tests.** VCR/WebMock cassettes only, scrubbed of tokens and encrypted account values. A `FakeSchwab` adapter backs Playwright and dev seeds.
+    29	- **Never log or store plaintext account numbers.** Encrypted values from `/accounts/accountNumbers` only. Brakeman must pass.
+    30	- **Tokens encrypted at rest** with Active Record Encryption. App key/secret from ENV (dokku config vars).
+    31	- **Instrument identity is CUSIP.** No table stores a bare ticker as a foreign key.
+    32	- **Every "logged" action is an `audit_events` row.** Re-auth, token refresh failures, shadow-mode toggles, manual halt flag.
+    33	- Schwab account access is approved and the app is registered (status pending Ready For Use). Production host is a dokku app on GC2 at `desk.athayde.com`; callback is `https://desk.athayde.com/schwab/callback`; `SCHWAB_APP_KEY`, `SCHWAB_APP_SECRET`, and `SCHWAB_CALLBACK_URL` already exist as dokku config vars, so read exactly those names from ENV. Build the client against the schwab-py order-builder docs and community client libraries for response shapes; isolate every Schwab-shape assumption in the adapter layer so official schemas can replace them without touching callers. The live OAuth test waits on Ready For Use; everything else does not.
+    34	- iOS is a Phase 2 Hotwire Native app (PRD §5.8a). In Phase 1, keep every screen mobile-responsive and avoid patterns that fight a native wrapper (no full-page JS routers, no modals that depend on hover).
+    35	
+    36	## Conventions (house standard)
+    37	
+    38	- RSpec full suite. Priority order from PRD §5.11: token lifecycle with time travel, sync jobs with fixture payloads including dividends and corporate actions, journal linking (scale-in/out, orphan fills, ticker change on the same CUSIP), MCP tool contracts.
+    39	- Playwright for the clickable UI: dashboard in all four banner states against seeded data, MCP auth failure page, re-auth success/failure.
+    40	- `bin/ci` runs in order: rubocop, rspec, brakeman, `bin/importmap audit`, `bundle exec bundle-audit check --update`, Playwright. Fail fast.
+    41	- Idiomatic Rails per the DHH skill: thin controllers, models that do the work, no service-object ceremony unless there is a real reason. Run the DHH skill as a review pass at the end of the phase.
+    42	- Deploy target: dokku on Ubuntu 24. Include `Procfile`, `app.json` if needed, and a `bin/dokku-setup` script documenting the Postgres/letsencrypt/config-var steps.
+    43	
+    44	## Working method
+    45	
+    46	1. Start by writing `docs/phase-1-plan.md`: the migration list, job list, MCP tool list, and the order you'll build in. Stop and show it before writing code.
+    47	2. Build vertically: migrations → Schwab adapter with cassettes → OAuth + token jobs → sync jobs → journal builder → dashboard → MCP → scheduled runtime. Green `bin/ci` at each step.
+    48	3. When a Schwab response shape is unknown, mark it `# SCHWAB_SHAPE_UNVERIFIED` in the adapter and list it in `docs/verify-on-approval.md` alongside the two items already in PRD §9.
+    49	4. Do not invent Schwab endpoint behavior. If the docs and community clients disagree, note both and pick the conservative reading.
+    50	5. Ask before: adding a gem outside Rails defaults, changing a table defined in §5.2, or any deviation from the PRD.
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba docs/artifacts/investment-copilot-ui-flows.md | sed -n '1,115p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Investment Copilot: UI Flows & Information Architecture
+     2	
+     3	Companion to the PRD (§5.8). This is what the UI must do, not how it looks. Screens, flows, states, and the data each screen owns. Mobile-first where marked; everything renders on a phone, but some screens only need to be *usable* there, not optimized.
+     4	
+     5	## Actors and entry points
+     6	
+     7	One user. Three ways in:
+     8	
+     9	1. **Push/email notification** → deep link to a specific proposal, trade, or health alert. This is the primary mobile entry.
+    10	2. **Direct visit** → dashboard.
+    11	3. **Sunday email** → re-auth link and edge review link.
+    12	
+    13	## Screen inventory
+    14	
+    15	| Screen | Priority surface | Purpose |
+    16	|---|---|---|
+    17	| Dashboard | Mobile + desktop | Glanceable state of the book |
+    18	| Proposal detail | **Mobile-first** | The approve/reject decision |
+    19	| Proposal queue | Mobile + desktop | List of pending/recent proposals |
+    20	| New proposal (manual) | Mobile + desktop | Human-initiated order proposal |
+    21	| Trade detail / journal entry | **Mobile-first** | Post-mortem quick entry |
+    22	| Journal browser | Desktop-first | Filter, R-distribution, history |
+    23	| Edge review | Desktop-first | Per-setup stats, deactivation |
+    24	| Risk rule editor | Desktop-only | Edit guardrail parameters |
+    25	| Watchlist | Mobile + desktop | Candidates + triggers |
+    26	| System health | Mobile + desktop | Token age, sync status, jobs, kill switch |
+    27	
+    28	## Flow 1: Morning glance (mobile, read-only)
+    29	
+    30	07:00 brief email → tap through → **Dashboard**.
+    31	
+    32	Dashboard states (mutually exclusive banners, one at a time):
+    33	- **Healthy:** no banner.
+    34	- **Token expiring:** refresh token < 24h. Banner links to re-auth flow.
+    35	- **Token expired:** sync paused. Everything shows "as of [timestamp]" staleness marks. Re-auth is the only call to action.
+    36	- **Halted:** daily-loss or drawdown rule tripped. Banner states which rule and when it resets. New-proposal entry points disabled, exits still available.
+    37	
+    38	Dashboard content: equity + day change, open positions (each: symbol, size, unrealized P&L, distance to stop as the primary number), total open risk ($ and % of equity), settled vs unsettled cash, pending proposal count (links to queue).
+    39	
+    40	Design constraint: distance-to-stop is the number that matters per position, not P&L. P&L is emotional; stop distance is actionable.
+    41	
+    42	## Flow 2: Review and approve a proposal (mobile-first, the core flow)
+    43	
+    44	Notification: "Proposal: BUY 40 XYZ @ 51.20, stop 48.90" → **Proposal detail**.
+    45	
+    46	Proposal detail sections, in order:
+    47	1. The order: side, symbol, qty, type, limit, stop, target. Computed: risk $ if stopped, % of equity, position value.
+    48	2. Thesis: the agent's (or your) one-paragraph reasoning, plus which setup it's tagged as.
+    49	3. Guardrail results: one row per rule, each pass / warn / fail with the actual numbers ("Risk per trade: 0.9% of equity — pass, limit 1.0%"). Collar shown as a range with the proposed stop plotted inside/outside it.
+    50	4. Action area (see states below).
+    51	
+    52	Proposal states → action area:
+    53	- **All pass:** Approve and Reject buttons. Approve requires a deliberate confirm step (second tap on a changed button, or slide-to-confirm; your call, but not one-tap). This confirm is the moment the order goes to Schwab.
+    54	- **Warn(s) present** (e.g., wash-sale flag): approve is available but each warning must be individually acknowledged first (tap to expand and acknowledge).
+    55	- **Stop outside collar:** approve gated behind a required typed reason (logged). Show the collar bounds and where the stop sits.
+    56	- **Hard fail** (GFV, notional cap, halt active): no approve control at all. The failing rule is stated with its numbers. Only actions: reject, or edit-and-resubmit (which creates a new proposal through the same validation).
+    57	- **Approved → submitted → filled/cancelled:** read-only timeline view. Fill pushes a notification and links to the new journal row.
+    58	
+    59	Reject: optional one-line reason, stored on the proposal.
+    60	
+    61	## Flow 3: Manual proposal (human-initiated)
+    62	
+    63	**New proposal** form: symbol → live quote loads → entry, stop, target fields.
+    64	
+    65	Live feedback as the stop is typed:
+    66	- Collar computes and renders as a range with the typed stop plotted against it.
+    67	- Position size auto-computes from the risk rule (size = risk$ / (entry − stop)) and updates live.
+    68	- Settled-cash check runs against the computed position value.
+    69	
+    70	Submit → same validation path and proposal detail screen as Flow 2. Human and agent proposals are identical objects downstream; the only difference is the author field.
+    71	
+    72	## Flow 4: Post-trade journal entry (mobile-first, 30-second task)
+    73	
+    74	Fill detected → journal row auto-created from transactions (entry/exit, R-multiple computed). EOD email lists rows missing post-mortems → tap → **Trade detail**.
+    75	
+    76	Entry is deliberately minimal: one-line post-mortem text field + one binary control: "Followed the setup / Improvised." Save. Everything else on the screen is read-only computed data (setup, planned vs actual stop, R-multiple).
+    77	
+    78	Rationale: if the journal entry takes more than 30 seconds on a phone, it stops happening.
+    79	
+    80	## Flow 5: Sunday ritual
+    81	
+    82	Sunday email contains: edge review summary, system health summary, re-auth button.
+    83	
+    84	- **Re-auth:** button → Schwab OAuth (their hosted login) → callback → success screen showing new token expiry date. Failure state: retry with the error shown.
+    85	- **Edge review** screen: per-setup table (win rate, avg R, expectancy, sample size, trailing-20 trend). Setups with negative expectancy flagged. Action per setup: deactivate (confirm dialog stating the effect: agent stops proposing this setup). Reactivation same path.
+    86	
+    87	## Flow 6: Risk rule editing (desktop, rare, deliberate)
+    88	
+    89	List of rules with current parameters → edit one → before save, an effect preview: "Max risk 1.0% → 1.5% changes max position size at current equity from $X to $Y." Confirm to save. Every change is versioned with a timestamp (guardrail evaluations reference the rule version they ran against).
+    90	
+    91	No bulk edit. No editing while a halt is active (prevents mood-driven loosening on a bad day; the halt banner says so).
+    92	
+    93	## Flow 7: Watchlist
+    94	
+    95	List: symbol, trigger note ("break above 52.10 on volume"), added date, current price vs trigger. Add/edit/remove. The agent reads triggers; a trigger being met surfaces in the morning brief, not as a push (v1).
+    96	
+    97	## Flow 8: System health & kill switch
+    98	
+    99	Token age (days:hours, with the Sunday cadence marked), last successful sync per feed, recent job failures, API spend this month. One control: **Pause system** (kill switch): stops all proposal creation and submission until unpaused. Unpause requires typed confirmation.
+   100	
+   101	## Cross-cutting states
+   102	
+   103	Every screen handles:
+   104	- **Stale data:** any market number older than its cache window shows a staleness mark with timestamp. Never render a price without its age being discoverable.
+   105	- **Token expired:** global banner, read-only mode for anything requiring fresh Schwab data.
+   106	- **Empty states:** pre-first-sync dashboard, empty journal, empty queue each need a designed state (the queue's empty state is the normal state most of the time).
+   107	
+   108	## Notification inventory (revised: push in the iOS app for time-sensitive items, email for long-form)
+   109	
+   110	Push (deep-link only, no figures in the payload): new proposal, fill/cancel, halt tripped, unprotected position, token expiring. Email: morning brief, EOD summary, Sunday ritual, job-failure digests. Original list:
+   111	
+   112	- Morning brief (07:00), EOD summary (16:30), Sunday ritual
+   113	- New proposal awaiting review
+   114	- Fill / cancel on a submitted order
+   115	- Guardrail halt tripped
+
+hook: PostToolUse
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "nl -ba docs/artifacts/investment-copilot-prd.md | sed -n '174,201p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+   174	### 5.7 Scheduled Workflows (agent, via Rails-triggered runs)
+   175	
+   176	- 07:00 ET pre-market brief: overnight moves on holdings/watchlist, gaps, today's earnings/econ events touching the book, stops at risk, settled-cash status. Delivered by email.
+   177	- 16:30 ET end-of-day: fills recap, journal rows created, missing post-mortems flagged, equity snapshot.
+   178	- Sunday edge review: per-setup expectancy over trailing sample, flag negative-expectancy setups, propose deactivation (human confirms).
+   179	- Token-health nag when refresh token < 24h from expiry.
+   180	
+   181	### 5.8 UI (Rails, Hotwire)
+   182	
+   183	Mobile is in scope: everything renders on a phone; proposal detail, dashboard glance, and journal quick-entry are mobile-first. Full screen inventory, flows, and per-screen states live in the companion doc `investment-copilot-ui-flows.md`; John designs against that. Summary:
+   184	
+   185	- Dashboard (glance, with healthy/expiring/expired/halted banner states)
+   186	- Proposal queue + proposal detail (the approve/reject decision; deliberate-confirm on approve; warn-acknowledge, collar-override-with-reason, and hard-fail states)
+   187	- Manual proposal form with live collar + auto-sizing feedback
+   188	- Trade detail / 30-second journal entry
+   189	- Journal browser, edge review (setup deactivation), watchlist
+   190	- Risk rule editor (desktop-only, effect preview, versioned, locked during halts; override path exists: engage the kill switch, type a reason, then edit, so a misconfigured rule that caused a false halt can be fixed without waiting for reset)
+   191	- System health + kill switch
+   192	
+   193	### 5.8a iOS App (decided: native, private, iOS only)
+   194	
+   195	- **Approach:** Hotwire Native for iOS. The Rails/Hotwire screens render inside a native shell; only the pieces that need native capability are Swift. This keeps one UI codebase and matches the house Rails conventions. No Android.
+   196	- **What the native shell adds:** APNs push, Face ID / device passcode as the deliberate confirm on Approve (resolves the open question in the flows doc: the second gesture is biometric, not a slide), app icon and home-screen presence, native navigation stack. Path configuration marks proposal detail, dashboard, and journal entry as the mobile-first routes.
+   197	- **Notifications, revised:** time-sensitive alerts move from email to push once the app exists: new proposal, fill/cancel, halt tripped, `unprotected` position, token expiring. Briefs and the Sunday ritual stay email (long-form, read on a desktop anyway). Push payloads carry no financial figures; they deep-link and the app fetches.
+   198	- **Distribution:** TestFlight internal testing (no beta review for internal testers; builds expire after 90 days, so the CI pipeline produces a fresh build on a cadence) or direct dev-signed install from Xcode. TestFlight is the default; direct install is the fallback if the developer account state makes TestFlight awkward.
+   199	- **Auth to the Rails app:** the native shell holds a session like the browser does; no separate API auth. The MCP bearer token is never on the phone.
+   200	- **Timing:** Phase 2, alongside the approval UI, since approving from the phone is the reason the app exists. Phase 1 web screens are built mobile-responsive so the native wrapper has nothing to redo.
+   201	
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+**Verdict**
+
+No. [docs/phase-1-plan.md](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:1) is broadly aligned with Phase 1, but it is not yet a faithful or complete implementation plan. The biggest problems are journal correctness, stop/open-risk semantics, token gating for scheduled runs, and several schema choices that will likely need Phase 2 rework.
+
+**Blocking Findings**
+
+1. **Open risk is incorrectly treated as zero in Phase 1.**  
+   The plan says working stop/distance-to-stop are `nil` and open risk is `0` until stops exist in app-created proposals: [phase-1-plan.md:40](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:40), [phase-1-plan.md:82](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:82). That contradicts the PRD/UI requirement that dashboard and briefs surface distance to stop and open risk: [prd.md:141](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-prd.md:141), [ui-flows.md:38](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-ui-flows.md:38).  
+   Absence of a stop is not zero risk. It is unknown/unprotected risk. Phase 1 syncs Schwab orders, so it should detect broker-side stop orders where present and flag `unprotected` where absent.
+
+2. **The journal builder cannot handle existing positions or sell-first histories.**  
+   The algorithm only opens a trade when there is no open trade and a buy fill arrives: [phase-1-plan.md:100](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:100). That fails the day-one reality: the account may already hold positions, and the first synced fill may be a sell/scale-out. The PRD’s zero-to-zero lifecycle model needs a legacy/open-incomplete path for positions whose entry history predates sync. Otherwise Phase 1 will silently mis-journal real exits.
+
+3. **`trades.status` conflates lifecycle and completeness.**  
+   The plan uses `open`, `closed`, `incomplete`: [phase-1-plan.md:37](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:37). But an orphan trade can be open or closed while still incomplete. This enum will be undone in Phase 2. Use separate fields: lifecycle status (`open`/`closed`) plus completion fields such as `setup_id`, `planned_stop`, `journal_completed_at`, or `needs_review`.
+
+4. **The quick-entry UI cannot complete incomplete trades.**  
+   The plan says incomplete trades can be completed from Flow 4, but only includes post-mortem and followed/improvised: [phase-1-plan.md:116](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:116). The PRD says orphan fills need missing stop/setup captured: [prd.md:75](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-prd.md:75). Add an incomplete-fill review path with setup and planned stop, matching the UI addendum’s orphan-fill review direction: [ui-flows.md:172](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-ui-flows.md:172).
+
+5. **Scheduled work is not fully token-gated.**  
+   The PRD says all scheduled work checks token health and queues/degrades rather than silently skipping: [prd.md:61](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-prd.md:61). The plan only applies `TokenGated` to Schwab-touching jobs: [phase-1-plan.md:55](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:55). Morning/EOD agent runs also depend on fresh synced data and tools that may call Schwab. They need explicit gating behavior: queue, send degraded health-only email, or run against stale data with a prominent stale-data mode.
+
+**High-Severity Design Gaps**
+
+6. **`transactions` lacks an order link, but the journal depends on one.**  
+   The journal says it copies setup/thesis/planned stop if a fill’s order maps to a proposal: [phase-1-plan.md:101](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:101). The transaction schema has no `order_id`, `broker_order_id`, or execution/order reference: [phase-1-plan.md:35](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:35). Do not rely on `raw` for this contract. Add explicit nullable linkage.
+
+7. **`order_proposals` stores only one submission attempt.**  
+   The PRD calls out ambiguous submission and reconciliation as a critical Phase 2 path: [prd.md:65](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-prd.md:65). The plan flattens attempt data into one set of columns: [phase-1-plan.md:34](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:34). That will not preserve multiple attempts, reconciliation evidence, or retry history. Add a `submission_attempts` table now or explicitly model why only one attempt can ever exist.
+
+8. **Snapshots need account scope and exact math.**  
+   `snapshots.as_of` is globally unique with no `account_id`: [phase-1-plan.md:40](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:40). The app syncs taxable plus read-only linked accounts, and drawdown/open-risk may need taxable-only and whole-book views. Also specify the exact formula: `flow_adjusted_equity`, net-flow sign, first-day HWM, settlement-vs-execution date, and deposit/withdrawal classification.
+
+9. **Market-calendar design still hardcodes a market-close workflow.**  
+   The PRD says schedules derive from Schwab market hours, not hardcoded 9:30-16:00 assumptions: [prd.md:87](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-prd.md:87). `Snapshots::DailyJob` is fixed at 16:20: [phase-1-plan.md:68](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:68). Make it relative to `market_days.closes_at` plus a final sync sweep.
+
+10. **The MCP registry needs permission metadata now.**  
+   Phase 1 tools are all read-only, so the plan works today: [phase-1-plan.md:78](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:78). But PRD §5.5a requires one internal tool surface with scheduled runs read-only forever: [prd.md:159](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-prd.md:159). Add tool metadata like `read_only`, `interactive_allowed`, `scheduled_allowed` now so Phase 2 write tools cannot accidentally enter unattended runs.
+
+**Scope / PRD Conflicts**
+
+- `evaluate_hypothetical_order` omission is correct for Phase 1 because guardrails are Phase 2, but the plan contradicts itself: resolved in decision 0.5, then “pending decision 0.5”: [phase-1-plan.md:15](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:15), [phase-1-plan.md:90](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:90). Clean that up.
+- The UI doc says one user: [ui-flows.md:7](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-ui-flows.md:7). The plan seeds two users: [phase-1-plan.md:13](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:13). If Whitney is real scope, add authorization policy and audit identity; otherwise remove her.
+- MCP bearer token in Rails credentials conflicts with the PRD’s “Dokku config, rotatable” runtime token: [prd.md:159](/Users/jathayde/Development/Personal/desk.athayde/docs/artifacts/investment-copilot-prd.md:159), [phase-1-plan.md:11](/Users/jathayde/Development/Personal/desk.athayde/docs/phase-1-plan.md:11). Keep operational bearer tokens in env.
+
+**Schwab Assumptions To Mark Unverified**
+
+- `/accounts/{hash}?fields=positions` includes balances.
+- Orders can be fetched with only `fromEnteredTime`.
+- Transactions endpoint shape, date window requirements, ID uniqueness, CUSIP presence, and order linkage.
+- Market-hours endpoint supports “today and next 7 days” in the assumed shape.
+- Corporate actions/dividends arrive with enough CUSIP and event data to adjust trades automatically.
+
+**Bottom Line**
+
+The plan is a strong scaffold, but not ready to build from. Fix stop/open-risk semantics, split trade lifecycle from journal completeness, add explicit transaction-order linkage, gate scheduled runs, and harden snapshot/account modeling before migrations are written.
+hook: Stop
+hook: Stop Completed
+tokens used
+61,621
