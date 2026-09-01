@@ -34,12 +34,13 @@ SET default_table_access_method = heap;
 CREATE TABLE public.accounts (
     id bigint NOT NULL,
     schwab_hash character varying NOT NULL,
-    account_type character varying NOT NULL,
+    account_type character varying,
     trading_enabled boolean DEFAULT false NOT NULL,
     nickname character varying,
-    last_synced_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    last_synced_at timestamp(6) with time zone,
+    raw jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -63,6 +64,54 @@ ALTER SEQUENCE public.accounts_id_seq OWNED BY public.accounts.id;
 
 
 --
+-- Name: activities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.activities (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    instrument_id bigint,
+    order_id bigint,
+    broker_order_id character varying,
+    broker_activity_id character varying NOT NULL,
+    kind character varying NOT NULL,
+    sub_type character varying,
+    side character varying,
+    quantity numeric(18,6),
+    price numeric(18,4),
+    commission numeric(18,4) DEFAULT 0.0 NOT NULL,
+    fees numeric(18,4) DEFAULT 0.0 NOT NULL,
+    net_amount numeric(18,4),
+    trade_date date,
+    settlement_date date,
+    executed_at timestamp(6) with time zone NOT NULL,
+    raw jsonb DEFAULT '{}'::jsonb NOT NULL,
+    journaled_at timestamp(6) with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: activities_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.activities_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: activities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.activities_id_seq OWNED BY public.activities.id;
+
+
+--
 -- Name: agent_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -71,17 +120,17 @@ CREATE TABLE public.agent_runs (
     kind character varying NOT NULL,
     status character varying NOT NULL,
     degraded boolean DEFAULT false NOT NULL,
-    started_at timestamp(6) without time zone,
-    finished_at timestamp(6) without time zone,
+    started_at timestamp(6) with time zone,
+    finished_at timestamp(6) with time zone,
     tool_turns integer DEFAULT 0 NOT NULL,
     input_tokens integer,
     output_tokens integer,
-    estimated_cost numeric(10,4),
+    estimated_cost numeric(18,4),
     output_markdown text,
     error text,
     model character varying,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -111,8 +160,8 @@ ALTER SEQUENCE public.agent_runs_id_seq OWNED BY public.agent_runs.id;
 CREATE TABLE public.ar_internal_metadata (
     key character varying NOT NULL,
     value character varying,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -129,7 +178,7 @@ CREATE TABLE public.audit_events (
     subject_id bigint,
     data jsonb DEFAULT '{}'::jsonb NOT NULL,
     reason text,
-    created_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -159,15 +208,15 @@ ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
 CREATE TABLE public.balances (
     id bigint NOT NULL,
     account_id bigint NOT NULL,
-    as_of timestamp(6) without time zone NOT NULL,
+    as_of timestamp(6) with time zone NOT NULL,
     equity numeric(18,4),
     cash_available_for_trading numeric(18,4),
     unsettled_cash numeric(18,4),
     settled_cash numeric(18,4),
     buying_power numeric(18,4),
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -204,8 +253,8 @@ CREATE TABLE public.instruments (
     leveraged boolean DEFAULT false NOT NULL,
     description character varying,
     predecessor_instrument_id bigint,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -235,16 +284,16 @@ ALTER SEQUENCE public.instruments_id_seq OWNED BY public.instruments.id;
 CREATE TABLE public.market_days (
     id bigint NOT NULL,
     date date NOT NULL,
-    open boolean NOT NULL,
-    session_opens_at timestamp(6) without time zone,
-    regular_opens_at timestamp(6) without time zone,
-    regular_closes_at timestamp(6) without time zone,
-    session_closes_at timestamp(6) without time zone,
+    trading boolean NOT NULL,
+    session_opens_at timestamp(6) with time zone,
+    regular_opens_at timestamp(6) with time zone,
+    regular_closes_at timestamp(6) with time zone,
+    session_closes_at timestamp(6) with time zone,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
-    fetched_at timestamp(6) without time zone NOT NULL,
+    fetched_at timestamp(6) with time zone NOT NULL,
     source character varying DEFAULT 'schwab'::character varying NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -285,18 +334,22 @@ CREATE TABLE public.order_proposals (
     order_type character varying,
     limit_price numeric(18,4),
     stop_price numeric(18,4),
+    planned_stop numeric(18,4),
     target_price numeric(18,4),
+    duration character varying,
+    session character varying,
+    tax_lot_method character varying,
     thesis text,
     setup_id bigint,
     guardrail_results jsonb DEFAULT '{}'::jsonb NOT NULL,
-    risk_rule_version integer,
     acknowledged_warnings jsonb DEFAULT '[]'::jsonb NOT NULL,
     override_reason text,
     reject_reason text,
-    approved_at timestamp(6) without time zone,
-    submitted_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    approved_at timestamp(6) with time zone,
+    submitted_at timestamp(6) with time zone,
+    expires_at timestamp(6) with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -342,11 +395,11 @@ CREATE TABLE public.orders (
     parent_order_id bigint,
     replaces_order_id bigint,
     order_proposal_id bigint,
-    entered_at timestamp(6) without time zone,
-    closed_at timestamp(6) without time zone,
+    entered_at timestamp(6) with time zone,
+    closed_at timestamp(6) with time zone,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -383,10 +436,10 @@ CREATE TABLE public.positions (
     market_value numeric(18,4),
     last_price numeric(18,4),
     working_stop_order_id bigint,
-    synced_at timestamp(6) without time zone NOT NULL,
+    synced_at timestamp(6) with time zone NOT NULL,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -421,8 +474,8 @@ CREATE TABLE public.risk_rules (
     version integer DEFAULT 1 NOT NULL,
     setup_id bigint,
     superseded_by_id bigint,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -460,16 +513,16 @@ CREATE TABLE public.schema_migrations (
 
 CREATE TABLE public.schwab_tokens (
     id bigint NOT NULL,
-    access_token text,
-    refresh_token text,
-    access_expires_at timestamp(6) without time zone,
-    refresh_expires_at timestamp(6) without time zone,
-    issued_at timestamp(6) without time zone,
-    last_refreshed_at timestamp(6) without time zone,
+    access_token text NOT NULL,
+    refresh_token text NOT NULL,
+    access_expires_at timestamp(6) with time zone NOT NULL,
+    refresh_expires_at timestamp(6) with time zone NOT NULL,
+    issued_at timestamp(6) with time zone NOT NULL,
+    last_refreshed_at timestamp(6) with time zone,
     last_refresh_error text,
     scope character varying,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -501,8 +554,8 @@ CREATE TABLE public.sessions (
     user_id bigint NOT NULL,
     ip_address character varying,
     user_agent character varying,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -538,9 +591,9 @@ CREATE TABLE public.setups (
     avg_r numeric(10,4),
     expectancy numeric(10,4),
     sample_size integer DEFAULT 0 NOT NULL,
-    stats_computed_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    stats_computed_at timestamp(6) with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -574,14 +627,14 @@ CREATE TABLE public.snapshots (
     equity numeric(18,4) NOT NULL,
     net_flows numeric(18,4) DEFAULT 0.0 NOT NULL,
     daily_return numeric(12,8),
-    index_value numeric(18,10) NOT NULL,
-    high_water_index numeric(18,10) NOT NULL,
-    drawdown_pct numeric(10,6) DEFAULT 0.0 NOT NULL,
+    index_value numeric(18,10) DEFAULT 1.0 NOT NULL,
+    high_water_index numeric(18,10) DEFAULT 1.0 NOT NULL,
+    drawdown numeric(10,6) DEFAULT 0.0 NOT NULL,
     open_risk_amount numeric(18,4),
-    open_risk_pct numeric(10,6),
+    open_risk_ratio numeric(10,6),
     unprotected_count integer DEFAULT 0 NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -611,13 +664,13 @@ ALTER SEQUENCE public.snapshots_id_seq OWNED BY public.snapshots.id;
 CREATE TABLE public.submission_attempts (
     id bigint NOT NULL,
     order_proposal_id bigint NOT NULL,
-    attempted_at timestamp(6) without time zone NOT NULL,
+    attempted_at timestamp(6) with time zone NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     response jsonb DEFAULT '{}'::jsonb NOT NULL,
     outcome character varying NOT NULL,
     reconciled_order_id bigint,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -648,14 +701,15 @@ CREATE TABLE public.sync_runs (
     id bigint NOT NULL,
     feed character varying NOT NULL,
     status character varying NOT NULL,
-    started_at timestamp(6) without time zone NOT NULL,
-    finished_at timestamp(6) without time zone,
+    started_at timestamp(6) with time zone NOT NULL,
+    finished_at timestamp(6) with time zone,
     error text,
     records_touched integer,
-    window_from timestamp(6) without time zone,
-    window_to timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    unmapped_values jsonb DEFAULT '{}'::jsonb NOT NULL,
+    window_from timestamp(6) with time zone,
+    window_to timestamp(6) with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -687,10 +741,11 @@ CREATE TABLE public.system_settings (
     shadow_mode boolean DEFAULT true NOT NULL,
     manual_halt boolean DEFAULT false NOT NULL,
     manual_halt_reason text,
-    manual_halt_at timestamp(6) without time zone,
+    manual_halt_at timestamp(6) with time zone,
     sync_paused_reason character varying,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT system_settings_singleton CHECK ((id = 1))
 );
 
 
@@ -725,8 +780,8 @@ CREATE TABLE public.tool_calls (
     arguments jsonb DEFAULT '{}'::jsonb NOT NULL,
     duration_ms integer,
     error text,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -756,16 +811,16 @@ ALTER SEQUENCE public.tool_calls_id_seq OWNED BY public.tool_calls.id;
 CREATE TABLE public.trade_legs (
     id bigint NOT NULL,
     trade_id bigint NOT NULL,
-    transaction_id bigint,
+    activity_id bigint,
     kind character varying NOT NULL,
     quantity numeric(18,6),
     price numeric(18,4),
     ratio numeric(12,6),
     cash_amount numeric(18,4),
-    executed_at timestamp(6) without time zone NOT NULL,
+    executed_at timestamp(6) with time zone,
     note character varying,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -801,8 +856,8 @@ CREATE TABLE public.trades (
     status character varying DEFAULT 'open'::character varying NOT NULL,
     needs_review boolean DEFAULT false NOT NULL,
     bootstrapped boolean DEFAULT false NOT NULL,
-    opened_at timestamp(6) without time zone,
-    closed_at timestamp(6) without time zone,
+    opened_at timestamp(6) with time zone,
+    closed_at timestamp(6) with time zone,
     avg_entry numeric(18,4),
     avg_exit numeric(18,4),
     peak_quantity numeric(18,6),
@@ -814,9 +869,9 @@ CREATE TABLE public.trades (
     thesis text,
     post_mortem text,
     followed_setup boolean,
-    journal_completed_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    journal_completed_at timestamp(6) with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -840,54 +895,6 @@ ALTER SEQUENCE public.trades_id_seq OWNED BY public.trades.id;
 
 
 --
--- Name: transactions; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.transactions (
-    id bigint NOT NULL,
-    account_id bigint NOT NULL,
-    instrument_id bigint,
-    order_id bigint,
-    broker_order_id character varying,
-    broker_transaction_id character varying NOT NULL,
-    kind character varying NOT NULL,
-    sub_type character varying,
-    side character varying,
-    quantity numeric(18,6),
-    price numeric(18,4),
-    commission numeric(18,4) DEFAULT 0.0 NOT NULL,
-    fees numeric(18,4) DEFAULT 0.0 NOT NULL,
-    net_amount numeric(18,4),
-    trade_date date,
-    settlement_date date,
-    executed_at timestamp(6) without time zone NOT NULL,
-    raw jsonb DEFAULT '{}'::jsonb NOT NULL,
-    journaled_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
-);
-
-
---
--- Name: transactions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.transactions_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: transactions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.transactions_id_seq OWNED BY public.transactions.id;
-
-
---
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -896,9 +903,9 @@ CREATE TABLE public.users (
     email_address character varying NOT NULL,
     name character varying NOT NULL,
     magic_link_nonce character varying,
-    last_login_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    last_login_at timestamp(6) with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -926,6 +933,13 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 --
 
 ALTER TABLE ONLY public.accounts ALTER COLUMN id SET DEFAULT nextval('public.accounts_id_seq'::regclass);
+
+
+--
+-- Name: activities id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities ALTER COLUMN id SET DEFAULT nextval('public.activities_id_seq'::regclass);
 
 
 --
@@ -1062,13 +1076,6 @@ ALTER TABLE ONLY public.trades ALTER COLUMN id SET DEFAULT nextval('public.trade
 
 
 --
--- Name: transactions id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.transactions ALTER COLUMN id SET DEFAULT nextval('public.transactions_id_seq'::regclass);
-
-
---
 -- Name: users id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1081,6 +1088,14 @@ ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: activities activities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT activities_pkey PRIMARY KEY (id);
 
 
 --
@@ -1252,14 +1267,6 @@ ALTER TABLE ONLY public.trades
 
 
 --
--- Name: transactions transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.transactions
-    ADD CONSTRAINT transactions_pkey PRIMARY KEY (id);
-
-
---
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1268,10 +1275,59 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: idx_on_account_id_instrument_id_executed_at_dd9c0c3d68; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_account_id_instrument_id_executed_at_dd9c0c3d68 ON public.activities USING btree (account_id, instrument_id, executed_at);
+
+
+--
 -- Name: index_accounts_on_schwab_hash; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX index_accounts_on_schwab_hash ON public.accounts USING btree (schwab_hash);
+
+
+--
+-- Name: index_activities_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_activities_on_account_id ON public.activities USING btree (account_id);
+
+
+--
+-- Name: index_activities_on_account_id_and_broker_activity_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_activities_on_account_id_and_broker_activity_id ON public.activities USING btree (account_id, broker_activity_id);
+
+
+--
+-- Name: index_activities_on_instrument_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_activities_on_instrument_id ON public.activities USING btree (instrument_id);
+
+
+--
+-- Name: index_activities_on_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_activities_on_kind ON public.activities USING btree (kind);
+
+
+--
+-- Name: index_activities_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_activities_on_order_id ON public.activities USING btree (order_id);
+
+
+--
+-- Name: index_activities_unjournaled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_activities_unjournaled ON public.activities USING btree (id) WHERE (journaled_at IS NULL);
 
 
 --
@@ -1415,17 +1471,17 @@ CREATE UNIQUE INDEX index_orders_on_account_id_and_broker_order_id ON public.ord
 
 
 --
+-- Name: index_orders_on_account_id_and_instrument_id_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_account_id_and_instrument_id_and_status ON public.orders USING btree (account_id, instrument_id, status);
+
+
+--
 -- Name: index_orders_on_instrument_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_orders_on_instrument_id ON public.orders USING btree (instrument_id);
-
-
---
--- Name: index_orders_on_instrument_id_and_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_orders_on_instrument_id_and_status ON public.orders USING btree (instrument_id, status);
 
 
 --
@@ -1478,13 +1534,6 @@ CREATE INDEX index_positions_on_working_stop_order_id ON public.positions USING 
 
 
 --
--- Name: index_risk_rules_on_rule_type_and_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_risk_rules_on_rule_type_and_active ON public.risk_rules USING btree (rule_type, active);
-
-
---
 -- Name: index_risk_rules_on_setup_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1496,6 +1545,13 @@ CREATE INDEX index_risk_rules_on_setup_id ON public.risk_rules USING btree (setu
 --
 
 CREATE INDEX index_risk_rules_on_superseded_by_id ON public.risk_rules USING btree (superseded_by_id);
+
+
+--
+-- Name: index_risk_rules_one_active_per_type_and_setup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_risk_rules_one_active_per_type_and_setup ON public.risk_rules USING btree (rule_type, setup_id) WHERE active;
 
 
 --
@@ -1562,6 +1618,13 @@ CREATE INDEX index_tool_calls_on_tool_name_and_created_at ON public.tool_calls U
 
 
 --
+-- Name: index_trade_legs_on_activity_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_trade_legs_on_activity_id ON public.trade_legs USING btree (activity_id) WHERE (activity_id IS NOT NULL);
+
+
+--
 -- Name: index_trade_legs_on_trade_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1569,10 +1632,10 @@ CREATE INDEX index_trade_legs_on_trade_id ON public.trade_legs USING btree (trad
 
 
 --
--- Name: index_trade_legs_on_transaction_id; Type: INDEX; Schema: public; Owner: -
+-- Name: index_trades_needing_review; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_trade_legs_on_transaction_id ON public.trade_legs USING btree (transaction_id) WHERE (transaction_id IS NOT NULL);
+CREATE INDEX index_trades_needing_review ON public.trades USING btree (id) WHERE needs_review;
 
 
 --
@@ -1597,17 +1660,10 @@ CREATE INDEX index_trades_on_instrument_id ON public.trades USING btree (instrum
 
 
 --
--- Name: index_trades_on_needs_review; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_trades_on_needs_review ON public.trades USING btree (needs_review);
-
-
---
 -- Name: index_trades_on_order_proposal_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX index_trades_on_order_proposal_id ON public.trades USING btree (order_proposal_id);
+CREATE UNIQUE INDEX index_trades_on_order_proposal_id ON public.trades USING btree (order_proposal_id);
 
 
 --
@@ -1618,45 +1674,10 @@ CREATE INDEX index_trades_on_setup_id ON public.trades USING btree (setup_id);
 
 
 --
--- Name: index_transactions_on_account_id; Type: INDEX; Schema: public; Owner: -
+-- Name: index_trades_one_open_per_instrument; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX index_transactions_on_account_id ON public.transactions USING btree (account_id);
-
-
---
--- Name: index_transactions_on_account_id_and_broker_transaction_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_transactions_on_account_id_and_broker_transaction_id ON public.transactions USING btree (account_id, broker_transaction_id);
-
-
---
--- Name: index_transactions_on_account_id_and_executed_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_transactions_on_account_id_and_executed_at ON public.transactions USING btree (account_id, executed_at);
-
-
---
--- Name: index_transactions_on_instrument_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_transactions_on_instrument_id ON public.transactions USING btree (instrument_id);
-
-
---
--- Name: index_transactions_on_kind; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_transactions_on_kind ON public.transactions USING btree (kind);
-
-
---
--- Name: index_transactions_on_order_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_transactions_on_order_id ON public.transactions USING btree (order_id);
+CREATE UNIQUE INDEX index_trades_one_open_per_instrument ON public.trades USING btree (account_id, instrument_id) WHERE ((status)::text = 'open'::text);
 
 
 --
@@ -1674,11 +1695,10 @@ CREATE TRIGGER audit_events_append_only BEFORE DELETE OR UPDATE ON public.audit_
 
 
 --
--- Name: transactions fk_rails_01f020e267; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: audit_events audit_events_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.transactions
-    ADD CONSTRAINT fk_rails_01f020e267 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events FOR EACH STATEMENT EXECUTE FUNCTION public.audit_events_append_only();
 
 
 --
@@ -1746,19 +1766,11 @@ ALTER TABLE ONLY public.submission_attempts
 
 
 --
--- Name: transactions fk_rails_59d791a33f; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: activities fk_rails_6886e9a52a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.transactions
-    ADD CONSTRAINT fk_rails_59d791a33f FOREIGN KEY (order_id) REFERENCES public.orders(id);
-
-
---
--- Name: transactions fk_rails_67f90f79f5; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.transactions
-    ADD CONSTRAINT fk_rails_67f90f79f5 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT fk_rails_6886e9a52a FOREIGN KEY (order_id) REFERENCES public.orders(id);
 
 
 --
@@ -1810,6 +1822,14 @@ ALTER TABLE ONLY public.balances
 
 
 --
+-- Name: activities fk_rails_a922258fa9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT fk_rails_a922258fa9 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+
+
+--
 -- Name: trades fk_rails_abc1443ac4; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1834,19 +1854,19 @@ ALTER TABLE ONLY public.risk_rules
 
 
 --
+-- Name: trade_legs fk_rails_b361f1f1f1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trade_legs
+    ADD CONSTRAINT fk_rails_b361f1f1f1 FOREIGN KEY (activity_id) REFERENCES public.activities(id);
+
+
+--
 -- Name: risk_rules fk_rails_b90282de46; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.risk_rules
     ADD CONSTRAINT fk_rails_b90282de46 FOREIGN KEY (setup_id) REFERENCES public.setups(id);
-
-
---
--- Name: trade_legs fk_rails_bd6d26f3cc; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.trade_legs
-    ADD CONSTRAINT fk_rails_bd6d26f3cc FOREIGN KEY (transaction_id) REFERENCES public.transactions(id);
 
 
 --
@@ -1887,6 +1907,14 @@ ALTER TABLE ONLY public.audit_events
 
 ALTER TABLE ONLY public.submission_attempts
     ADD CONSTRAINT fk_rails_d2c6c378ee FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+
+
+--
+-- Name: activities fk_rails_e53101708c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activities
+    ADD CONSTRAINT fk_rails_e53101708c FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --

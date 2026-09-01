@@ -27,27 +27,27 @@ All money columns `decimal(18,4)`, quantities `decimal(18,6)` (fractional shares
 |---|---|---|---|
 | 1 | `users`, `sessions` | Rails 8 auth generator, password column removed; `email_address` unique. Magic-link tokens via `generates_token_for`, no table. | yes (two seeded users) |
 | 2 | `schwab_tokens` | `access_token` (encrypted), `refresh_token` (encrypted), `access_expires_at`, `refresh_expires_at` (= `issued_at` + 7 days, never moved by access refreshes), `issued_at`, `last_refreshed_at`, `last_refresh_error`, `scope` | yes |
-| 3 | `accounts` | `schwab_hash` (Schwab's opaque hashValue, unique), `account_type` enum (taxable/ira), `trading_enabled` bool, `nickname`, `last_synced_at`. A plaintext account number is never a column. | yes |
-| 4 | `instruments` | `cusip` (nullable, unique where present), `schwab_instrument_id` (nullable, unique where present), `symbol`, `symbol_history` jsonb `[{symbol, seen_at}]`, `asset_type`, `leveraged` bool default false, `description`, `predecessor_instrument_id` (self FK, set on CUSIP succession: reverse split, merger, spin-off). Identity resolution order: CUSIP, then Schwab instrument id, then symbol+asset_type as last resort with a `needs_review` audit. | yes |
+| 3 | `accounts` | `schwab_hash` (Schwab's opaque hashValue, unique), `account_type` enum (taxable/ira, nullable: set by the operator since Schwab only reports CASH or MARGIN), `trading_enabled` bool, `nickname`, `last_synced_at`, `raw` jsonb. A plaintext account number is never a column. | yes |
+| 4 | `instruments` | `cusip` (nullable, unique where present), `schwab_instrument_id` (nullable, unique where present), `symbol`, `symbol_history` jsonb `[{symbol, until}]` (UTC), `asset_type`, `leveraged` bool default false, `description`, `predecessor_instrument_id` (self FK, set on CUSIP succession: reverse split, merger, spin-off). Identity resolution order: CUSIP, then Schwab instrument id, then symbol+asset_type as last resort with a `needs_review` audit. | yes |
 | 5 | `positions` | `account_id`, `instrument_id`, `quantity`, `average_price`, `cost_basis`, `market_value`, `last_price`, `working_stop_order_id` (FK orders, nullable), `synced_at`, `raw` jsonb. Unique on (account, instrument). Rows absent from the broker response are deleted on sync. | yes |
 | 6 | `balances` | Time series: `account_id`, `as_of`, `equity`, `cash_available_for_trading`, `unsettled_cash`, `settled_cash` (derived; mapping unverified), `buying_power`, `raw` jsonb. Current balance = latest row per account. | yes |
 | 7 | `orders` | `account_id`, `instrument_id`, `broker_order_id` (unique per account), `status` enum incl. Phase 2 states, `side`, `quantity`, `filled_quantity`, `order_type`, `limit_price`, `stop_price`, `duration`, `session`, `tax_lot_method`, `placed_via` enum (schwab_direct/app), `parent_order_id` (self FK, bracket child), `replaces_order_id` (self FK, cancel/replace chain), `order_proposal_id` (nullable), `entered_at`, `closed_at`, `raw` jsonb | yes (sync only) |
-| 8 | `order_proposals` | `account_id`, `instrument_id`, `kind` enum (entry, exit, stop_adjustment), `target_order_id` (nullable, for stop adjustments), `origin` enum (agent/human), `user_id` (nullable), `status` enum (proposed, validated, rejected, approved, submitted, submission_unknown, filled, cancelled), `side`, `quantity`, `order_type`, `limit_price`, `stop_price`, `target_price`, `thesis`, `setup_id`, `guardrail_results` jsonb, `risk_rule_version`, `acknowledged_warnings` jsonb, `override_reason`, `reject_reason`, `approved_at`, `submitted_at` | no |
+| 8 | `order_proposals` | `account_id`, `instrument_id`, `kind` enum (entry, exit, stop_adjustment), `target_order_id` (nullable, for stop adjustments), `origin` enum (agent/human), `user_id` (nullable), `status` enum (proposed, validated, rejected, approved, submitted, submission_unknown, filled, cancelled), `side`, `quantity`, `order_type`, `limit_price`, `stop_price` (the order's own trigger), `planned_stop` (the protective stop that becomes the bracket child), `target_price`, `duration`, `session`, `tax_lot_method`, `thesis`, `setup_id`, `guardrail_results` jsonb (records `{rule_id, version}` pairs), `acknowledged_warnings` jsonb, `expires_at`, `override_reason`, `reject_reason`, `approved_at`, `submitted_at` | no |
 | 9 | `submission_attempts` | `order_proposal_id`, `attempted_at`, `payload` jsonb, `response` jsonb, `outcome` enum (submitted, unknown, failed, reconciled), `reconciled_order_id` (nullable) | no |
-| 10 | `transactions` | One row per Schwab activity. `account_id`, `instrument_id` (nullable for cash-only), `order_id` (FK, nullable), `broker_order_id` (nullable), `broker_transaction_id` (unique), `kind` enum (fill, dividend, interest, fee, deposit, withdrawal, corporate_action, other), `sub_type` string (raw Schwab type), `side`, `quantity`, `price`, `commission`, `fees` (summed from the activity's fee transfer items), `net_amount`, `trade_date`, `settlement_date`, `executed_at`, `raw` jsonb, `journaled_at` | yes |
+| 10 | `activities` (the PRD's `transactions`; renamed because `transaction` is reserved by Active Record) | One row per Schwab activity. `account_id`, `instrument_id` (nullable for cash-only), `order_id` (FK, nullable), `broker_order_id` (nullable), `broker_activity_id` (unique per account), `kind` enum (fill, dividend, interest, fee, deposit, withdrawal, corporate_action, other), `sub_type` string (raw Schwab type), `side`, `quantity`, `price`, `commission`, `fees` (summed from the activity's fee transfer items), `net_amount`, `trade_date`, `settlement_date`, `executed_at`, `raw` jsonb, `journaled_at` | yes |
 | 11 | `setups` | `name` (unique), `definition`, `active` bool, `win_rate`, `avg_r`, `expectancy`, `sample_size`, `stats_computed_at`. Stats are stored here and recomputed by `Journal::RecomputeSetupStatsJob` whenever a trade closes; `get_setup_stats` reads them. | table yes, rows via seed |
-| 12 | `trades` | `account_id`, `instrument_id`, `setup_id` (nullable), `order_proposal_id` (nullable), `status` enum (open, closed) only, `needs_review` bool (orphan or bootstrapped, missing setup/stop), `bootstrapped` bool (created from an existing position, entry history unavailable), `opened_at` (nullable when bootstrapped), `closed_at`, `avg_entry`, `avg_exit`, `peak_quantity`, `planned_stop`, `planned_target`, `initial_risk`, `realized_pnl`, `realized_r`, `thesis`, `post_mortem`, `followed_setup` (nullable bool), `journal_completed_at` | yes |
-| 13 | `trade_legs` | `trade_id`, `transaction_id` (unique, nullable for synthetic bootstrap legs), `kind` enum (entry, exit, adjustment, income), `quantity`, `price`, `ratio` (splits), `cash_amount`, `executed_at`, `note` | yes |
+| 12 | `trades` | `account_id`, `instrument_id`, `setup_id` (nullable), `order_proposal_id` (nullable), `status` enum (open, closed) only, with a partial unique index allowing one open trade per account and instrument, `needs_review` bool (orphan or bootstrapped, missing setup/stop), `bootstrapped` bool (created from an existing position, entry history unavailable), `opened_at` (nullable when bootstrapped), `closed_at`, `avg_entry`, `avg_exit`, `peak_quantity`, `planned_stop`, `planned_target`, `initial_risk`, `realized_pnl`, `realized_r`, `thesis`, `post_mortem`, `followed_setup` (nullable bool), `journal_completed_at` | yes |
+| 13 | `trade_legs` | `trade_id`, `activity_id` (unique where present, nil on synthetic bootstrap legs), `kind` enum (entry, exit, adjustment, income), `quantity`, `price`, `ratio` (splits), `cash_amount`, `executed_at`, `note` | yes |
 | 14 | `risk_rules` | `rule_type`, `params` jsonb, `active`, `version`, `setup_id` (nullable), `superseded_by_id` | no |
-| 15 | `snapshots` | `account_id`, `as_of` date (unique per account), `equity`, `net_flows` (day), `daily_return` (net of flows), `index_value` (chain-linked, starts at 1.0), `high_water_index`, `drawdown_pct`, `open_risk_amount`, `open_risk_pct`, `unprotected_count`. Fully rebuildable from `balances` + `transactions`. | yes |
-| 16 | `audit_events` | `kind` string, `actor` enum (human/system/agent), `user_id` (nullable), `subject` polymorphic (nullable), `data` jsonb, `reason`, `created_at` only. Postgres trigger rejects UPDATE/DELETE. Reserved for the PRD's "logged" list; not telemetry. | yes |
-| 17 | `market_days` | `date` (unique), `open` bool, `session_opens_at` (pre-market), `regular_opens_at`, `regular_closes_at`, `session_closes_at` (post-market), `raw` jsonb, `fetched_at`, `source` enum (schwab, fallback) | yes |
-| 18 | `sync_runs` | `feed` enum (accounts, positions, balances, orders, transactions, market_hours, memory_repo, snapshots), `status` (running, succeeded, failed, skipped_token), `started_at`, `finished_at`, `error`, `records_touched`, `window_from`, `window_to` | yes |
+| 15 | `snapshots` | `account_id`, `as_of` date (unique per account), `equity`, `net_flows` (day), `daily_return` (net of flows), `index_value` (chain-linked, starts at 1.0), `high_water_index`, `drawdown` (fraction), `open_risk_amount`, `open_risk_ratio` (fraction of equity), `unprotected_count`. Fully rebuildable from `balances` + `transactions`. | yes |
+| 16 | `audit_events` | `kind` string, `actor` enum (human/system/agent), `user_id` (nullable), `subject` polymorphic (nullable), `data` jsonb, `reason`, `created_at` only. Postgres triggers reject UPDATE, DELETE, and TRUNCATE; `kind` is validated against `AuditEvent::KINDS`. Reserved for the PRD's "logged" list; not telemetry. | yes |
+| 17 | `market_days` | `date` (unique), `trading` bool, `session_opens_at` (pre-market), `regular_opens_at`, `regular_closes_at`, `session_closes_at` (post-market), `raw` jsonb, `fetched_at`, `source` enum (schwab, fallback) | yes |
+| 18 | `sync_runs` | `feed` enum (accounts, positions, balances, orders, transactions, market_hours, memory_repo, snapshots), `status` (running, succeeded, partial, failed, skipped_token), `started_at`, `finished_at`, `error`, `records_touched`, `unmapped_values` jsonb, `window_from`, `window_to` | yes |
 | 19 | `agent_runs` | `kind` enum (morning_brief, eod, sunday_review), `status`, `degraded` bool (ran with expired token / stale data), `started_at`, `finished_at`, `tool_turns`, `input_tokens`, `output_tokens`, `estimated_cost`, `output_markdown`, `error`, `model` | yes |
 | 20 | `tool_calls` | `agent_run_id` (nullable), `transport` enum (mcp, scheduled), `tool_name`, `arguments` jsonb, `duration_ms`, `error`, `created_at`. This is where MCP and runtime tool telemetry goes, not `audit_events`. | yes |
-| 21 | `system_settings` | Singleton row: `shadow_mode` bool default true, `manual_halt` bool default false, `manual_halt_reason`, `manual_halt_at`, `sync_paused_reason` (set while token expired) | yes |
+| 21 | `system_settings` | Singleton row (check constraint `id = 1`): `shadow_mode` bool default true, `manual_halt` bool default false, `manual_halt_reason`, `manual_halt_at`, `sync_paused_reason` (set while token expired) | yes |
 
-Solid Queue / Cache / Cable schemas already generated. Active Record Encryption keys go in the production credentials file (`bin/rails db:encryption:init`); dev/test use fixed keys in their own credentials files.
+Solid Queue / Cache / Cable schemas already generated. Every datetime column is `timestamptz` (adapter default set in an initializer). Schema format is `structure.sql` for the audit triggers; the dump pins Postgres 17 settings, so dokku runs the postgres:17 image. Active Record Encryption: production keys live in `config/credentials/production.yml.enc`; development and test share `config/credentials.yml.enc` (dev keys) with fixed test keys in `config/environments/test.rb`.
 
 Phase 2 columns present now so `orders`/`order_proposals` never need a shape change: `parent_order_id`, `replaces_order_id`, `order_proposal_id`, `submission_unknown` state, `submission_attempts`, `guardrail_results`, `risk_rule_version`, `acknowledged_warnings`, `kind`/`target_order_id` for stop adjustments.
 
@@ -64,11 +64,11 @@ Phase 2 columns present now so `orders`/`order_proposals` never need a shape cha
 | `Sync::TickJob` | every 5 min | Sole scheduled sync entry point. Refreshes `market_days` if today or the next 7 days are missing (one call per date). Due checks compare against last *started* time with 1-minute slack. Enqueues: positions+balances (15 min inside the full session window pre-market through post-market, 60 min otherwise); orders+transactions (5 min inside the session, 60 min otherwise); `Snapshots::DailyJob` once per market day after `regular_closes_at` + 20 min and after a successful positions sync since close. |
 | `Sync::AccountsJob` | daily 06:05, after every re-auth | `/accounts/accountNumbers` then `/accounts`; upsert by `schwab_hash` |
 | `Sync::PositionsJob` | via tick | `/accounts/{hash}?fields=positions`; resolve instruments, upsert positions, delete positions absent from the response, append a `balances` row; then `Journal::BootstrapJob` for trading-enabled accounts |
-| `Sync::OrdersJob` | via tick | Window: `fromEnteredTime` = max(last success − 1 day, now − 60 days); plus a daily pull with `status=WORKING` so GTC orders older than the window stay tracked (both unverified). Upsert; walk `replaces_order_id` chains; set `placed_via: schwab_direct` when no proposal matches; update `positions.working_stop_order_id` (see §5) |
-| `Sync::TransactionsJob` | via tick | Overlapping cursor: from = last success − 3 days, capped at 60 days back. Upsert by `broker_transaction_id`, link `order_id` via the activity's orderId, classify `kind`; then `Journal::LinkFillsJob` |
+| `Sync::OrdersJob` | via tick | Window: `fromEnteredTime` = max(last success − 1 day, now − 60 days); plus a daily pull with `status=WORKING` so GTC orders older than the window stay tracked (both unverified). Upsert; flatten nested `childOrderStrategies` and `replacingOrderCollection` setting `parent_order_id`/`replaces_order_id`; re-fetch known working stops older than the window by id; set `placed_via: schwab_direct` when no proposal matches; update `positions.working_stop_order_id` (see §5) |
+| `Sync::ActivitiesJob` | via tick | Overlapping cursor: from = last success − 3 days, capped at 60 days back. Upsert by `broker_activity_id`, link `order_id` via the activity's orderId, classify `kind`; then `Journal::LinkFillsJob` |
 | `Sync::CatchUpJob` | after re-auth | Accounts, positions, orders, transactions with widened windows |
 | `Journal::BootstrapJob` | after positions sync | See §4 |
-| `Journal::LinkFillsJob` | after transactions sync | See §4 |
+| `Journal::LinkFillsJob` | after activities sync | See §4 |
 | `Journal::RecomputeSetupStatsJob` | after any trade closes | Rolling stats onto `setups` |
 | `Snapshots::DailyJob` | via tick | See §6 |
 | `Jobs::FailureDigestJob` | daily 17:00 | One email listing failed `sync_runs`, `agent_runs`, and Solid Queue failed executions since the last digest, grouped by kind |
@@ -77,7 +77,7 @@ Phase 2 columns present now so `orders`/`order_proposals` never need a shape cha
 | `Agent::EndOfDayJob` | 16:30 market days | See §3 |
 | `Agent::SundayReviewJob` | Sunday 18:00 | Phase 1 stub, no API call: re-auth link, token age, sync health, job failures, setup stats table |
 
-**Schwab client:** Net::HTTP, retries on 429 and 5xx with exponential backoff honoring `Retry-After`, max 3 attempts, a per-process token-bucket limiter at 120 requests/minute (limit unverified). Every request logs method, path, status, and duration, never bodies or headers.
+**Schwab client:** built to `docs/schwab-api-contract.md`. Net::HTTP; plaintext account numbers scrubbed inside the client before any body is returned; logs carry path templates (`/accounts/{hash}/orders`), never hashes, bodies, or headers; one time helper for the three input and three output formats; `BigDecimal` for every money and quantity value; a shared Solid Cache rate budget of 100 requests/minute across Puma and the worker; retries on 429, 5xx, and transport errors for GETs and the refresh grant only (1, 4, 16 s with jitter, `Retry-After` capped at 60 s), never on 4xx; one refresh-and-retry on a 401. Error classes: `AuthError`, `ReauthRequired`, `RateLimited`, `ServerError`, `RequestError`, `TransportError`, `UnknownOutcome` (non-idempotent calls only, chosen by HTTP method), `MappingError`. Interface adds `order(hash, order_id)` so working stops older than the lookback are re-fetched by id, and `instrument(symbol_or_cusip)` for identity fallback. Mappers return `Data` structs with a scrubbed `raw` member; jobs never see a Schwab field name. `Schwab::FakeClient` sits below the mappers and returns raw-shaped hashes with a scriptable per-call queue. Sync runs can finish `partial` with an `unmapped_values` count when individual records are quarantined.
 
 ---
 
@@ -120,7 +120,7 @@ IRA and other read-only accounts sync positions and transactions (for Phase 2 wa
 - Return of capital / basis change: `adjustment` leg with `cash_amount`, adjusts `avg_entry`.
 - CUSIP succession (merger, spin-off, reverse split issuing a new CUSIP): when an `out` on instrument A and an `in` on instrument B arrive as one corporate-action activity or within the same activity group, set `instruments.predecessor_instrument_id` on B and move the open trade to B with an `adjustment` leg. Unmatched halves fall back to normal exit/entry handling with `needs_review`.
 - Symbol change on a known CUSIP: update `instruments.symbol`, append `symbol_history`, trades untouched.
-- Idempotent via the unique index on `trade_legs.transaction_id`.
+- Idempotent via the unique index on `trade_legs.activity_id`, and one open trade per account and instrument via a partial unique index.
 
 **Review path** (Flow 4 plus the Monarch-style orphan review from the flows doc): trades with `needs_review` show a "N trades need review" banner on the dashboard. The review form takes setup, planned stop, and thesis; saving clears `needs_review`, computes `initial_risk`, and audits `trade_reviewed`. The post-mortem form (one line plus followed/improvised) is separate and available on any closed trade.
 
@@ -130,8 +130,8 @@ IRA and other read-only accounts sync positions and transactions (for Phase 2 wa
 
 No stop is not zero risk. `Sync::OrdersJob` identifies, per position, a working broker-side stop: a sell order on the same instrument with `order_type` STOP or STOP_LIMIT and status in the working set (WORKING, ACCEPTED, QUEUED, PENDING_ACTIVATION; enum unverified), following `replaces_order_id` chains. It sets `positions.working_stop_order_id` or clears it.
 
-- Protected position: distance to stop = (last − stop) / last; open risk = quantity × (last − stop).
-- Unprotected position: `unprotected` flag, distance and risk shown as unknown, never zero.
+- Protected position (a working stop order with a readable price): distance to stop = (last − stop) / last, signed; open risk = max(quantity × (last − stop), 0).
+- Unprotected position (no stop, a stop that is no longer working, or a trailing stop with no price): `unprotected` flag, distance and risk shown as unknown, never zero.
 - Portfolio open risk = sum over protected positions, and the dashboard and `get_account_health` state how many positions are excluded as unprotected.
 
 ---
@@ -144,7 +144,7 @@ For each trading-enabled account and market day after close:
 - `daily_return` = (equity − net_flows − prior equity) / prior equity. First snapshot has return 0 and index 1.0.
 - `index_value` = prior index × (1 + daily_return); `high_water_index` = max to date; `drawdown_pct` = 1 − index / high_water_index.
 - `open_risk_amount`, `open_risk_pct`, `unprotected_count` from §5 at snapshot time.
-- Rebuildable: `Snapshots::RebuildJob(account, from:)` recomputes forward from any date, and `Sync::TransactionsJob` enqueues a rebuild from the earliest newly seen deposit/withdrawal date, so a flow that lands a day late corrects the series.
+- Rebuildable: `Snapshots::RebuildJob(account, from:)` recomputes forward from any date, and `Sync::ActivitiesJob` enqueues a rebuild from the earliest newly seen deposit/withdrawal date, so a flow that lands a day late corrects the series.
 
 ---
 
@@ -177,7 +177,7 @@ Banner precedence: halted > expired > expiring > healthy. Halted in Phase 1 come
 
 ## 9. Deploy
 
-- `Procfile`: `web: bundle exec puma -C config/puma.rb`, `worker: bin/jobs`, `release: bin/rails db:prepare`.
+- `Procfile`: `web: bundle exec puma -C config/puma.rb`, `worker: bin/jobs`, `release: bin/rails db:prepare`. Postgres service on the `postgres:17` image (structure.sql uses PG17 settings).
 - `app.json` for the release phase.
 - `bin/dokku-setup`: documents postgres plugin, letsencrypt, config vars (`RAILS_MASTER_KEY`, `SCHWAB_CALLBACK_URL`, `MEMORY_REPO_PATH`), storage mount for the memory repo, `ps:scale worker=1`, and the daily offsite DB dump from PRD §5.9 (postgres plugin backup to object storage on a cron).
 - App time zone `Eastern Time (US & Canada)`; Solid Queue recurring schedules use the same.
@@ -205,7 +205,9 @@ Guardrail engine, order proposals (tables only), approval UI, submission, bracke
 
 ---
 
-## 12. Schwab assumptions to verify on approval (seed for `docs/verify-on-approval.md`)
+## 12. Schwab assumptions to verify on approval
+
+Maintained in `docs/verify-on-approval.md` (30 items as of the step 3 contract review). The original seed list:
 
 From PRD §9: exact `TaxLotMethod` enum values; order-endpoint rate limits. Added by this plan:
 - `/accounts/{hash}?fields=positions` returns balances in the same payload (`currentBalances`, `initialBalances`).
