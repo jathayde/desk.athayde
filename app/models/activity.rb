@@ -10,6 +10,15 @@ class Activity < ApplicationRecord
     withdrawal: "withdrawal", transfer: "transfer", corporate_action: "corporate_action", other: "other"
   }
 
+  # Every column the sync derives from one mapped activity, in one place, so the specs' helpers write rows
+  # exactly as the sync does.
+  def assign_from(mapped)
+    assign_attributes(broker_activity_id: mapped.activity_id, broker_order_id: mapped.order_id, kind: mapped.kind, status: mapped.status, sub_type: mapped.type,
+                      side: mapped.side, quantity: mapped.quantity, price: mapped.price, commission: mapped.commission, fees: mapped.fees, net_amount: mapped.net_amount,
+                      trade_date: mapped.trade_date, settlement_date: mapped.settlement_date, executed_at: mapped.executed_at, raw: mapped.raw)
+    self
+  end
+
   scope :unjournaled, -> { where(journaled_at: nil) }
   scope :valid_for_journal, -> { where(status: Schwab::Activity::VALID) }
   scope :chronological, -> { order(:executed_at, :id) }

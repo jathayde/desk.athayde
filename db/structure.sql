@@ -653,7 +653,6 @@ CREATE TABLE public.setups (
     active boolean DEFAULT true NOT NULL,
     win_rate numeric(6,4),
     avg_r numeric(10,4),
-    expectancy numeric(10,4),
     sample_size integer DEFAULT 0 NOT NULL,
     stats_computed_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone NOT NULL,
@@ -3369,6 +3368,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902190001'),
 ('20260902180001'),
 ('20260902170001'),
 ('20260902160001'),

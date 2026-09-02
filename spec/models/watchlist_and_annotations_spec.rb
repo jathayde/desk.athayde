@@ -14,7 +14,7 @@ RSpec.describe "Watchlist, annotations, and lots" do
       expect(item.instrument.symbol).to eq("ABC")
       expect(AuditEvent.where(kind: "watchlist_changed", subject: item).sole).to have_attributes(actor: "agent", reason: "added")
       item.drop!
-      expect(AuditEvent.where(kind: "watchlist_changed", subject: item).pluck(:reason)).to eq(%w[ added dropped ])
+      expect(AuditEvent.where(kind: "watchlist_changed", subject: item).order(:id).pluck(:reason)).to eq(%w[ added dropped ])
     end
 
     it "keeps one watching row per symbol, in words and in the database, and lets a dropped symbol be watched again" do

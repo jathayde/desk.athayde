@@ -186,8 +186,34 @@ RSpec.describe "Sync feeds" do
       fake.enqueue(:transactions) { raise Schwab::RequestError.new("bad window", status: 400) }
       described_class.perform_now(account)
       expect(SyncRun.last).to be_failed
-      expect(SyncRun.last.unmapped_values["activity_types_rejected"].first).to start_with("TRADE")
+      expect(SyncRun.last.unmapped_values["activity_types_rejected"].first).to include("type" => "TRADE", "error" => "bad window")
       expect(account.activities.where(kind: "dividend")).to exist
+      expect(SyncRun.last_window_to(:activities, account)).to be_nil
+    end
+
+    it "leaves a rejected type out for the rest of the day, audited once, and asks for it again tomorrow at the cost of one failed run" do
+      trade_requests = -> { fake.calls.count { |method, *, type| method == :transactions && type == "TRADE" } }
+      fake.enqueue(:transactions, sticky: true) { |_hash, _from, _to, type| type == "TRADE" ? raise(Schwab::RequestError.new("bad type", status: 400)) : [] }
+      expect { described_class.perform_now(account) }.to change { AuditEvent.where(kind: "activity_type_skipped").count }.by(1)
+      expect(SyncRun.last).to be_failed
+      expect(AuditEvent.last.data).to eq("type" => "TRADE")
+      described_class.perform_now(account)
+      expect(SyncRun.last).to be_succeeded
+      expect(trade_requests.call).to eq(1)
+      expect(AuditEvent.where(kind: "activity_type_skipped").count).to eq(1)
+      travel_to(MarketDay.today.tomorrow.noon) do
+        described_class.perform_now(account)
+        expect(SyncRun.last).to be_failed
+        described_class.perform_now(account)
+        expect(SyncRun.last).to be_succeeded
+        expect(trade_requests.call).to eq(2)
+      end
+    end
+
+    it "keeps failing rather than skipping every type, so a bad window cannot advance the cursor" do
+      fake.enqueue(:transactions, sticky: true) { raise Schwab::RequestError.new("bad window", status: 400) }
+      4.times { described_class.perform_now(account) }
+      expect(SyncRun.last).to be_failed
       expect(SyncRun.last_window_to(:activities, account)).to be_nil
     end
 

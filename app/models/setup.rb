@@ -19,11 +19,15 @@ class Setup < ApplicationRecord
     where("lower(name) = ?", name.downcase).first || create!(name: name)
   end
 
+  # The PRD's expectancy, win rate × average win − loss rate × average loss, is the mean R per trade by
+  # identity, so it is avg_r under the name the PRD and the prompt use.
+  def expectancy = avg_r
+
   # Rolling stats over closed, reviewed, included trades with a positive initial risk. A win is R above zero.
   def recompute_stats!
     realized = trades.eligible_for_stats.pluck(:realized_r).compact
     average = realized.sum / realized.size if realized.any?
-    update!(sample_size: realized.size, avg_r: average, expectancy: average,
+    update!(sample_size: realized.size, avg_r: average,
             win_rate: average && realized.count(&:positive?).to_d / realized.size,
             stats_computed_at: Time.current)
   end

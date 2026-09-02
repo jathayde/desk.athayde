@@ -16,12 +16,13 @@ class Journal::Linker
   end
 
   def link!(activity)
+    succession = resolve_succession(activity) if activity.corporate_action? # its CUSIP lookups at Schwab happen before the transaction opens
     Activity.transaction do
       linked = case activity.kind.to_sym
       when :fill then link_fill(activity)
       when :dividend, :interest then link_income(activity)
       when :transfer then link_transfer(activity)
-      when :corporate_action then link_corporate_action(activity)
+      when :corporate_action then link_corporate_action(activity, succession)
       else true
       end
       activity.update!(journaled_at: Time.current) if linked
@@ -138,14 +139,20 @@ class Journal::Linker
       ratio if ratio > 1 && ratio == ratio.round(RATIO_SCALE)
     end
 
+    Succession = Data.define(:delivered_out, :delivered_in, :predecessor, :successor)
+
+    # Both sides of a succession, resolved once (with any CUSIP lookup at Schwab) before the transaction, so
+    # inside it nothing waits on the wire.
+    def resolve_succession(activity)
+      securities = Schwab::Activity.from(activity.raw).securities
+      out, into = securities.find { |s| s.amount&.negative? }, securities.find { |s| s.amount&.positive? }
+      Succession.new(delivered_out: out, delivered_in: into, predecessor: out && Instrument.resolve(out.instrument), successor: into && Instrument.resolve(into.instrument))
+    end
+
     # CUSIP succession: the predecessor's open trade moves to the successor, absorbing any unreviewed
     # bootstrapped trade the positions sync already opened there.
-    def link_corporate_action(activity)
-      securities = Schwab::Activity.from(activity.raw).securities
-      delivered_out = securities.find { |s| s.amount&.negative? }
-      delivered_in = securities.find { |s| s.amount&.positive? }
-      predecessor = delivered_out && Instrument.resolve(delivered_out.instrument)
-      successor = delivered_in && Instrument.resolve(delivered_in.instrument)
+    def link_corporate_action(activity, succession)
+      delivered_out, delivered_in, predecessor, successor = succession.deconstruct
       trade = predecessor && open_trade_for(predecessor)
       unless trade && successor
         [ predecessor, successor ].compact.each { |i| open_trade_for(i)&.flag!(:corporate_action) }

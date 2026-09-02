@@ -1,9 +1,14 @@
 # Builds activities the way the sync writes them, so journal specs read as trade sequences.
 module JournalHelpers
+  # A fill as Schwab sends it (the net amount is the helper's arithmetic; the quantity, side, and fee rules
+  # are the mapper's), written the way the sync writes it.
   def fill(account, instrument, side, qty, price, at:, fees: 0, order: nil, status: "VALID")
-    signed = side == "BUY" ? -(qty * price) - fees : (qty * price) - fees
-    create(:activity, account: account, instrument: instrument, kind: "fill", side: side, quantity: qty, price: price, fees: fees,
-                      net_amount: signed, executed_at: at, trade_date: at.to_date, status: status, order: order, broker_order_id: order&.broker_order_id)
+    net = side == "BUY" ? -(qty.to_d * price.to_d) - fees.to_d : (qty.to_d * price.to_d) - fees.to_d
+    items = [ { "instrument" => { "assetType" => instrument.asset_type, "cusip" => instrument.cusip, "symbol" => instrument.symbol },
+                "amount" => (side == "BUY" ? qty : -qty).to_d.to_s("F"), "price" => price.to_d.to_s("F"), "positionEffect" => side == "BUY" ? "OPENING" : "CLOSING" } ]
+    items << { "instrument" => { "assetType" => "CURRENCY", "symbol" => "CURRENCY_USD" }, "amount" => (-fees.to_d).to_s("F"), "feeType" => "SEC_FEE" } if fees.to_d.nonzero?
+    activity_from_raw(account, instrument, { "activityId" => SecureRandom.hex(5), "type" => "TRADE", "status" => status, "time" => at.utc.iso8601, "tradeDate" => at.utc.iso8601,
+                                  "orderId" => order&.broker_order_id, "netAmount" => net.to_s("F"), "transferItems" => items }, order: order)
   end
 
   def income(account, instrument, amount, at:, kind: "dividend")
@@ -20,14 +25,17 @@ module JournalHelpers
 
   # A share delivery as the sync stores it from a RECEIVE_AND_DELIVER: quantity from the security item, direction in raw.
   def delivery(account, instrument, shares, at:, cash: 0)
-    raw = { "activityId" => SecureRandom.hex(4), "type" => "RECEIVE_AND_DELIVER", "tradeDate" => at.utc.iso8601, "netAmount" => cash,
-            "transferItems" => [ { "instrument" => { "assetType" => instrument.asset_type, "cusip" => instrument.cusip, "symbol" => instrument.symbol }, "amount" => shares } ] }
-    mapped = Schwab::Activity.from(raw)
-    create(:activity, account: account, instrument: instrument, kind: mapped.kind, quantity: mapped.quantity, price: nil, side: nil, net_amount: cash,
-                      executed_at: at, trade_date: at.to_date, status: "VALID", raw: raw)
+    activity_from_raw(account, instrument, { "activityId" => SecureRandom.hex(4), "type" => "RECEIVE_AND_DELIVER", "status" => "VALID", "tradeDate" => at.utc.iso8601, "netAmount" => cash,
+                                  "transferItems" => [ { "instrument" => { "assetType" => instrument.asset_type, "cusip" => instrument.cusip, "symbol" => instrument.symbol }, "amount" => shares } ] })
   end
 
   def link!(account) = Journal::Linker.new(account).link_all!
+
+  private
+    # Whatever the sync would have written from this raw: the same assignment the job uses.
+    def activity_from_raw(account, instrument, raw, order: nil)
+      account.activities.new(instrument: instrument, order: order).assign_from(Schwab::Activity.from(raw)).tap(&:save!)
+    end
 end
 
 RSpec.configure { |c| c.include JournalHelpers }
