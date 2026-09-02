@@ -28,11 +28,9 @@ RSpec.describe MarketDay do
   it "knows whether the session is open and whether the day has closed" do
     travel_to Time.zone.parse("2026-09-08 10:00 EDT") do
       expect(MarketDay.session_open?).to be(true)
-      expect(MarketDay.for(MarketDay.today)).not_to be_closed_by(Time.current)
     end
     travel_to Time.zone.parse("2026-09-08 21:30 EDT") do
       expect(MarketDay.session_open?).to be(false)
-      expect(MarketDay.for(MarketDay.today)).to be_closed_by(Time.current)
     end
   end
 

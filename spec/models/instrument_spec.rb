@@ -31,3 +31,14 @@ RSpec.describe Instrument do
     expect(instrument).not_to be_valid
   end
 end
+
+RSpec.describe Instrument, ".resolve by CUSIP alone" do
+  it "names a CUSIP-only reference through Schwab rather than dropping it, and gives up only when Schwab cannot name it" do
+    ref = Schwab::InstrumentRef.new(symbol: nil, cusip: "037833100", instrument_id: nil, asset_type: "EQUITY", description: nil)
+    expect(Instrument.resolve(ref)).to have_attributes(cusip: "037833100", symbol: "XYZ")
+    unknown = ref.with(cusip: "999999999")
+    Schwab::FakeClient.instance.enqueue(:instrument_by_cusip) { [] }
+    expect(Instrument.resolve(unknown)).to be_nil
+    expect(Instrument.resolve(nil)).to be_nil
+  end
+end

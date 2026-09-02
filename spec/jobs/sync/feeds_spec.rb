@@ -144,12 +144,18 @@ RSpec.describe "Sync feeds" do
       expect(child.parent_order).to be_present
     end
 
-    it "leaves stop assignments untouched when the run fails" do
+    it "leaves stop assignments untouched when the run fails or the page truncated" do
       described_class.perform_now(account)
       fake.enqueue(:orders) { raise Schwab::ServerError.new("down", status: 503) }
       described_class.perform_now(account)
       expect(SyncRun.last).to be_failed
-      expect(account.positions.protected_by_stop.count).to eq(2)
+      expect(account.positions.where.not(working_stop_order_id: nil).count).to eq(2)
+
+      account.positions.update_all(working_stop_order_id: nil)
+      stub_const("Sync::OrdersJob::PAGE_LIMIT", 1)
+      described_class.perform_now(account)
+      expect(SyncRun.last).to be_partial
+      expect(account.positions.where.not(working_stop_order_id: nil).count).to eq(0)
     end
 
     it "audits an unrecoverable gap when the cursor is older than the lookback" do

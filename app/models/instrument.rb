@@ -15,8 +15,10 @@ class Instrument < ApplicationRecord
   # no CUSIP, then a Schwab lookup by symbol, then a provisional row. A weaker match backfills a missing
   # identifier from the ref but never overwrites a differing one.
   def self.resolve(ref, attempt: 1)
-    return nil if ref.nil? || ref.symbol.blank?
+    return nil if ref.nil? || (ref.symbol.blank? && ref.cusip.blank?)
     found = find_by(cusip: ref.cusip) if ref.cusip.present?
+    ref = ref.with(symbol: lookup_symbol(ref.cusip)) if found.nil? && ref.symbol.blank?
+    return nil if ref.symbol.blank? # a CUSIP Schwab cannot name is quarantined by the caller, not invented here
     found ||= find_by(schwab_instrument_id: ref.instrument_id) if ref.instrument_id.present?
     found ||= where(cusip: nil, symbol: ref.symbol, asset_type: ref.asset_type).first
     found ? found.absorb(ref) : create_from(ref)
@@ -34,6 +36,12 @@ class Instrument < ApplicationRecord
     create!(cusip: cusip, schwab_instrument_id: ref.instrument_id, symbol: ref.symbol, asset_type: ref.asset_type, description: ref.description).tap do |instrument|
       AuditEvent.log("instrument_identity_fallback", actor: :system, subject: instrument, data: { symbol: ref.symbol, asset_type: ref.asset_type }) if cusip.blank?
     end
+  end
+
+  def self.lookup_symbol(cusip)
+    Schwab::InstrumentRef.from(Schwab.client(wait: false).instrument_by_cusip(cusip).first)&.symbol
+  rescue Schwab::Error
+    nil
   end
 
   def self.lookup_cusip(symbol)

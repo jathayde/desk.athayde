@@ -16,9 +16,6 @@ module Schwab
     TRANSPORT_FAILURES = [ Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Net::HTTPBadResponse, EOFError, IOError,
                            Errno::ECONNRESET, Errno::ECONNREFUSED, Errno::ETIMEDOUT, Errno::EHOSTUNREACH, Errno::ENETUNREACH,
                            SocketError, OpenSSL::SSL::SSLError ].freeze
-    TRANSACTION_TYPES = %w[ TRADE RECEIVE_AND_DELIVER DIVIDEND_OR_INTEREST ACH_RECEIPT ACH_DISBURSEMENT CASH_RECEIPT CASH_DISBURSEMENT
-                            ELECTRONIC_FUND WIRE_OUT WIRE_IN JOURNAL MEMORANDUM MARGIN_CALL MONEY_MARKET SMA_ADJUSTMENT ].freeze
-
     # token responds to #access_token and, if it can renew itself, #refresh!
     # wait: false raises on the first retriable failure instead of sleeping; web callers use it.
     # budget: the per-minute ceiling this client draws against on the shared counter; callers that must not
@@ -66,7 +63,7 @@ module Schwab
       get(TRADER, "/accounts/#{hash}/orders/#{order_id}")
     end
 
-    # One type per request; callers iterate TRANSACTION_TYPES so a failure mid-way keeps what came before.
+    # One type per request; the activities feed iterates Schwab::Activity::CASH_ACCOUNT_TYPES so a failure mid-way keeps what came before.
     def transactions(hash, from:, to: ::Time.current, type:)
       get(TRADER, "/accounts/#{hash}/transactions", startDate: Timestamp.iso_ms(from), endDate: Timestamp.iso_ms(to), types: type)
     end

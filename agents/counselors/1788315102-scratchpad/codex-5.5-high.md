@@ -1,0 +1,26 @@
+**Findings**
+
+**Before First Deploy**
+- **High:** account hashes leak to UI and email. `Account#label` falls back to `Account …#{schwab_hash.last(4)}` and the system page prints the same suffix explicitly: [account.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/account.rb:20), [system/show.html.erb](/Users/jathayde/Development/Personal/desk.athayde/app/views/system/show.html.erb:40). That label is also used in Sunday review and failure digest feed names. Replace with non-hash labels like “Unclassified account 1” until a nickname/type exists, and add specs that rendered pages/emails do not match the 64-char hash or hash suffixes.
+
+- **High:** stale activities do not degrade briefs. `Agent::Context` marks stale positions and orders, but not stale activities: [context.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/agent/context.rb:23). EOD deterministic sections then say “Fills today: none” from local DB even if the activities feed is stale or failed: [brief.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/brief.rb:38). A failed transactions sync is exactly when the EOD brief must distrust fills/journal rows. Add activity staleness to the shared stale rules and prefix the brief `DEGRADED`.
+
+- **High:** open risk is wrong for multi-stop positions. Coverage sums every live stop, but `open_risk` applies only the selected newest stop price to the whole position: [position.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/position.rb:13), [position.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/position.rb:57). A scaled position with two stops at different prices can be materially over/understated on dashboard, MCP, snapshots, and briefs. Either compute per-stop tranche risk or mark risk unknown when covered by multiple different stop prices.
+
+- **Medium:** snapshots can permanently stamp stale stop/risk data. `snapshot_due?` only requires a positions sync after close, not an orders sync: [tick_job.rb](/Users/jathayde/Development/Personal/desk.athayde/app/jobs/sync/tick_job.rb:26). Snapshot risk is written only on first creation: [snapshot.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/snapshot.rb:27). If orders are stale or failed at 16:20, the close-of-day risk can be wrong and never fixed. Require a fresh orders run or store risk as unknown/degraded.
+
+**First Week**
+- **Medium:** one rejected transaction type can keep the entire activities cursor from advancing. The job rescues `Schwab::RequestError`, quarantines it, then sets `outcome = :failed`: [activities_job.rb](/Users/jathayde/Development/Personal/desk.athayde/app/jobs/sync/activities_job.rb:20). If Schwab rejects one assumed type consistently, every activities run re-backfills 364 days and the dashboard/digest stay noisy. Decide whether unsupported types should be disabled after first rejection or treated as partial with an explicit cursor policy.
+
+- **Medium:** re-auth accepts partial account consent. Verification only requires overlap with known accounts: [reauth.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/schwab_token/reauth.rb:22). The email says every account must be ticked, but the code will accept a token missing some known accounts, leaving those feeds failing and future IRA wash-sale visibility incomplete. Require all trading-enabled accounts, and warn hard on missing read-only linked accounts.
+
+- **Medium:** Resend is a single operational dependency for login, token nags, briefs, Sunday re-auth, and failure digests. `deliver!` raises and leaves `emailed_at` nil, which is good for resend, but the alert path itself is email: [agent_run.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/agent_run.rb:31). The console fallback covers login only. Before production, add a runbook or non-email check for token nags and undelivered briefs.
+
+- **Low/Medium:** CUSIP identity is weakened when Schwab omits `symbol`. `Instrument.resolve` returns nil before attempting CUSIP lookup if `ref.symbol.blank?`: [instrument.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/instrument.rb:17). That contradicts “CUSIP is instrument identity” and can quarantine CUSIP-only activities/orders. Resolve by CUSIP first and synthesize a display symbol if needed.
+
+**Later / Phase 2 Readiness**
+- **Medium:** the global `risk_rules` uniqueness constraint is ineffective for `setup_id NULL`. Postgres permits multiple `(rule_type, NULL)` rows under this index: [create_risk_rules.rb](/Users/jathayde/Development/Personal/desk.athayde/db/migrate/20260901220012_create_risk_rules.rb:13). Use `NULLS NOT DISTINCT` or a separate partial unique index for global rules before guardrails ship.
+
+- **Medium:** multiple trading accounts can be enabled silently. The dashboard and tools pick `Account.trading.order(:id).first`, while the account model only prevents IRA trading, not more than one taxable trading account: [dashboard.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/dashboard.rb:10), [account.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/account.rb:45). Add a partial unique index or make the UI explicitly multi-account before Phase 2 approvals.
+
+I did not rerun `bin/ci`; this was a static read-only review as requested.

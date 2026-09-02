@@ -22,12 +22,13 @@ module Sync
     end
 
     private
-      # Once per Schwab-sourced market day, 20 minutes after the regular close, after a positions sync since the close.
+      # Once per Schwab-sourced market day, 20 minutes after the regular close, after positions and orders both synced
+      # since the close: the risk columns are written once and read stops.
       def snapshot_due?(account, date)
         day = MarketDay.find_by(date: date)
         return false unless account.trading_enabled? && day&.schwab? && day.trading? && Time.current >= day.regular_closes_at + SNAPSHOT_DELAY
         return false if account.snapshots.exists?(as_of: date)
-        SyncRun.for(:positions, account).advanced_cursor.where(started_at: day.regular_closes_at..).exists?
+        %i[ positions orders ].all? { |feed| SyncRun.for(feed, account).advanced_cursor.where(started_at: day.regular_closes_at..).exists? }
       end
 
       def today = MarketDay.today

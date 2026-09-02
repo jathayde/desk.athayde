@@ -2,7 +2,8 @@ module Snapshots
   # Rechains forward from a date in place, for a flow or balance that landed late. Existing rows keep their
   # risk columns; a day that cannot be built is left as it was.
   class RebuildJob < ApplicationJob
-    limits_concurrency to: 1, key: ->(account, *) { "snapshots-#{account.id}" }, on_conflict: :discard
+    # Block, never discard: nothing re-enqueues a rebuild, and a discarded one leaves every later index wrong.
+    limits_concurrency to: 1, key: ->(account, *) { "snapshots-#{account.id}" }, on_conflict: :block
 
     def perform(account, from:)
       SyncRun.record(:snapshots, account: account) do |run|

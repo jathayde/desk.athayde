@@ -27,7 +27,7 @@ shared: &shared
     class: Memory::CheckRepoJob
     schedule: "*/30 * * * * America/New_York"
   failure_digest:
-    class: Jobs::FailureDigestJob
+    class: FailureDigestJob
     schedule: "15 17 * * * America/New_York"
 
 development:

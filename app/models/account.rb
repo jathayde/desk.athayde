@@ -17,7 +17,7 @@ class Account < ApplicationRecord
   scope :needing_setup, -> { where(account_type: nil) }
 
   def needs_setup? = account_type.nil?
-  def label = nickname.presence || account_type&.titleize || "Account …#{schwab_hash.last(4)}"
+  def label = nickname.presence || account_type&.titleize || "Account #{id}"
 
   # The interval the tick would use for this account and feed right now; views and scheduler share it.
   # Views pass in_session from the known calendar so a page render never fetches from Schwab.

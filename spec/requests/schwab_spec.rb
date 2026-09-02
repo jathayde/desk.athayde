@@ -108,11 +108,24 @@ RSpec.describe "Schwab re-auth" do
       expect(SchwabToken.count).to eq(0)
     end
 
-    it "accepts a login that covers a known account" do
+    it "accepts a login that covers a known account, auditing a read-only account left unticked" do
       create(:account, schwab_hash: Schwab::FakeClient::ACCOUNT_HASH)
+      create(:account, schwab_hash: "E" * 64, account_type: "ira", trading_enabled: false, nickname: "IRA")
       state = start_authorize
       get schwab_callback_path(code: Schwab::FakeClient::FAKE_CODE, state: state)
       expect(response).to redirect_to(schwab_connected_path)
+      expect(AuditEvent.find_by(kind: "re_auth_missing_accounts").data).to eq("accounts" => [ "IRA" ])
+    end
+
+    it "refuses a login that left the trading account unticked" do
+      create(:account, schwab_hash: "E" * 64, account_type: "ira", trading_enabled: false)
+      create(:account, schwab_hash: "F" * 64, trading_enabled: true, nickname: "Taxable")
+      fake.enqueue(:account_numbers) { [ "E" * 64 ] }
+      state = start_authorize
+      get schwab_callback_path(code: Schwab::FakeClient::FAKE_CODE, state: state)
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("left Taxable unticked")
+      expect(SchwabToken.count).to eq(0)
     end
 
     context "with the real adapter and no token at all" do

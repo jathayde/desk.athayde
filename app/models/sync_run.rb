@@ -12,7 +12,7 @@ class SyncRun < ApplicationRecord
   }, prefix: true
   enum :status, { running: "running", succeeded: "succeeded", partial: "partial", failed: "failed", skipped_token: "skipped_token" }
 
-  scope :recent_first, -> { order(started_at: :desc) }
+  scope :recent_first, -> { order(started_at: :desc, id: :desc) }
   scope :for, ->(feed, account) { where(feed: feed, account: account) }
   scope :advanced_cursor, -> { where(status: %w[ succeeded partial ]) }
   scope :live, -> { running.where(started_at: STALE_AFTER.ago..) }

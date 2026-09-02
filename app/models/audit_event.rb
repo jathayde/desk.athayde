@@ -2,7 +2,7 @@
 # UPDATE, DELETE, and TRUNCATE, and Active Record refuses updates before it gets that far.
 class AuditEvent < ApplicationRecord
   KINDS = %w[
-    re_auth_succeeded re_auth_failed token_refresh_failed sync_paused_token_expired sync_resumed
+    re_auth_succeeded re_auth_failed re_auth_missing_accounts token_refresh_failed sync_paused_token_expired sync_resumed
     token_nag_sent shadow_mode_toggled manual_halt_set manual_halt_cleared
     instrument_identity_fallback sync_gap_unrecoverable trade_reviewed account_configured
   ].freeze

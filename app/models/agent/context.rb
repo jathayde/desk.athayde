@@ -26,6 +26,7 @@ class Agent::Context
       reasons << "calendar unverified (Schwab hours unavailable); today may be a holiday" if market_day&.fallback?
       reasons << "positions are stale (last sync #{stamp(as_of[:positions])})" if dashboard.balance_stale?
       reasons << "orders are stale (last sync #{stamp(as_of[:orders])}); stop and protection states may be wrong" if account && dashboard.stale?(as_of[:orders], :orders)
+      reasons << "activities are stale (last sync #{stamp(as_of[:activities])}); fills and journal rows may be missing" if account && dashboard.stale?(as_of[:activities], :activities)
       reasons << "no trading account is set up yet" if account.nil?
       reasons << "memory repo missing at #{memory.path || 'unset MEMORY_REPO_PATH'}" unless memory.present?
       reasons << "memory repo has none of its files at #{memory.path}" if memory.empty?

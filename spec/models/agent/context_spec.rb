@@ -13,7 +13,7 @@ RSpec.describe Agent::Context do
     expect(reasons).to include(a_string_starting_with("Schwab token revoked"), a_string_starting_with("calendar unverified"), "no trading account is set up yet")
     expect(reasons).not_to include(a_string_starting_with("orders are stale"))
     create(:account, trading_enabled: true, account_type: "taxable")
-    expect(described_class.new(kind: :eod, date: Date.new(2026, 9, 1), memory: Memory::Repo.new(memory_path)).degraded_reasons).to include(a_string_starting_with("orders are stale (last sync never)"))
+    expect(described_class.new(kind: :eod, date: Date.new(2026, 9, 1), memory: Memory::Repo.new(memory_path)).degraded_reasons).to include(a_string_starting_with("orders are stale (last sync never)"), a_string_starting_with("activities are stale"))
     expect(reasons).not_to include(a_string_starting_with("memory repo missing"))
     expect(described_class.new(kind: :eod, date: Date.new(2026, 9, 1), memory: Memory::Repo.new(nil)).degraded_reasons).to include("memory repo missing at unset MEMORY_REPO_PATH")
     expect(context.degraded_reasons).to include("memory repo has none of its files at #{memory_path}")

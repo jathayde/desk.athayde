@@ -14,12 +14,13 @@ class Order < ApplicationRecord
   scope :stops, -> { where(order_type: Schwab::Order::STOP_TYPES) }
   scope :sells, -> { where(side: Schwab::Order::SELL) }
   scope :live, -> { where(status: Schwab::Order::LIVE_STATUSES) }
-  scope :terminal, -> { where.not(id: select(:replaces_order_id).where.not(replaces_order_id: nil)) }
+  # Not replaced by any order at all: the subquery is unscoped on purpose, so chaining after .working cannot
+  # narrow it to "not replaced by a live one".
+  scope :terminal, -> { where.not(id: Order.where.not(replaces_order_id: nil).select(:replaces_order_id)) }
 
   def working? = Schwab::Order::WORKING_STATUSES.include?(status)
   def live? = Schwab::Order::LIVE_STATUSES.include?(status)
   def stop? = Schwab::Order::STOP_TYPES.include?(order_type)
-  def container? = instrument_id.nil?
 
   def remaining = remaining_quantity || (quantity && quantity - (filled_quantity || 0))
 end

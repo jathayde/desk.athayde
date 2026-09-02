@@ -41,7 +41,9 @@ class Snapshot < ApplicationRecord
   # adjustment ratio and is not a flow; anything else unpriced is quarantined, never silently zero.
   def self.net_flows(account, after:, through:, run: nil)
     range = after ? (after + 1)..through : through..through
-    cash = account.activities.flows.where(trade_date: range).sum(&:flow_amount)
+    cash = account.activities.flows.where(trade_date: range).sum do |activity|
+      activity.flow_amount || (run&.quarantine(:unpriced_flows, activity.broker_activity_id); 0)
+    end
     transfers = account.activities.transfer.where(trade_date: range).where.not(instrument_id: nil).includes(:trade_leg)
     shares = transfers.sum do |activity|
       next 0 if activity.trade_leg&.ratio

@@ -37,7 +37,7 @@
   <% status.accounts.each do |row| %>
     <% account = row.account %>
     <%= form_with url: account_path(account), method: :patch, class: "account-form" do |f| %>
-      <div class="kv"><span><%= account.label %> <small>…<%= account.schwab_hash.last(4) %></small></span>
+      <div class="kv"><span><%= account.label %></span>
         <b><%= money(row.equity) %> · <%= row.symbols.join(", ").presence || "no positions" %></b></div>
       <div class="fields">
         <%= f.text_field :nickname, value: account.nickname, placeholder: "Nickname" %>

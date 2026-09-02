@@ -15,6 +15,7 @@ RSpec.describe SchwabToken do
   describe ".issue!" do
     it "creates the current token with a 168-hour refresh life and a margin on the access token" do
       now = Time.zone.parse("2026-09-06 18:30 EDT")
+      travel_to now # usable? reads the clock; issued at a pinned time, it must be judged at that time
       token = SchwabToken.issue!(token_response, now: now)
       expect(token).to be_current.and be_usable
       expect(token.refresh_expires_at).to eq(now + 168.hours)

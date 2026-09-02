@@ -47,5 +47,4 @@ class MarketDay < ApplicationRecord
   def self.known_session_open?(now = Time.current) = find_by(date: now.in_time_zone(ZONE).to_date)&.session_open_at?(now) || false
 
   def session_open_at?(now) = trading && session_opens_at <= now && now < session_closes_at
-  def closed_by?(now) = trading && regular_closes_at <= now
 end

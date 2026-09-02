@@ -19,9 +19,10 @@ class Activity < ApplicationRecord
   def buy? = side == Schwab::Order::BUY
   def cash_flow? = deposit? || withdrawal? || (transfer? && instrument_id.present?)
 
-  # Deposits positive, withdrawals negative, whatever sign Schwab used.
+  # Deposits positive, withdrawals negative, whatever sign Schwab used; nil when the broker sent no amount,
+  # so the caller quarantines it rather than counting zero.
   def flow_amount
-    return nil unless deposit? || withdrawal?
+    return nil unless (deposit? || withdrawal?) && net_amount
     deposit? ? net_amount.abs : -net_amount.abs
   end
 

@@ -5,13 +5,10 @@ class Position < ApplicationRecord
 
   validates :instrument_id, uniqueness: { scope: :account_id }
 
-  scope :protected_by_stop, -> { where.not(working_stop_order_id: nil) }
-  scope :unprotected, -> { where(working_stop_order_id: nil) }
-
   def stop_price = working_stop_order&.stop_price
 
   # Every live terminal sell stop on this instrument, so a scale-in covered by two stops reads as covered.
-  def live_stops = account.orders.where(instrument: instrument).stops.sells.live.terminal
+  def live_stops = @live_stops ||= account.orders.where(instrument: instrument).stops.sells.live.terminal.to_a
 
   def covered_quantity
     return nil unless working_stop_order
@@ -21,22 +18,23 @@ class Position < ApplicationRecord
   # Why this position is or is not protected. Only :protected counts; every other state is unknown or
   # insufficient risk, and the dashboard says which. Memoized: it costs a query and views ask repeatedly.
   def protection
-    @protection = nil if @protection_for != working_stop_order_id
+    @protection = @live_stops = nil if @protection_for != working_stop_order_id
     @protection_for = working_stop_order_id
     @protection ||= compute_protection
   end
 
   def reload(...)
-    @protection = nil
+    @protection = @live_stops = nil
     super
   end
 
   def compute_protection
     return :unprotected unless working_stop_order&.working?
     return :awaiting if !working_stop_order.live?
-    return :trailing_unknown if stop_price.blank?
+    return :trailing_unknown if stop_price.blank? || live_stops.any? { |o| o.stop_price.blank? }
     return :oversized if covered_quantity > quantity
     return :partial if covered_quantity < quantity
+    return :unpriced if last_price.blank?
     :protected
   end
 
@@ -52,11 +50,11 @@ class Position < ApplicationRecord
 
   def unrealized_pnl = market_value && cost_basis ? market_value - cost_basis : nil
 
-  # Dollars still at risk if the stop fills. Unknown (nil) without a usable stop, never zero for that reason,
-  # and never negative: a position already through its stop has nothing left to protect.
+  # Dollars still at risk if the stops fill, each tranche at its own stop price. Unknown (nil) without a usable
+  # stop, never zero for that reason, and never negative: a tranche already through its stop has nothing left to protect.
   def open_risk
-    return unless protected? && last_price.present?
-    [ quantity * (last_price - stop_price), 0 ].max
+    return unless protected?
+    live_stops.sum { |stop| [ stop.remaining * (last_price - stop.stop_price), 0 ].max }
   end
 
   # The newest terminal working sell stop on this instrument, preferring live statuses over AWAITING_* so a
@@ -64,6 +62,7 @@ class Position < ApplicationRecord
   def assign_working_stop!
     candidates = account.orders.where(instrument: instrument).stops.sells.working.terminal.to_a
     pick = newest(candidates.select(&:live?)) || newest(candidates)
+    @live_stops = nil
     update!(working_stop_order: pick)
   end
 

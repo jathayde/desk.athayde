@@ -22,7 +22,7 @@ module Sync
 
         rows = orders.filter_map { |order| upsert(account, order, run) }
         link_lineage(account, orders)
-        account.positions.includes(:working_stop_order).each(&:assign_working_stop!)
+        account.positions.includes(:working_stop_order).each(&:assign_working_stop!) unless truncated # a partial page cannot say what is working
         run.touched(rows.size)
         truncated ? :partial : :succeeded
       end

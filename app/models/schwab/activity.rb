@@ -55,16 +55,18 @@ module Schwab
       when "DIVIDEND_OR_INTEREST" then instrument && !cash_equivalent ? :dividend : :interest
       when *INBOUND_TYPES then :deposit
       when *OUTBOUND_TYPES then :withdrawal
-      when *SIGNED_TYPES then net_amount&.negative? ? :withdrawal : :deposit
+      when *SIGNED_TYPES then signed_flow
       when "JOURNAL", "RECEIVE_AND_DELIVER"
         if securities.size >= 2 then :corporate_action
         elsif securities.one? then :transfer
-        elsif type == "JOURNAL" then net_amount&.negative? ? :withdrawal : :deposit
+        elsif type == "JOURNAL" then signed_flow
         else :other
         end
       else :other
       end
     end
+    # A sign-classified type with no amount is unclassifiable, never a zero deposit.
+    def signed_flow = net_amount.nil? ? :other : (net_amount.negative? ? :withdrawal : :deposit)
     def fee_only? = raw.fetch("transferItems", []).then { |items| items.any? && items.all? { |i| i["feeType"].present? } }
 
     # What the sync records about an activity it could not classify.

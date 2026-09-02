@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Jobs::FailureDigestJob do
+RSpec.describe FailureDigestJob do
   let!(:user) { create(:user, email_address: "john@athayde.com") }
 
   it "sends nothing when the last 24 hours were clean, ignoring token-skipped runs, a closed-day skip, and older failures" do

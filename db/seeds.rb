@@ -46,6 +46,8 @@ balance = account.current_balance
 end
 SyncRun.create!(feed: :orders, account: account, status: :failed, started_at: 2.hours.ago, finished_at: 2.hours.ago, error: "seeded: Schwab 503 (see /system)")
 
-# One brief through the fake model; the email lands in tmp/mails.
-Agent::MorningBriefJob.perform_now
+# One brief through the fake model for the most recent weekday; the email lands in tmp/mails.
+brief_day = MarketDay.today
+brief_day -= 1 until brief_day.on_weekday?
+Agent::MorningBriefJob.perform_now(brief_day)
 puts "seeded: #{Account.count} account, #{Position.count} positions, #{Trade.count} trades, #{Setup.count} setup, #{AgentRun.count} brief (email in tmp/mails)"
