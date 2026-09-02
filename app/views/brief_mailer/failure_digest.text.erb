@@ -1,0 +1,22 @@
+Failures between <%= l(@digest.since, format: :weekday_time) %> and <%= l(@digest.now, format: :weekday_time) %>.
+
+<% @digest.sync_by_feed.each do |feed, runs| -%>
+<%= feed %>: <%= runs.size %> failed
+<% runs.first(3).each do |run| -%>
+  <%= l(run.started_at, format: :weekday_time) %> <%= run.status %>: <%= run.error.to_s.truncate(160) %>
+<% end -%>
+<% end -%>
+<% @digest.agent_failures.each do |run| -%>
+<%= run.title %>: <%= run.status %><%= " (#{run.stop_reason})" if run.stop_reason %><%= ": #{run.error}" if run.error %>
+<% end -%>
+<% @digest.undelivered.each do |run| -%>
+<%= run.title %>: <%= run.status %> but never emailed (bin/rails agent:resend[<%= run.id %>])
+<% end -%>
+<% @digest.jobs_by_class.each do |klass, failures| -%>
+<%= klass %>: <%= failures.size %> failed job<%= "s" if failures.size > 1 %>
+<% failures.first(3).each do |failure| -%>
+  <%= l(failure.created_at, format: :weekday_time) %>: <%= failure.exception_class %>: <%= failure.message.to_s.truncate(160) %>
+<% end -%>
+<% end -%>
+
+System: <%= system_url %>

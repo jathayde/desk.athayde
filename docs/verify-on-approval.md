@@ -69,3 +69,4 @@ Everything the app assumes about Schwab that has not been checked against the po
 45. How cash-in-lieu for fractional shares arrives (CASH_RECEIPT reads as a deposit today and would distort the flow-adjusted series).
 46. Whether ACH_DISBURSEMENT amounts arrive negative (the snapshot classifies directional types by type, sign only for ELECTRONIC_FUND and JOURNAL).
 47. Whether the Hotwire Native user agent passes `allow_browser versions: :modern` when the iOS shell ships (Phase 2).
+48. `Agent::MODEL = "claude-sonnet-5"` and its rates in `Agent::Pricing` are unverified until the first real Messages API call; a wrong alias is a FAILED brief and a wrong rate is a quiet mispricing.

@@ -29,5 +29,10 @@ class SystemStatus
   def failed_run_count = SyncRun.failed.where(started_at: 7.days.ago..).count
   def failed_runs_sample = SyncRun.failed.where(started_at: 7.days.ago..).recent_first.limit(5)
   def failed_job_count = SolidQueue::FailedExecution.where(created_at: 7.days.ago..).count
+  def api_spend_this_month = AgentRun.this_month.sum(:estimated_cost)
+  def unpriced_runs? = AgentRun.this_month.where(estimated_cost: nil).where.not(model: nil).where.not(status: :skipped).exists?
+  def memory_repo = @memory_repo ||= Memory::Repo.configured
+  def memory_run = @memory_run ||= SyncRun.feed_memory_repo.recent_first.first
+  def agent_runs = @agent_runs ||= AgentRun.recent_first.limit(5)
   def sync_paused_since = SyncRun.skipped_token.where(started_at: (token&.issued_at || Time.at(0))..).minimum(:started_at)
 end

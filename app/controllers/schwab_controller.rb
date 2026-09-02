@@ -40,7 +40,10 @@ class SchwabController < ApplicationController
       render :failed, status: :unprocessable_content
     end
 
+    # The authorize URL carries nothing secret, so the Sunday email's link can resume after sign-in; the
+    # callback URL carries the single-use code and is never stored.
     def request_authentication
+      session[:return_to_after_authenticating] = request.url if action_name == "authorize"
       redirect_to new_session_path, alert: "Sign in, then start the Schwab connection again."
     end
 

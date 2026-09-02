@@ -10,7 +10,7 @@ RSpec.describe "System page" do
     create(:sync_run, feed: "positions", account: account, status: "succeeded", started_at: 2.hours.ago, finished_at: 2.hours.ago)
     create(:sync_run, feed: "positions", account: account, status: "failed", error: "boom", started_at: 1.minute.ago)
     get system_path
-    expect(response.body).to include("Healthy").and include("of 7 days").and include("no runs yet").and include("Needs setup").and include("boom").and include("last success")
+    expect(response.body).to include("Healthy").and include("of 7 days").and include("none yet").and include("Needs setup").and include("boom").and include("last success")
   end
 
   it "halts with a reason and resumes with a typed confirmation, auditing both, and refuses to resume when not halted" do
@@ -54,5 +54,15 @@ RSpec.describe "System page" do
       get system_path
       expect(response.body).not_to include("dies before Sunday")
     end
+  end
+
+  it "shows the month's API spend, the memory repo, and recent briefs" do
+    sign_in(user)
+    AgentRun.create!(kind: :morning_brief, market_date: Date.new(2026, 9, 1), status: :succeeded, started_at: Time.current, finished_at: Time.current, estimated_cost: BigDecimal("0.0456"), model: Agent::MODEL, degraded: true)
+    AgentRun.create!(kind: :eod, market_date: Date.new(2026, 9, 1), status: :failed, started_at: Time.current, finished_at: Time.current, error: "deadline passed", model: Agent::MODEL)
+    AgentRun.create!(kind: :eod, market_date: Date.new(2026, 9, 7), status: :skipped, started_at: Time.current, finished_at: Time.current, error: "market closed")
+    get system_path
+    expect(response.body).to include("$0.05", "plus unpriced runs", "morning brief, Tue Sep 1", "degraded", "not emailed", "deadline passed", "missing", "end of day, Mon Sep 7")
+    expect(response.body.scan("not emailed").size).to eq(2)
   end
 end

@@ -1,0 +1,26 @@
+<%= @brief.token_line %>
+<% if @brief.degraded_reasons.any? -%>
+Degraded: <%= @brief.degraded_reasons.join("; ") %>
+<% end -%>
+As of: <%= @brief.as_of_lines.join("; ") %>
+<% if @run.morning_brief? -%>
+Earnings and economic calendar: not available in Phase 1.
+<% end -%>
+
+<% if @brief.unavailable -%>
+<%= @brief.unavailable %>
+<% else -%>
+<% if @brief.cut_off -%>
+<%= @brief.cut_off %>
+
+<% end -%>
+<%= @brief.body %>
+<% end -%>
+<% if @run.eod? -%>
+
+<%= render "brief_mailer/eod", brief: @brief, formats: [ :text ] %>
+<% end -%>
+
+Dashboard: <%= root_url %>
+System: <%= system_url %>
+<%= @brief.footer %>

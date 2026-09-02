@@ -14,6 +14,21 @@ shared: &shared
   sync_accounts:
     class: Sync::AccountsJob
     schedule: "5 6 * * * America/New_York"
+  agent_morning_brief:
+    class: Agent::MorningBriefJob
+    schedule: "3 7 * * 1-5 America/New_York" # after the 07:00 tick has enqueued the syncs
+  agent_end_of_day:
+    class: Agent::EndOfDayJob
+    schedule: "30 16 * * 1-5 America/New_York"
+  agent_sunday_review:
+    class: Agent::SundayReviewJob
+    schedule: "0 18 * * 0 America/New_York"
+  memory_pull_repo:
+    class: Memory::PullRepoJob
+    schedule: "*/30 * * * * America/New_York"
+  failure_digest:
+    class: Jobs::FailureDigestJob
+    schedule: "15 17 * * * America/New_York"
 
 development:
   <<: *shared

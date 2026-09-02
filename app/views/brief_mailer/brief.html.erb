@@ -1,0 +1,13 @@
+<p><%= @brief.token_line %></p>
+<% if @brief.degraded_reasons.any? %><p><b>Degraded:</b> <%= @brief.degraded_reasons.join("; ") %></p><% end %>
+<p>As of: <%= @brief.as_of_lines.join("; ") %></p>
+<% if @run.morning_brief? %><p>Earnings and economic calendar: not available in Phase 1.</p><% end %>
+<% if @brief.unavailable %>
+  <p><b><%= @brief.unavailable %></b></p>
+<% else %>
+  <% if @brief.cut_off %><p><b><%= @brief.cut_off %></b></p><% end %>
+  <%= simple_format(ERB::Util.html_escape(@brief.body), {}, sanitize: false) %>
+<% end %>
+<% if @run.eod? %><%= render "brief_mailer/eod", brief: @brief %><% end %>
+<p><%= link_to "Dashboard", root_url %> · <%= link_to "System", system_url %></p>
+<p><small><%= @brief.footer %></small></p>

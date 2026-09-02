@@ -10,10 +10,13 @@ RSpec.describe "Schwab re-auth" do
     Rack::Utils.parse_query(URI(response.location).query)["state"]
   end
 
-  it "requires login and never stores the callback as a return-to URL" do
+  it "requires login and never stores the callback as a return-to URL, but resumes authorize after sign-in" do
     get schwab_callback_path(code: "x", state: "y")
     expect(response).to redirect_to(new_session_path)
     expect(session[:return_to_after_authenticating]).to be_nil
+    get schwab_authorize_path
+    expect(response).to redirect_to(new_session_path)
+    expect(session[:return_to_after_authenticating]).to end_with("/schwab/authorize")
   end
 
   context "signed in" do

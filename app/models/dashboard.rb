@@ -98,12 +98,10 @@ class Dashboard
   private
     def sync_interval(feed) = (@intervals ||= {})[feed] ||= account.sync_interval(feed, in_session: @in_session)
 
-    # A number that depends on a stop depends on the orders feed too, judged by its own cadence.
-    def stale_row?(position)
-      stale?(position.synced_at, :positions) || (position.working_stop_order.present? && stale?(orders_as_of, :orders))
-    end
-
-    def as_of_for(position) = position.working_stop_order ? [ position.synced_at, orders_as_of ].compact.min : position.synced_at
+    # Every row's protection state depends on the orders feed, judged by its own cadence: "no stop" is only as
+    # current as the last orders sync.
+    def stale_row?(position) = stale?(position.synced_at, :positions) || stale?(orders_as_of, :orders)
+    def as_of_for(position) = [ position.synced_at, orders_as_of ].compact.min
 
     def unresolved_failures
       SyncRun::ACCOUNT_FEEDS.filter_map { |feed| account.last_sync_failure(feed) }.select { |run| unresolved?(run) }

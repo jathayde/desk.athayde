@@ -131,7 +131,15 @@ CREATE TABLE public.agent_runs (
     error text,
     model character varying,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    market_date date,
+    stop_reason character varying,
+    emailed_at timestamp with time zone,
+    cache_creation_input_tokens integer,
+    cache_read_input_tokens integer,
+    tool_calls_count integer DEFAULT 0 NOT NULL,
+    degraded_reasons jsonb DEFAULT '[]'::jsonb NOT NULL,
+    transcript jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 
@@ -2084,6 +2092,20 @@ CREATE INDEX index_agent_runs_on_kind_and_created_at ON public.agent_runs USING 
 
 
 --
+-- Name: index_agent_runs_on_started_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_runs_on_started_at ON public.agent_runs USING btree (started_at);
+
+
+--
+-- Name: index_agent_runs_one_per_kind_and_day; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_agent_runs_one_per_kind_and_day ON public.agent_runs USING btree (kind, market_date) WHERE ((status)::text <> 'failed'::text);
+
+
+--
 -- Name: index_audit_events_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3076,6 +3098,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902100001'),
 ('20260901260001'),
 ('20260901250001'),
 ('20260901240003'),

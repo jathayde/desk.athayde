@@ -1,0 +1,34 @@
+Fills today:
+<% if brief.fills_today.none? -%>
+  none
+<% end -%>
+<% brief.fills_today.each do |fill| -%>
+  <%= fill.side %> <%= quantity(fill.quantity) %> <%= fill.instrument.symbol %> @ <%= money(fill.price) %> (<%= brief.stamp(fill.executed_at) %>)
+<% end -%>
+
+Journal rows touched today:
+<% if brief.trades_touched_today.none? -%>
+  none
+<% end -%>
+<% brief.trades_touched_today.each do |trade| -%>
+  <%= trade.instrument.symbol %> <%= trade.status %><%= " · needs review" if trade.needs_review? %> <%= trade_url(trade) %>
+<% end -%>
+
+Missing post-mortems:
+<% if brief.missing_post_mortems.none? -%>
+  none
+<% end -%>
+<% brief.missing_post_mortems.each do |trade| -%>
+  <%= trade.instrument.symbol %> closed <%= brief.stamp(trade.closed_at) %> <%= r_multiple(trade) %> <%= trade_url(trade) %>
+<% end -%>
+<% if brief.more_post_mortems > 0 -%>
+  and <%= brief.more_post_mortems %> more: <%= trades_url(filter: "missing_post_mortem") %>
+<% end -%>
+
+<% if brief.snapshot -%>
+Snapshot <%= brief.snapshot.as_of %>: equity <%= money(brief.snapshot.equity) %>, drawdown <%= percent(brief.snapshot.drawdown) %>, open risk <%= brief.snapshot.open_risk_amount ? money(brief.snapshot.open_risk_amount) : "unknown" %>, unprotected <%= brief.snapshot.unprotected_count %>
+<% elsif brief.balance -%>
+Today's snapshot is not yet written; equity <%= money(brief.balance.equity) %> as of <%= brief.stamp(brief.balance.as_of) %>
+<% else -%>
+No balance has synced yet.
+<% end -%>

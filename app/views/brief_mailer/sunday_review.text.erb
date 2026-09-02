@@ -1,0 +1,24 @@
+Re-authenticate with Schwab: <%= @reauth_url %>
+<% if @status.token -%>
+Token: <%= @status.token_status %>, issued <%= l(@status.token.issued_at, format: :connection) %>, expires <%= l(@status.token.refresh_expires_at, format: :connection) %>
+<% else -%>
+Token: not connected
+<% end -%>
+
+Feeds:
+<% @status.feed_rows.each do |row| -%>
+  <%= row.account.label %> · <%= row.feed %>: <%= row.latest ? "#{row.latest.status} #{l(row.latest.finished_at || row.latest.started_at, format: :weekday_time)}" : "never" %>
+<% end -%>
+Failed sync runs, 7 days: <%= @status.failed_run_count %>
+Failed jobs, 7 days: <%= @status.failed_job_count %>
+
+Setups:
+<% @setups.each do |setup| -%>
+  <%= setup.name %><%= " (inactive)" unless setup.active? %>: n=<%= setup.sample_size %>, win rate <%= setup.win_rate ? percent(setup.win_rate) : "n/a" %>, avg R <%= setup.avg_r ? number_with_precision(setup.avg_r, precision: 2) : "n/a" %>, expectancy <%= setup.expectancy ? number_with_precision(setup.expectancy, precision: 2) : "n/a" %>
+<% end -%>
+<% if @setups.empty? -%>
+  none defined yet
+<% end -%>
+The edge review itself (flagging negative-expectancy setups) arrives in Phase 2; the numbers above are the stored stats.
+
+System: <%= system_url %>

@@ -1,0 +1,17 @@
+<p>Failures between <%= l(@digest.since, format: :weekday_time) %> and <%= l(@digest.now, format: :weekday_time) %>.</p>
+<% @digest.sync_by_feed.each do |feed, runs| %>
+  <p><b><%= feed %></b>: <%= runs.size %> failed</p>
+  <ul><% runs.first(3).each do |run| %><li><%= l(run.started_at, format: :weekday_time) %> <%= run.status %>: <%= run.error.to_s.truncate(160) %></li><% end %></ul>
+<% end %>
+<% if @digest.agent_failures.any? || @digest.undelivered.any? %>
+  <p><b>Briefs</b></p>
+  <ul>
+    <% @digest.agent_failures.each do |run| %><li><%= run.title %>: <%= run.status %><%= " (#{run.stop_reason})" if run.stop_reason %><%= ": #{run.error}" if run.error %></li><% end %>
+    <% @digest.undelivered.each do |run| %><li><%= run.title %>: <%= run.status %> but never emailed (bin/rails agent:resend[<%= run.id %>])</li><% end %>
+  </ul>
+<% end %>
+<% @digest.jobs_by_class.each do |klass, failures| %>
+  <p><b><%= klass %></b>: <%= failures.size %> failed job<%= "s" if failures.size > 1 %></p>
+  <ul><% failures.first(3).each do |failure| %><li><%= l(failure.created_at, format: :weekday_time) %>: <%= failure.exception_class %>: <%= failure.message.to_s.truncate(160) %></li><% end %></ul>
+<% end %>
+<p><%= link_to "System", system_url %></p>

@@ -20,7 +20,7 @@ class SyncRun < ApplicationRecord
   def self.record(feed, account: nil, window_from: nil, window_to: nil)
     run = create!(feed: feed, account: account, status: :running, started_at: Time.current, window_from: window_from, window_to: window_to)
     outcome = yield run
-    run.finish!(outcome == :failed ? :failed : (outcome == :partial || run.unmapped_values.any? ? :partial : :succeeded))
+    run.finish!(outcome == :failed ? :failed : (outcome == :partial || run.unmapped_values.any? ? :partial : :succeeded), error: run.error)
   rescue Schwab::NoUsableToken, Schwab::AuthError => e
     run.finish!(:skipped_token, error: e.message)
   rescue Schwab::Error => e
