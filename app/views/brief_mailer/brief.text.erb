@@ -4,7 +4,7 @@ Degraded: <%= @brief.degraded_reasons.join("; ") %>
 <% end -%>
 As of: <%= @brief.as_of_lines.join("; ") %>
 <% if @run.morning_brief? -%>
-Earnings and economic calendar: not available in Phase 1.
+Earnings and economic calendar: not available until FMP (Phase 2.5).
 <% if @brief.watchlist.any? -%>
 Watching: <%= @brief.watchlist.map { |w| "#{w.symbol} (#{w.trigger})" }.join("; ") %>
 <% end -%>

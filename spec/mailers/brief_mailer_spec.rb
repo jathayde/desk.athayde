@@ -17,7 +17,7 @@ RSpec.describe BriefMailer do
     expect(mail.subject).to eq("Athayde Desk: morning brief, Tue Sep 1")
     text = mail.text_part.body.to_s
     expect(text).to include("Schwab: healthy, token expires #{(Time.current + SchwabToken::REFRESH_LIFETIME).in_time_zone(MarketDay::ZONE).strftime('%a %b %-d')}",
-                            "Earnings and economic calendar: not available in Phase 1.", "All quiet.", "3 turns · 4 tool calls", "$0.0123", "http://")
+                            "Earnings and economic calendar: not available until FMP (Phase 2.5).", "All quiet.", "3 turns · 4 tool calls", "$0.0123", "http://")
     expect(text).not_to include("stopped:")
     expect(described_class.brief(run(kind: :eod, tool_turns: 1, tool_calls_count: 1)).text_part.body.to_s).to include("1 turn · 1 tool call")
   end
