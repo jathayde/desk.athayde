@@ -30,6 +30,9 @@ class OrderProposal < ApplicationRecord
   LOOK_GAP = 15.minutes # an unknown row nobody has looked at for this long gets a reconcile enqueued again
   APPROVABLE = %w[ validated ].freeze
   UNRESOLVED = %w[ submitting submission_unknown ].freeze # locks the instrument for every other proposal
+  COMMITTED = %w[ validated submitting submission_unknown submitted ].freeze # the desk has committed to these: they claim cash and count as positions
+  AT_BROKER = %w[ submitting submission_unknown submitted ].freeze # at Schwab, or maybe at Schwab
+  QUEUE = %w[ proposed validated submission_unknown ].freeze # what the operator still has to deal with
   BROKER_OUTCOMES = %w[ filled cancelled ].freeze
 
   STATUS_LABELS = { "proposed" => "evaluating", "validated" => "waiting for you", "rejected_by_rules" => "rejected by rules", "rejected" => "rejected",
@@ -38,7 +41,10 @@ class OrderProposal < ApplicationRecord
 
   scope :pending, -> { where(status: %w[ proposed validated ]) }
   scope :unresolved, -> { where(status: UNRESOLVED) }
-  scope :queue, -> { where(status: %w[ proposed validated submission_unknown ]).order(created_at: :desc) }
+  scope :committed, -> { where(status: COMMITTED) }
+  scope :at_broker, -> { where(status: AT_BROKER) }
+  scope :decided, -> { where.not(status: QUEUE) }
+  scope :queue, -> { where(status: QUEUE).order(created_at: :desc) }
   scope :expiring, -> { where(status: %w[ proposed validated ]).where(expires_at: ..Time.current) }
   # A shadow approval the operator still has to place by hand: the phase's central concept, named once.
   scope :awaiting_hand_placement, -> { submitted.where(shadow: true, broker_order_id: nil) }
@@ -72,7 +78,6 @@ class OrderProposal < ApplicationRecord
     end
   end
 
-  def terminal? = TERMINAL.include?(status)
   def approvable? = APPROVABLE.include?(status)
   # The stored evaluation, read through the same object the evaluator produced: one implementation of what
   # counts as a warning, whichever side of the jsonb it is read from.
@@ -111,7 +116,8 @@ class OrderProposal < ApplicationRecord
 
   # The one way a proposal is named in prose: emails, banners, the recap, the journal.
   def label = "#{side.upcase} #{quantity.to_s('F').sub(/\.0+\z/, '')} #{instrument.symbol}"
-  def priced_label = "#{label} @ #{limit_price.to_s('F')}"
+  def priced_label = "#{label} @ #{ActiveSupport::NumberHelper.number_to_currency(limit_price)}"
+  def cost = quantity.to_d * limit_price.to_d
 
   def status_label
     return "approved, place by hand" if awaiting_hand_placement?

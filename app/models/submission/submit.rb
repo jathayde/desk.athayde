@@ -26,23 +26,41 @@ class Submission::Submit
   end
 
   private
+    # The story the plan tells, in order: who, the gates, the rules today, what changed since, what was acknowledged.
     def first_transaction
       @proposal.lock!
+      authorize!
+      check_gates!
+      report = Guardrails::Evaluator.new(@proposal).call
+      raise Blocked.new(report) if report.blocked?
+      check_drift!(report)
+      check_acknowledgements!(report)
+      @proposal.update!(guardrail_results: report.to_h, evaluated_at: Time.current)
+      @proposal.start_submission!(user: @user, acknowledged: @acknowledged, override_reason: @override_reason, payload: payload, shadow: SystemSettings.instance.shadow_mode?)
+    end
+
+    def authorize!
       raise Submission::Refused, "only the approver can approve" unless @user&.approver?
       raise Submission::Refused, "proposal #{@proposal.id} is #{@proposal.status}, not waiting for a decision" unless @proposal.approvable?
+    end
+
+    def check_gates!
       settings = SystemSettings.instance
       raise Submission::Refused, "halted: #{settings.manual_halt_reason}" if settings.manual_halt?
       raise Submission::Refused, "entries are halted by #{settings.rule_halt_rule}" if @proposal.kind_entry? && !settings.entries_allowed?
-      report = Guardrails::Evaluator.new(@proposal).call
-      raise Blocked.new(report) if report.blocked?
+    end
+
+    # A changed quantity or a new warning since the operator read the page is a refusal, never a silent recompute (§0.4).
+    def check_drift!(report)
       raise Submission::Refused, "the desk changed: sizing would differ; re-propose" if sizing_changed?
       new_warnings = report.warnings - @proposal.warnings
-      raise Submission::Refused, "the desk changed: #{new_warnings.map { |r| r.humanize.downcase }.to_sentence} now warn; re-propose" if new_warnings.any?
+      raise Submission::Refused, "the desk changed: #{new_warnings.map { |r| r.humanize.downcase }.to_sentence} now need acknowledging; re-propose" if new_warnings.any?
+    end
+
+    def check_acknowledgements!(report)
       unacknowledged = report.warnings - @acknowledged
       raise Submission::Refused, "acknowledge #{unacknowledged.map { |r| r.humanize.downcase }.to_sentence} first" if unacknowledged.any?
       raise Submission::Refused, "the stop is outside the collar; an override reason is required" if report.needs_override? && @override_reason.nil?
-      @proposal.update!(guardrail_results: report.to_h, evaluated_at: Time.current)
-      @proposal.start_submission!(user: @user, acknowledged: @acknowledged, override_reason: @override_reason, payload: payload, shadow: settings.shadow_mode?)
     end
 
     # The operator pressed approve and the desk said no: on the record, outside the rolled-back transaction.
@@ -51,13 +69,7 @@ class Submission::Submit
       raise Submission::Refused, message
     end
 
-    def sizing_changed?
-      return false unless @proposal.kind_entry?
-      desk = Desk.new(account: @proposal.account)
-      fresh = Sizing.for(limit_price: @proposal.limit_price, stop_price: @proposal.stop_price, equity: desk.balance_stale? ? nil : desk.equity,
-                         rule: RiskRule.active_for("max_risk_per_trade", setup: @proposal.setup))
-      fresh.quantity != @proposal.quantity.to_i
-    end
+    def sizing_changed? = @proposal.kind_entry? && Sizing.for_proposal(@proposal).quantity != @proposal.quantity.to_i
 
     def payload
       symbol = @proposal.instrument.symbol

@@ -4,7 +4,7 @@ class ProposalsController < ApplicationController
   def index
     @awaiting = OrderProposal.awaiting_hand_placement.includes(:instrument).order(:id)
     @queue = OrderProposal.queue.includes(:instrument, :setup)
-    @decided = OrderProposal.where.not(status: %w[ proposed validated submission_unknown ]).where.not(id: @awaiting).order(id: :desc).limit(10).includes(:instrument)
+    @decided = OrderProposal.decided.where.not(id: @awaiting).order(id: :desc).limit(10).includes(:instrument)
   end
 
   def show
@@ -14,7 +14,7 @@ class ProposalsController < ApplicationController
 
   def new
     @setups = Setup.active.order(:name)
-    @draft = params[:symbol].present? ? preview : nil
+    @draft, @report = preview if params[:symbol].present?
   end
 
   def create

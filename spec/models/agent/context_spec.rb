@@ -42,7 +42,7 @@ RSpec.describe Agent::Context do
     travel_to(Time.zone.local(2026, 9, 1, 15, 30)) { old.record_broker_outcome!(:filled) } # the outcome audit row, not updated_at, puts it in today
     stale = create(:order_proposal, account: account, instrument: create(:instrument, symbol: "STALE"), status: "filled", decided_at: Time.zone.local(2026, 8, 20, 10, 2))
     prompt = context(kind: :eod).user_prompt
-    expect(prompt).to include("Proposals today", "BUY 10 XYZ @ 50.0, agent, filled (shadow)", "BUY 10 OLD @ 50.0, human, filled")
+    expect(prompt).to include("Proposals today", "BUY 10 XYZ @ $50.00, agent, filled (shadow)", "BUY 10 OLD @ $50.00, human, filled")
     expect(prompt).not_to include("STALE")
     expect(stale.reload.updated_at).to be_within(1.minute).of(Time.current)
   end

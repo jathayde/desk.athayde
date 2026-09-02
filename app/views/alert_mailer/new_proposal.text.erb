@@ -1,4 +1,4 @@
-<%= @proposal.label %> @ <%= money(@proposal.limit_price) %><% if @proposal.stop_price %>, stop <%= money(@proposal.stop_price) %><% end %>: <%= proposal_status_label(@proposal) %>.
+<%= @proposal.priced_label %><% if @proposal.stop_price %>, stop <%= money(@proposal.stop_price) %><% end %>: <%= @proposal.status_label %>.
 <% if @proposal.thesis.present? -%>
 
 <%= @proposal.thesis %>

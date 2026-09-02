@@ -5,7 +5,7 @@
   <h2 class="sec">Place by hand at Schwab</h2>
   <ul class="trades">
     <% @awaiting.each do |proposal| %>
-      <li class="kv"><span><%= link_to "#{proposal.label} @ #{money(proposal.limit_price)}", proposal_path(proposal) %></span><b>approved <%= stamp(proposal.decided_at) %></b></li>
+      <li class="kv"><span><%= link_to proposal.priced_label, proposal_path(proposal) %></span><b>approved <%= stamp(proposal.decided_at) %></b></li>
     <% end %>
   </ul>
 <% end %>
@@ -16,8 +16,8 @@
   <ul class="trades">
     <% @queue.each do |proposal| %>
       <li class="kv">
-        <span><%= link_to "#{proposal.label} @ #{money(proposal.limit_price)}", proposal_path(proposal) %><% if proposal.setup %> · <%= proposal.setup.name %><% end %></span>
-        <b><%= proposal_status_label(proposal) %></b>
+        <span><%= link_to proposal.priced_label, proposal_path(proposal) %><% if proposal.setup %> · <%= proposal.setup.name %><% end %></span>
+        <b><%= proposal.status_label %></b>
       </li>
     <% end %>
   </ul>
@@ -26,7 +26,7 @@
   <h2 class="sec">Decided</h2>
   <ul class="trades">
     <% @decided.each do |proposal| %>
-      <li class="kv"><span><%= link_to proposal.label, proposal_path(proposal) %></span><b><%= proposal_status_label(proposal) %></b></li>
+      <li class="kv"><span><%= link_to proposal.label, proposal_path(proposal) %></span><b><%= proposal.status_label %></b></li>
     <% end %>
   </ul>
 <% end %>

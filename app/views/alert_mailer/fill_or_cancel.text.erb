@@ -1,4 +1,4 @@
-<%= @proposal.label %> @ <%= money(@proposal.limit_price) %> is <%= @proposal.status %> at Schwab<% if @proposal.broker_order_id %> (order <%= @proposal.broker_order_id %>)<% end %>.
+<%= @proposal.priced_label %> is <%= @proposal.status %> at Schwab<% if @proposal.broker_order_id %> (order <%= @proposal.broker_order_id %>)<% end %>.
 <% if @proposal.filled? && @proposal.kind_entry? -%>
 
 The bracket's stop should now be working; the next orders sync confirms it, and the dashboard says if it is not.

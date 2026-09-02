@@ -9,7 +9,7 @@ end
   "max_sector_exposure" => {}, "daily_loss_halt" => { "percent" => "3" }, "max_drawdown_halt" => { "percent" => "10" },
   "earnings_blackout" => {}, "wash_sale" => { "days" => "30" }, "notional_cap" => { "per_order" => "2500", "per_day" => "5000" },
   "stop_collar" => StopCollar::Calculator::DEFAULTS }.each do |rule_type, params|
-  RiskRule.active_for(rule_type) || RiskRule.create!(rule_type: rule_type, params: params, mode: rule_type == "wash_sale" ? "warn" : "block", note: "seeded starting set")
+  RiskRule.active_for(rule_type) || RiskRule.create!(rule_type: rule_type, params: params, mode: rule_type == "wash_sale" ? "caution" : "block", note: "seeded starting set")
 end
 
 # A development desk through the fake broker and the fake model, so every screen and a brief render without

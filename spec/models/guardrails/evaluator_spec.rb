@@ -6,14 +6,7 @@ RSpec.describe Guardrails::Evaluator do
   let(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
   let(:xyz) { create(:instrument, symbol: "XYZ", cusip: "037833100") }
 
-  def seed_rules(**overrides)
-    { "max_risk_per_trade" => { "percent" => "1.0" }, "max_positions" => { "count" => "3" }, "max_position_exposure" => { "percent" => "25" },
-      "max_sector_exposure" => {}, "daily_loss_halt" => { "percent" => "3" }, "max_drawdown_halt" => { "percent" => "10" },
-      "earnings_blackout" => {}, "wash_sale" => { "days" => "30" }, "notional_cap" => { "per_order" => "2500", "per_day" => "5000" },
-      "stop_collar" => StopCollar::Calculator::DEFAULTS }.merge(overrides).each do |type, params|
-      RiskRule.create!(rule_type: type, params: params, mode: type == "wash_sale" ? "warn" : "block")
-    end
-  end
+  def seed_rules(**overrides) = seed_rule_set("max_positions" => { "count" => "3" }, **overrides)
 
   # reload: the has-one current_balance is cached on the spec's account object, unlike a request's fresh record
   def fresh_balance(settled: 3000, equity: 10_000, at: Time.current) = create(:balance, account: account, equity: equity, settled_cash: settled, as_of: at).tap { account.reload }

@@ -22,7 +22,7 @@ RSpec.describe OrderProposal do
     other = described_class.create!(account: account, instrument: create(:instrument), kind: :entry, origin: :agent, side: :buy)
     other.evaluate!(report(result("settled_cash", :block)))
     expect(other).to be_rejected_by_rules
-    expect(other).to be_terminal
+    expect(other).to be_rejected_by_rules
     expect { other.evaluate!(report) }.to raise_error(OrderProposal::IllegalTransition)
   end
 

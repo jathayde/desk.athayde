@@ -9,12 +9,9 @@ class Guardrails::Evaluator
   end
 
   def call
-    active = RiskRule.active.where(rule_type: RiskRule::TYPES).where(setup: [ nil, @proposal.setup ]).group_by(&:rule_type)
+    active = RiskRule.active_set_for(@proposal.setup)
     results = BUILT_IN.map { |type| judge(type, nil) }
-    results += RiskRule::TYPES.map do |type|
-      rule = active.fetch(type, []).find { |r| r.setup_id == @proposal.setup_id } || active.fetch(type, []).find { |r| r.setup_id.nil? }
-      rule ? judge(type, rule) : missing(type)
-    end
+    results += RiskRule::TYPES.map { |type| active[type] ? judge(type, active[type]) : missing(type) }
     Guardrails::Report.new(results)
   end
 

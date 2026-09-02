@@ -15,7 +15,7 @@ class RiskRulesController < ApplicationController
                                 note: submitted[:note].presence, override_reason: submitted[:override_reason])
     redirect_to risk_rules_path, notice: "#{successor.rule_type.humanize} is now version #{successor.version}."
   rescue RiskRule::Locked => e
-    redirect_to risk_rules_path, alert: "Rules are locked while #{e.message}."
+    redirect_to risk_rules_path, alert: e.message
   rescue ActiveRecord::RecordInvalid => e
     redirect_to risk_rules_path, alert: e.record.errors.full_messages.to_sentence
   end

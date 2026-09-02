@@ -39,7 +39,6 @@ module ApplicationHelper
   # An absolute stamp for email, where relative words age badly.
   def stamp(time) = time ? l(time, format: :stamp) : "never"
   def protection_label(protection) = PROTECTION_LABELS.fetch(protection)
-  def proposal_status_label(proposal) = proposal.status_label
   def proposal_links(proposals) = safe_join(proposals.map { |proposal| link_to(proposal.instrument.symbol, proposal_path(proposal)) }, ", ")
 
   def proposals_summary(desk)

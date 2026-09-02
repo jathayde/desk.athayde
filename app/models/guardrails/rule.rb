@@ -21,7 +21,7 @@ class Guardrails::Rule
   def rule_type = self.class.name.demodulize.underscore
   def param(name) = BigDecimal(rule.param(name).to_s)
   def entry? = proposal.kind_entry?
-  def cost = proposal.quantity.to_d * proposal.limit_price.to_d
+  def cost = proposal.cost
 
   def pass(**detail) = [ :pass, detail ]
   def caution(overridable: false, **detail) = [ :caution, detail, overridable ]

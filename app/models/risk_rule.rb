@@ -14,14 +14,21 @@ class RiskRule < ApplicationRecord
   belongs_to :superseded_by, class_name: "RiskRule", optional: true
   belongs_to :changed_by, class_name: "User", optional: true
 
-  enum :mode, { block: "block", warn: "warn" }, prefix: true
+  enum :mode, { block: "block", caution: "caution" }, prefix: true # caution: the outcome the approver acknowledges
 
   validates :rule_type, inclusion: { in: TYPES }
   validate :required_params_present
 
   scope :active, -> { where(active: true) }
 
-  def self.active_for(rule_type, setup: nil) = active.find_by(rule_type: rule_type, setup: setup) || (setup && active.find_by(rule_type: rule_type, setup: nil))
+  # The rule of each type that judges a setup, in one query: the setup's own row wins, the global row is the
+  # fallback. The one place that sentence is written.
+  def self.active_set_for(setup)
+    active.where(setup: [ nil, setup ]).group_by(&:rule_type).transform_values { |rules| rules.find { |r| r.setup_id == setup&.id } || rules.find { |r| r.setup_id.nil? } }
+  end
+
+  def self.active_for(rule_type, setup: nil) = active_set_for(setup)[rule_type.to_s]
+  def self.params_for(rule_type, setup: nil) = active_for(rule_type, setup: setup)&.params || {}
 
   # The next version of this rule, superseding this one, in one transaction and one audit row. Under this row's
   # lock and the settings lock, so two edits cannot both mint version n+1 and a halt landing mid-edit still locks.
@@ -30,7 +37,7 @@ class RiskRule < ApplicationRecord
     transaction do
       lock!
       raise ActiveRecord::StaleObjectError.new(self, "supersede") unless active?
-      raise Locked, "a halt is engaged: say why you are editing anyway" if SystemSettings.instance.lock!.halted? && override.blank?
+      raise Locked, "Rules are locked while a halt is engaged; say why you are editing anyway." if SystemSettings.instance.lock!.halted? && override.blank?
       update!(active: false) # first, so the one-active index admits the successor
       successor = self.class.create!(rule_type: rule_type, setup: setup, params: params, mode: mode.presence || self.mode, version: version + 1, changed_by: user,
                                      note: [ note.presence, ("override during halt: #{override}" if override.present?) ].compact.join(" · ").presence)
@@ -48,7 +55,7 @@ class RiskRule < ApplicationRecord
 
   # Whether this is the row the evaluator would pick for the proposal: the setup's own row wins, the global row
   # is the fallback for setups without one.
-  def applies_to?(proposal) = self.class.active_for(rule_type, setup: proposal.setup) == self
+  def applies_to?(proposal) = self.class.active_for(rule_type, setup: proposal.setup) == self # RulePreview resolves once per proposal; a handful at most
 
   private
     def required_params_present

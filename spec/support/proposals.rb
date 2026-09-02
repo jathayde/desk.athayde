@@ -5,7 +5,7 @@ module ProposalHelpers
                "wash_sale" => { "days" => "30" }, "notional_cap" => { "per_order" => "2500", "per_day" => "5000" }, "stop_collar" => StopCollar::Calculator::DEFAULTS }.freeze
 
   def seed_rule_set(**overrides)
-    RULE_SET.merge(overrides).each { |type, params| RiskRule.create!(rule_type: type, params: params, mode: type == "wash_sale" ? "warn" : "block") }
+    RULE_SET.merge(overrides).each { |type, params| RiskRule.create!(rule_type: type, params: params, mode: type == "wash_sale" ? "caution" : "block") }
   end
 
   def ready_desk(account, equity: 10_000, settled: 3000)

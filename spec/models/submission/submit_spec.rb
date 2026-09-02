@@ -78,7 +78,7 @@ RSpec.describe Submission::Submit do
 
     create(:balance, account: account, equity: 10_000, settled_cash: 3000, as_of: Time.current)
     create(:trade, account: account, instrument: xyz, status: :closed, closed_at: 5.days.ago, realized_pnl: -80) # a wash-sale caution that was not there at creation
-    expect { proposal.approve_and_submit!(user: john, acknowledged: acknowledged + [ "wash_sale" ]) }.to raise_error(Submission::Refused, /wash sale now warn; re-propose/)
+    expect { proposal.approve_and_submit!(user: john, acknowledged: acknowledged + [ "wash_sale" ]) }.to raise_error(Submission::Refused, /wash sale now need acknowledging; re-propose/)
   end
 
   it "engages the halt a fresh evaluation asks for, refuses under the halts, and refuses a real submission while that path is not built" do

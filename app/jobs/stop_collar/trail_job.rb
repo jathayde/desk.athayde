@@ -11,7 +11,7 @@ module StopCollar
         setups = account.trades.open.includes(:setup).index_by(&:instrument_id)
         account.positions.where.not(id: account.positions.suggestable).update_all(suggested_stop: nil, suggested_stop_method: nil, suggested_at: nil) # nothing to tighten any more
         account.positions.suggestable.includes(:instrument, :working_stop_order).each do |position|
-          params = RiskRule.active_for("stop_collar", setup: setups[position.instrument_id]&.setup)&.params || {}
+          params = RiskRule.params_for("stop_collar", setup: setups[position.instrument_id]&.setup)
           suggestion = StopCollar::Trail.new(position, params: params).suggestion
           position.update!(suggested_stop: suggestion&.price, suggested_stop_method: suggestion&.strategy, suggested_at: suggestion && Time.current)
         end

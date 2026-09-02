@@ -21,14 +21,14 @@ class Guardrails::Context
   # Entries not yet filled on instruments not yet held: they count as positions the desk has committed to. The
   # proposal being judged is left out, so its own validated row is not counted twice at approval.
   def pending_new_positions(except: nil)
-    scope = account.order_proposals.where(kind: :entry, status: %w[ validated submitting submission_unknown submitted ]).where.not(instrument_id: positions.map(&:instrument_id))
+    scope = account.order_proposals.committed.where(kind: :entry).where.not(instrument_id: positions.map(&:instrument_id))
     scope = scope.where.not(id: except.id) if except&.persisted?
     scope.distinct.count(:instrument_id)
   end
 
   # What unfilled entries on this instrument have already committed, so a second entry sees the first.
   def pending_cost_for(instrument, except: nil)
-    account.order_proposals.where(instrument: instrument, kind: :entry, status: %w[ validated submitting submission_unknown submitted ]).where.not(id: except&.id).sum { |p| p.quantity.to_d * p.limit_price.to_d }
+    account.order_proposals.committed.where(instrument: instrument, kind: :entry).where.not(id: except&.id).sum(&:cost)
   end
 
   # Cash the broker reports as settled, minus every buy that already claims it (docs/phase-2-plan.md §0.9).
@@ -40,7 +40,7 @@ class Guardrails::Context
   end
 
   def pending_app_buys
-    account.order_proposals.where(status: %w[ submitting submission_unknown submitted ], side: Schwab::Order::BUY).sum { |p| p.quantity.to_d * p.limit_price.to_d }
+    account.order_proposals.at_broker.buy.sum(&:cost)
   end
 
   # A market buy claims an unknown sum; the position's last price is the conservative stand-in.
@@ -62,7 +62,7 @@ class Guardrails::Context
 
   # What the day has already committed on the buy side, resting or filled, unknown included.
   def notional_today
-    account.order_proposals.where(status: %w[ submitting submission_unknown submitted filled ], side: Schwab::Order::BUY, decided_at: today_range).sum { |p| p.quantity.to_d * p.limit_price.to_d }
+    account.order_proposals.where(status: OrderProposal::AT_BROKER + %w[ filled ]).buy.where(decided_at: today_range).sum(&:cost)
   end
 
   private

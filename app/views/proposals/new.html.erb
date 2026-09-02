@@ -21,11 +21,10 @@
   <%= f.submit "Preview" %>
 <% end %>
 <% if @draft %>
-  <% draft, report = @draft %>
-  <h2 class="sec">Preview: <%= draft.side.upcase %> <%= quantity(draft.quantity) %> <%= draft.instrument.symbol %> @ <%= money(draft.limit_price) %></h2>
-  <%= render "proposals/evaluation", proposal: draft, results: report.to_h, sizing: draft.sizing, collar: draft.collar %>
+  <h2 class="sec">Preview: <%= @draft.priced_label %></h2>
+  <%= render "proposals/evaluation", proposal: @draft, results: @report.to_h, sizing: @draft.sizing, collar: @draft.collar %>
   <%= form_with url: proposals_path, method: :post do |f| %>
     <% %i[ kind symbol limit_price stop_price quantity setup_id thesis tax_lot_method ].each { |key| concat f.hidden_field(key, value: params[key]) } %>
-    <%= f.submit report.blocked? ? "Propose anyway (it will be rejected by rules)" : "Propose" %>
+    <%= f.submit @report.blocked? ? "Propose anyway (it will be rejected by rules)" : "Propose" %>
   <% end %>
 <% end %>

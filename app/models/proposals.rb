@@ -13,9 +13,8 @@ module Proposals
                                  planned_stop: stop_price, setup: setup, thesis: thesis, origin: origin, user: user, quantity: quantity, tax_lot_method: method,
                                  expires_at: MarketDay.today.in_time_zone(MarketDay::ZONE).end_of_day)
     if proposal.kind_entry?
-      desk = Desk.new(account: account)
-      proposal.collar = StopCollar::Calculator.new(instrument, entry_price: limit_price, params: RiskRule.active_for("stop_collar", setup: setup)&.params || {}).call.to_h
-      sizing = Sizing.for(limit_price: limit_price, stop_price: stop_price, equity: desk.balance_stale? ? nil : desk.equity, rule: RiskRule.active_for("max_risk_per_trade", setup: setup))
+      proposal.collar = StopCollar::Calculator.new(instrument, entry_price: limit_price, params: RiskRule.params_for("stop_collar", setup: setup)).call.to_h
+      sizing = Sizing.for_proposal(proposal)
       proposal.sizing = sizing.to_h
       proposal.quantity = sizing.quantity
     else

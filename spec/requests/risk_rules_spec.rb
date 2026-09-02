@@ -14,7 +14,7 @@ RSpec.describe "Rules" do
     get risk_rules_path
     expect(response.body).to include("Max risk per trade", "Notional cap", "Save as v2", "rule_#{RiskRule.active_for("notional_cap").id}_params_per_order", "not checked")
     cap = RiskRule.active_for("notional_cap")
-    patch risk_rule_path(cap), params: { "rule_#{cap.id}" => { params: { per_order: "1000", per_day: "5000" }, note: "smaller account", mode: "warn" } }
+    patch risk_rule_path(cap), params: { "rule_#{cap.id}" => { params: { per_order: "1000", per_day: "5000" }, note: "smaller account", mode: "caution" } }
     expect(flash[:notice]).to include("version 2")
     expect(cap.reload).not_to be_active
     expect(RiskRule.active_for("notional_cap")).to have_attributes(version: 2, params: { "per_order" => "1000", "per_day" => "5000" }, note: "smaller account", changed_by: john, mode: "block") # mode is only choosable on wash sale

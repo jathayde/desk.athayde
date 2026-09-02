@@ -3297,6 +3297,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902170001'),
 ('20260902160001'),
 ('20260902150001'),
 ('20260902140001'),

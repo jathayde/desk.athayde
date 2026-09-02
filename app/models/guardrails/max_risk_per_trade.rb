@@ -9,7 +9,7 @@ class Guardrails::MaxRiskPerTrade < Guardrails::Rule
     return block(reason: sizing.reason || "not sized") unless sizing.sized?
     equity = context.fresh_equity or return block(reason: "no fresh equity to measure risk against")
     at_risk = proposal.quantity.to_d * (proposal.limit_price.to_d - proposal.stop_price.to_d)
-    budget = (equity * param(:percent) / 100).round(2)
+    budget = Sizing.budget(equity: equity, percent: param(:percent))
     detail = { at_risk: at_risk, budget: budget, equity: equity, frozen_budget: sizing.risk_budget }
     at_risk <= budget ? pass(**detail) : block(**detail)
   end

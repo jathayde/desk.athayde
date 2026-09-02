@@ -1,8 +1,6 @@
 # The guardrail engine (docs/phase-2-plan.md §3): rules as data, evaluated in Rails against every proposal,
 # never bypassed or edited through a tool. Evaluation answers; the writers (evaluate!, the approve path) act.
 module Guardrails
-  OUTCOMES = %i[ pass caution block unavailable skipped ].freeze
-
   # One rule's verdict. overridable: a caution the approver may pass with a logged reason (today, only the
   # collar). trip: a rule halt this verdict asks the writer to engage, with its reset time (nil = until cleared).
   Result = Data.define(:rule_type, :outcome, :detail, :version, :params, :overridable, :trip) do

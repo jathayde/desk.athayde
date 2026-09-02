@@ -19,6 +19,5 @@ class SubmissionAttempt < ApplicationRecord
     update!(first_absence_at: first_absence_at || Time.current, ambiguous_order_ids: [])
   end
   def absent_since?(gap) = first_absence_at.present? && first_absence_at <= gap.ago
-  def ambiguous? = ambiguous_order_ids.any?
   def error = response["error"]
 end

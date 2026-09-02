@@ -13,7 +13,7 @@ RSpec.describe OrderProposal, "transition matrix" do
       start_submission: { "validated" => "submitting" }, record_shadow: { "submitting" => "submitted" }, record_submitted: { "submitting" => "submitted", "submission_unknown" => "submitted" },
       record_unknown: { "submitting" => "submission_unknown" }, record_rejected: { "submitting" => "submission_failed", "submission_unknown" => "submission_failed" },
       record_not_placed: { "submission_unknown" => "submission_failed" }, record_reconciled: { "submission_unknown" => "submitted" },
-      record_broker_outcome: { "submitted" => "filled" } }
+      record_filled: { "submitted" => "filled" }, record_cancelled: { "submitted" => "cancelled" } }
   end
 
   def proposal_in(status)
@@ -36,7 +36,8 @@ RSpec.describe OrderProposal, "transition matrix" do
     when :record_rejected then proposal.record_rejected!(attempt_of(proposal), error: "400")
     when :record_not_placed then proposal.record_not_placed!(attempt_of(proposal))
     when :record_reconciled then proposal.record_reconciled!(attempt_of(proposal), order: create(:order, account: account, instrument: instrument, broker_order_id: "9"))
-    when :record_broker_outcome then proposal.record_broker_outcome!(:filled)
+    when :record_filled then proposal.record_broker_outcome!(:filled)
+    when :record_cancelled then proposal.record_broker_outcome!(:cancelled)
     end
   end
 

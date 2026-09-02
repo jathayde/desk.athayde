@@ -4,7 +4,7 @@
 
 <dl class="kv-list">
   <div class="kv"><dt>Setup</dt><dd><%= @trade.setup&.name || "none" %></dd></div>
-  <% if proposal = @trade.order_proposal %><div class="kv"><dt>Proposal</dt><dd><%= link_to "#{proposal.label} @ #{money(proposal.limit_price)}, #{proposal.origin}", proposal_path(proposal) %></dd></div><% end %>
+  <% if proposal = @trade.order_proposal %><div class="kv"><dt>Proposal</dt><dd><%= link_to "#{proposal.priced_label}, #{proposal.origin}", proposal_path(proposal) %></dd></div><% end %>
   <div class="kv"><dt>Planned / actual stop</dt><dd><%= money(@trade.current_planned_stop) %> / <% if @trade.closed? %><%= @trade.stopped_out? ? money(@trade.avg_exit) : "not hit" %><% else %><%= money(@position&.stop_price) %><% end %></dd></div>
   <div class="kv"><dt>Entry → exit</dt><dd><%= money(@trade.avg_entry) %> → <%= @trade.avg_exit ? money(@trade.avg_exit) : "open" %></dd></div>
   <div class="kv"><dt>Realized P&amp;L</dt><dd><%= signed_money(@trade.realized_pnl) %></dd></div>
