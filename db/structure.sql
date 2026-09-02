@@ -1498,7 +1498,8 @@ CREATE TABLE public.users (
     last_login_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    approver boolean DEFAULT false NOT NULL
+    approver boolean DEFAULT false NOT NULL,
+    notify boolean DEFAULT false NOT NULL
 );
 
 
@@ -3368,6 +3369,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902200001'),
 ('20260902190001'),
 ('20260902180001'),
 ('20260902170001'),

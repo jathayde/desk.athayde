@@ -3,5 +3,5 @@ class ApplicationMailer < ActionMailer::Base
   layout "mailer"
 
   private
-    def recipients = User.pluck(:email_address)
+    def recipients = User.notified.pluck(:email_address)
 end

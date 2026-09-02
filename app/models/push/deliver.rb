@@ -14,7 +14,7 @@ class Push::Deliver
 
   def call
     return 0 unless Push.configured?
-    devices = Device.includes(:user).order(:id).to_a
+    devices = Device.joins(:user).merge(User.notified).includes(:user).order(:id).to_a
     return 0 if devices.none? # no handshake for nobody
     Push.with_connection { |connection| devices.count { |device| deliver(connection, device) } }
   rescue StandardError => e

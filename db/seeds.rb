@@ -1,6 +1,6 @@
 # Access is by allowlist: only seeded users can request a sign-in link. This part runs everywhere, including
 # the production release phase (db:prepare seeds a fresh database).
-[ { email_address: "john@athayde.com", name: "John", approver: true }, { email_address: "whitney@athayde.com", name: "Whitney", approver: false } ].each do |attributes|
+[ { email_address: "john@athayde.com", name: "John", approver: true, notify: true }, { email_address: "whitney@athayde.com", name: "Whitney", approver: false, notify: false } ].each do |attributes|
   User.find_or_initialize_by(email_address: attributes[:email_address]).update!(attributes)
 end
 

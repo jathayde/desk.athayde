@@ -38,7 +38,11 @@ RSpec.describe Push::Deliver do
     expect(Device.count).to eq(0)
   end
 
-  it "opens no connection when nobody has a device" do
+  it "opens no connection when nobody has a device, and skips the phone of a user who is not notified" do
+    expect(described_class.call(title: "t", body: "b", path: "/")).to eq(0)
+    expect(apns.pushed).to be_empty
+    whitney.update!(notify: false)
+    create(:device, user: whitney, token: "whitney-1")
     expect(described_class.call(title: "t", body: "b", path: "/")).to eq(0)
     expect(apns.pushed).to be_empty
   end
