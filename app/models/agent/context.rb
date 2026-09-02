@@ -35,6 +35,11 @@ class Agent::Context
     end
   end
 
+  # Held and delisted: an instrument the desk no longer holds is nobody's business in a brief.
+  def delisted_symbols
+    @delisted_symbols ||= account ? dashboard.rows.filter_map { |r| r.position.instrument.symbol if r.protection == :delisted } : []
+  end
+
   # The same numbers the get_setup_stats tool returns, serialized the same way (decimal strings, never BigDecimal#to_s).
   def setup_stats = @setup_stats ||= Agent.serialize(Agent::Tools::GetSetupStats.new.call).deep_symbolize_keys
 

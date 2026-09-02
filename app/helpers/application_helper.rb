@@ -1,7 +1,7 @@
 module ApplicationHelper
   PROTECTION_LABELS = {
     protected: "protected", partial: "partially covered", oversized: "stop larger than position", awaiting: "stop awaiting parent",
-    trailing_unknown: "trailing stop, price unknown", unpriced: "stop in place, price unknown", unprotected: "no stop"
+    trailing_unknown: "trailing stop, price unknown", unpriced: "stop in place, price unknown", unprotected: "no stop", delisted: "delisted"
   }.freeze
   REVIEW_REASON_LABELS = {
     "missing_setup" => "No setup recorded", "missing_stop" => "No planned stop", "bootstrapped" => "Legacy holding: the entry predates the journal",

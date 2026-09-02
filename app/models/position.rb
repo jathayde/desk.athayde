@@ -29,6 +29,7 @@ class Position < ApplicationRecord
   end
 
   def compute_protection
+    return :delisted if instrument.delisted?
     return :unprotected unless working_stop_order&.working?
     return :awaiting if !working_stop_order.live?
     return :trailing_unknown if stop_price.blank? || live_stops.any? { |o| o.stop_price.blank? }
@@ -39,7 +40,8 @@ class Position < ApplicationRecord
   end
 
   def protected? = protection == :protected
-  def unprotected? = !protected?
+  def delisted? = protection == :delisted
+  def unprotected? = !protected? && !delisted?
 
   # Signed fraction of price between here and the stop; negative once price has gapped through it. Shown
   # whenever a stop price exists, since a partially covered stop is still the number to act on.

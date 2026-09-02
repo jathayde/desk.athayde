@@ -51,6 +51,18 @@
 </section>
 
 <section>
+  <h2 class="sec">Holdings</h2>
+  <dl class="kv-list">
+    <% status.holdings.each do |position| %>
+      <div class="kv"><dt><%= position.instrument.symbol %><% if position.instrument.delisted? %> <small>delisted</small><% end %></dt>
+        <dd><%= button_to position.instrument.delisted? ? "Relist" : "Mark delisted", instrument_path(position.instrument), method: :patch, params: { delisted: position.instrument.delisted? ? "0" : "1" }, class: "link-button" %></dd></div>
+    <% end %>
+    <% if status.holdings.empty? %><div class="kv"><dt>Positions</dt><dd>none yet</dd></div><% end %>
+  </dl>
+  <p class="muted">A delisted holding still syncs and stays in the journal; it leaves the unprotected count and the risk sums, and comes back on its own if Schwab prints a different price.</p>
+</section>
+
+<section>
   <h2 class="sec">Feeds</h2>
   <dl class="kv-list">
     <% status.feed_rows.each do |row| %>

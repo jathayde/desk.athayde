@@ -5,11 +5,34 @@ class Instrument < ApplicationRecord
   has_many :activities, dependent: :restrict_with_exception
   has_many :trades, dependent: :restrict_with_exception
 
+  scope :delisted, -> { where.not(delisted_at: nil) }
+
   normalizes :cusip, with: ->(c) { c.strip.upcase.presence }
   normalizes :symbol, with: ->(s) { s.strip.upcase }
 
   validates :symbol, presence: true
   validate :predecessor_is_another_instrument
+
+  # A holding the market no longer prices: still synced and journaled, excluded from protection counts and
+  # risk sums, named on the dashboard as one line. Cleared by the operator, or by Schwab printing a price that
+  # differs from the one it carried at delisting (the same stale mark repeated is not a market).
+  def delisted? = delisted_at.present?
+  def priced_again?(price) = delisted? && price.present? && price.positive? && price != delisted_price
+
+  def delist!(user:, price: nil)
+    return self if delisted?
+    update!(delisted_at: Time.current, delisted_price: price)
+    AuditEvent.log("instrument_delisted", actor: :human, user: user, subject: self, data: { symbol: symbol, price: price&.to_s })
+    self
+  end
+
+  # No user means the positions sync did it, with the price that changed as the reason.
+  def relist!(user: nil, reason: nil)
+    return self unless delisted?
+    update!(delisted_at: nil, delisted_price: nil)
+    AuditEvent.log("instrument_relisted", actor: user ? :human : :system, user: user, subject: self, reason: reason, data: { symbol: symbol })
+    self
+  end
 
   # Identity in order of trust: CUSIP, Schwab instrument id, then symbol and asset type among rows that have
   # no CUSIP, then a Schwab lookup by symbol, then a provisional row. A weaker match backfills a missing

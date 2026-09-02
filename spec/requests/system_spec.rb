@@ -65,4 +65,23 @@ RSpec.describe "System page" do
     expect(response.body).to include("$0.05", "plus unpriced runs", "morning brief, Tue Sep 1", "degraded", "not emailed", "deadline passed", "missing", "end of day, Mon Sep 7")
     expect(response.body.scan("not emailed").size).to eq(2)
   end
+
+  it "marks a held instrument delisted and relists it from the system page, auditing both, and refuses anything else" do
+    sign_in(user)
+    account = create(:account)
+    position = create(:position, account: account, instrument: create(:instrument, symbol: "GONE"))
+    get system_path
+    expect(response.body).to include("GONE", "Mark delisted")
+    patch instrument_path(position.instrument), params: { delisted: "1" }
+    expect(position.instrument.reload).to be_delisted
+    get system_path
+    expect(response.body).to include("Relist", "<small>delisted</small>")
+    patch instrument_path(position.instrument), params: { delisted: "0" }
+    expect(position.instrument.reload).not_to be_delisted
+    expect(AuditEvent.where(kind: %w[ instrument_delisted instrument_relisted ]).count).to eq(2)
+    patch instrument_path(position.instrument), params: { delisted: "maybe" }
+    expect(response).to have_http_status(:bad_request)
+    patch instrument_path(create(:instrument)), params: { delisted: "1" }
+    expect(response).to have_http_status(:not_found)
+  end
 end

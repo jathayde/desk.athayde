@@ -77,6 +77,7 @@ dl.kv-list { margin: 0; } .kv dt, .kv dd { margin: 0; } .kv dd { font-variant-nu
 .pos .sub { display: flex; justify-content: space-between; }
 .pos .primary { font-variant-numeric: tabular-nums; }
 .pos.at-risk .primary { color: var(--danger); }
+.pos.delisted, .pos.delisted .primary { color: var(--mid); }
 .warn { color: var(--danger); font-style: normal; }
 .as-of { color: var(--mid); font-size: 0.8rem; }
 .as-of.stale { color: var(--danger); }

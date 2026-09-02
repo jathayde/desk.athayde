@@ -30,13 +30,13 @@
     <ul class="positions">
       <% dashboard.rows.each do |row| %>
         <% position = row.position %>
-        <li class="pos <%= row.protection == :protected ? "protected" : "at-risk" %>">
+        <li class="pos <%= { protected: "protected", delisted: "delisted" }.fetch(row.protection, "at-risk") %>">
           <div class="top">
             <span><%= row.trade ? link_to(position.instrument.symbol, trade_path(row.trade)) : position.instrument.symbol %> · <%= quantity(position.quantity) %></span>
-            <span class="primary"><% if position.distance_to_stop %><%= percent(position.distance_to_stop) %> to stop<% else %><%= protection_label(row.protection) %><% end %></span>
+            <span class="primary"><% if position.distance_to_stop && !position.delisted? %><%= percent(position.distance_to_stop) %> to stop<% else %><%= protection_label(row.protection) %><% end %></span>
           </div>
           <div class="sub">
-            <span>in @ <%= money(position.average_price) %><% if row.protection != :protected && position.distance_to_stop %> · <em class="warn"><%= protection_label(row.protection) %></em><% end %></span>
+            <span>in @ <%= money(position.average_price) %><% if position.unprotected? && position.distance_to_stop %> · <em class="warn"><%= protection_label(row.protection) %></em><% end %></span>
             <span><%= signed_money(position.unrealized_pnl) %> · <%= as_of(row.as_of, stale: row.stale) %></span>
           </div>
         </li>

@@ -16,6 +16,8 @@ class SystemStatus
     end
   end
 
+  def holdings = @holdings ||= Position.joins(:account, :instrument).merge(Account.trading).includes(:instrument).order("instruments.symbol").to_a
+
   def feed_rows
     @feed_rows ||= accounts.flat_map do |row|
       SyncRun::ACCOUNT_FEEDS.map do |feed|

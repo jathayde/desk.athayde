@@ -49,6 +49,14 @@ test("unprotected position reads as no stop and is excluded from open risk", asy
   await expect(page.getByText("excludes 1 no stop")).toBeVisible();
 });
 
+test("a delisted holding sorts last, reads muted, and leaves the alarm count", async ({ page }) => {
+  await scenario(page, "delisted");
+  await expect(page.locator(".pos").last()).toHaveClass(/delisted/);
+  await expect(page.locator(".pos.delisted .primary")).toHaveText("delisted");
+  await expect(page.locator(".pos.at-risk")).toHaveCount(0);
+  await expect(page.getByText("excludes 1 delisted")).toBeVisible();
+});
+
 test("a failed sync with a usable token is a status line, not a banner", async ({ page }) => {
   await scenario(page, "sync_failed");
   await expect(page.locator(".banner")).toHaveCount(0);

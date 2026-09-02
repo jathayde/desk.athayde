@@ -4,7 +4,7 @@ module Playwright::Scenario
   extend self
 
   ACCOUNT_HASH = Schwab::FakeClient::ACCOUNT_HASH
-  SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected sync_failed review_queue closed_trade ].freeze
+  SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade ].freeze
 
   # Guarded here as well as at the route: reset! empties the database.
   def load!(name)
@@ -61,6 +61,12 @@ module Playwright::Scenario
     position = Position.find_by!(instrument: Instrument.find_by!(symbol: "DEF"))
     position.working_stop_order.update!(status: "CANCELED")
     position.update!(working_stop_order: nil)
+  end
+
+  def delisted
+    healthy
+    position = Position.find_by!(instrument: Instrument.find_by!(symbol: "DEF"))
+    position.instrument.delist!(user: User.first, price: position.last_price)
   end
 
   # The failure is the latest thing that happened to the orders feed, so it is still unresolved.

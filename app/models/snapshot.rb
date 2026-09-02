@@ -60,9 +60,9 @@ class Snapshot < ApplicationRecord
   end
 
   def self.risk_now(account, equity)
-    positions = account.positions.includes(:working_stop_order).to_a
+    positions = account.positions.includes(:instrument, :working_stop_order).to_a
     protected_positions = positions.select(&:protected?)
     open_risk = protected_positions.sum(&:open_risk)
-    { open_risk_amount: open_risk, open_risk_ratio: open_risk / equity, unprotected_count: positions.size - protected_positions.size }
+    { open_risk_amount: open_risk, open_risk_ratio: open_risk / equity, unprotected_count: positions.count(&:unprotected?) }
   end
 end

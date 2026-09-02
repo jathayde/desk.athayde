@@ -8,6 +8,7 @@ Rails.application.routes.draw do
     post :resume
   end
   resources :accounts, only: :update
+  resources :instruments, only: :update
   resources :trades, only: %i[ index show update ] do
     scope module: :trades do
       resource :review, only: %i[ show update ]

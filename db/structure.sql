@@ -263,7 +263,9 @@ CREATE TABLE public.instruments (
     description character varying,
     predecessor_instrument_id bigint,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    delisted_at timestamp with time zone,
+    delisted_price numeric(18,4)
 );
 
 
@@ -3098,6 +3100,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902110001'),
 ('20260902100001'),
 ('20260901260001'),
 ('20260901250001'),

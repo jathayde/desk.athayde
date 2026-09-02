@@ -20,6 +20,8 @@ module Sync
           account.positions.find_or_initialize_by(instrument: instrument).tap do |row|
             row.update!(quantity: position.quantity, average_price: position.average_price, cost_basis: position.cost_basis,
                         market_value: position.market_value, last_price: last_price_for(position), synced_at: now, raw: position.raw)
+            # row.last_price, not last_price_for: the stored value is rounded to the column, so an uneven quotient cannot relist every sync.
+            instrument.relist!(reason: "Schwab priced it again at #{row.last_price.to_s('F')}") if instrument.priced_again?(row.last_price)
           end
         rescue Schwab::MappingError => e
           run.quarantine(:positions_unmapped, e.message)

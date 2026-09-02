@@ -19,11 +19,13 @@ class Agent::Tools::GetPortfolio < Agent::Tool
   end
 
   private
+    # A delisted holding carries no market numbers: whatever Schwab still echoes is a stale mark, not a price.
     def position(row)
       p = row.position
-      { symbol: p.instrument.symbol, cusip: p.instrument.cusip, quantity: p.quantity, average_price: p.average_price, last_price: p.last_price,
-        market_value: p.market_value, unrealized_pnl: p.unrealized_pnl, protection: row.protection, stop_price: p.stop_price,
-        covered_quantity: p.covered_quantity, distance_to_stop: p.distance_to_stop, open_risk: p.open_risk,
+      priced = !p.delisted?
+      { symbol: p.instrument.symbol, cusip: p.instrument.cusip, quantity: p.quantity, average_price: p.average_price, last_price: priced ? p.last_price : nil,
+        market_value: priced ? p.market_value : nil, unrealized_pnl: priced ? p.unrealized_pnl : nil, protection: row.protection, stop_price: p.stop_price,
+        covered_quantity: p.covered_quantity, distance_to_stop: priced ? p.distance_to_stop : nil, open_risk: p.open_risk,
         trade_id: row.trade&.id, needs_review: row.trade&.needs_review?, **stamp(row.as_of, row.stale) }
     end
 end

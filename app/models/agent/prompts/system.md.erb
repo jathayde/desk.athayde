@@ -23,6 +23,9 @@ Desk status as of <%= stamp(Time.current) %> (New York):
 - Last sync: positions <%= stamp(as_of[:positions]) %>; orders <%= stamp(as_of[:orders]) %>; activities <%= stamp(as_of[:activities]) %>
 - Calendar for <%= date %>: <%= market_day ? "#{market_day.trading? ? 'trading' : 'closed'} (#{market_day.source})" : "unknown" %>
 - Memory files: <%= memory.present? ? "#{memory.files.size} files, last changed #{stamp(memory.last_modified_at)}#{" (#{memory.head_sha})" if memory.head_sha}" : "unavailable" %>
+<%- if delisted_symbols.any? -%>
+- Delisted holdings (still held, no market; never quote them, never count them as unprotected): <%= delisted_symbols.join(", ") %>
+<%- end -%>
 <%- if degraded_reasons.any? -%>
 - Degraded: <%= degraded_reasons.join("; ") %>
 <%- end -%>

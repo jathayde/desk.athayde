@@ -85,7 +85,7 @@ class Dashboard
       trades = account.trades.open.index_by(&:instrument_id)
       account.positions.includes(:instrument, :working_stop_order).map do |position|
         Row.new(position: position, protection: position.protection, as_of: as_of_for(position), stale: stale_row?(position), trade: trades[position.instrument_id])
-      end.sort_by { |r| [ r.protection == :protected ? 1 : 0, r.position.distance_to_stop || -BigDecimal("Infinity"), r.position.instrument.symbol ] }
+      end.sort_by { |r| [ { protected: 1, delisted: 2 }.fetch(r.protection, 0), r.position.distance_to_stop || -BigDecimal("Infinity"), r.position.instrument.symbol ] }
     end
   end
 

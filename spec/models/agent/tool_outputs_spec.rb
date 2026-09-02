@@ -76,7 +76,7 @@ RSpec.describe "Agent tool outputs" do
   describe "before the first sync" do
     it "get_portfolio and get_account_health answer with the state, conforming to their schemas" do
       expect(conforming("get_portfolio")).to include("state" => "not_connected", "positions" => [], "open_risk" => nil)
-      expect(conforming("get_account_health")).to include("state" => "not_connected", "equity" => nil, "drawdown" => nil, "unprotected" => nil)
+      expect(conforming("get_account_health")).to include("state" => "not_connected", "equity" => nil, "drawdown" => nil, "excluded_from_open_risk" => nil)
     end
   end
 

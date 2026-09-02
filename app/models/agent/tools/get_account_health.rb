@@ -2,10 +2,10 @@ class Agent::Tools::GetAccountHealth < Agent::Tool
   include Agent::Tool::Desk
 
   tool description: "System and account health: Schwab token status and expiry, sync status per feed, pause reason, shadow mode, manual halt, " \
-                    "equity, settled and unsettled cash, drawdown from the latest snapshot, and unprotected position counts by reason.",
+                    "equity, settled and unsettled cash, drawdown from the latest snapshot, and the positions excluded from open risk by reason.",
        output: { state: { type: "string" }, shadow_mode: { type: "boolean" }, halted: { type: "boolean" }, halt_reason: { type: [ "string", "null" ] },
                  token: { type: "object" }, sync: { type: "object" }, equity: { type: [ "object", "null" ] }, drawdown: { type: [ "object", "null" ] },
-                 unprotected: { type: [ "object", "null" ] }, trades_needing_review: { type: "integer" } }
+                 excluded_from_open_risk: { type: [ "object", "null" ] }, trades_needing_review: { type: "integer" } }
 
   def call
     token = dashboard.token
@@ -14,7 +14,7 @@ class Agent::Tools::GetAccountHealth < Agent::Tool
       token: { status: dashboard.token_status, issued_at: token&.issued_at, refresh_expires_at: token&.refresh_expires_at,
                next_sunday_email: SchwabToken.next_sunday_email, last_refresh_error: token&.last_refresh_error },
       sync: { paused_reason: dashboard.sync_paused_reason, paused_since: dashboard.sync_paused_since, last_failure: last_failure, feeds: feeds },
-      equity: equity, drawdown: drawdown, unprotected: dashboard.ready? ? dashboard.excluded_by_reason : nil,
+      equity: equity, drawdown: drawdown, excluded_from_open_risk: dashboard.ready? ? dashboard.excluded_by_reason : nil,
       trades_needing_review: dashboard.review_count
     }
   end
