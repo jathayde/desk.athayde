@@ -28,7 +28,9 @@ RSpec.describe Agent::Context do
     once = context
     expect(once.system_prompt).to equal(once.system_prompt)
     expect(prompt).to include("Calendar for 2026-09-01: unknown")
-    expect(context.user_prompt).to include("pre-market brief for Tuesday, September 1", "Do not write an earnings")
+    expect(context.user_prompt).to include("pre-market brief for Tuesday, September 1", "the watchlist, one line per symbol", "Do not write an earnings")
+    WatchlistItem.create!(symbol: "ABC", trigger: "close above 20", origin: :agent)
+    expect(described_class.new(kind: :morning_brief, date: Date.new(2026, 9, 1), memory: Memory::Repo.new(memory_path)).system_prompt).to include("Watching (from the watchlist; each with its trigger): ABC (close above 20)")
     expect(context(kind: :eod).user_prompt).to include("end-of-day recap")
   end
 end

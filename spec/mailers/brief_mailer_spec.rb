@@ -22,6 +22,16 @@ RSpec.describe BriefMailer do
     expect(described_class.brief(run(kind: :eod, tool_turns: 1, tool_calls_count: 1)).text_part.body.to_s).to include("1 turn · 1 tool call")
   end
 
+  it "carries the watchlist on the morning brief and last night's tighten-stop suggestions on the end-of-day" do
+    WatchlistItem.create!(symbol: "ABC", trigger: "close above 20", origin: :human)
+    expect(described_class.brief(run).text_part.body.to_s).to include("Watching: ABC (close above 20)")
+    account = create(:account, trading_enabled: true, account_type: "taxable")
+    stop = create(:order, :working_stop, account: account, instrument: create(:instrument, symbol: "XYZ"), stop_price: 40)
+    create(:position, account: account, instrument: stop.instrument, quantity: 10, working_stop_order: stop, suggested_stop: 44.5, suggested_stop_method: "chandelier", suggested_at: Time.current)
+    text = described_class.brief(run(kind: :eod)).text_part.body.to_s
+    expect(text).to include("Tighten stop", "XYZ: chandelier trail $44.50 vs working stop $40.00")
+  end
+
   it "prefixes the subject and never carries dollar figures in it" do
     expect(described_class.brief(run(degraded: true, degraded_reasons: [ "positions are stale" ])).subject).to eq("DEGRADED: Athayde Desk: morning brief, Tue Sep 1")
     capped = described_class.brief(run(status: :capped, stop_reason: "max_tokens", error: "budget spent: output tokens"))

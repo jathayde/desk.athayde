@@ -35,6 +35,46 @@ class Trade < ApplicationRecord
   # The next trade waiting after this one, in queue order.
   def self.next_to_review(after:) = review_queue.excluding(after).first
 
+  # What a sell would be selling (PRD §5.4 6a): the entry legs the journal saw, scaled by the splits that came
+  # after each, with the shares earlier exits already took consumed oldest first; plugs are the journal's own
+  # invention and nobody's cost basis, so they are left out. Long-term means more than a year, as of today.
+  Lot = Data.define(:acquired_at, :quantity, :price, :term, :plug)
+
+  def tax_lots
+    legs = ordered_legs.to_a
+    lots = []
+    legs.each do |leg|
+      next if leg.plug? # the journal's own reconciling leg: not a lot, and not what an exit sold
+      if leg.kind_entry?
+        lots << { acquired_at: leg.executed_at, quantity: leg.quantity.to_d, price: leg.price&.to_d, plug: false }
+      elsif leg.kind_adjustment?
+        ratio = leg.ratio.to_d
+        lots.each { |lot| lot[:quantity] *= ratio; lot[:price] &&= lot[:price] / ratio }
+      elsif leg.kind_exit?
+        remaining = leg.quantity.to_d
+        lots.each do |lot|
+          taken = [ lot[:quantity], remaining ].min
+          lot[:quantity] -= taken
+          remaining -= taken
+          break if remaining <= 0
+        end
+      end
+    end
+    lots.reject { |lot| lot[:quantity] <= 0 }.map do |lot|
+      term = lot[:acquired_at].nil? ? :unknown : (lot[:acquired_at] < 1.year.ago ? :long : :short)
+      Lot.new(acquired_at: lot[:acquired_at], quantity: lot[:quantity], price: lot[:price], term: term, plug: false)
+    end
+  end
+
+  # The agent's words on a trade: dated, one line each, in their own column. The post-mortem stays the human's,
+  # so an agent note never satisfies "missing post-mortem" and never wears the followed-or-improvised label.
+  def annotate!(note, actor:, user: nil)
+    line = "#{MarketDay.today} #{actor}: #{note.to_s.squish}"
+    update!(agent_notes: [ agent_notes, line ].compact.join("\n"))
+    AuditEvent.log("trade_annotated", actor: actor, user: user, subject: self, data: { note: note.to_s.squish.truncate(500) })
+    self
+  end
+
   # The journal browser's views of the journaled trades, by name.
   def self.listing(name)
     case name.to_s

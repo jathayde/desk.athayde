@@ -31,6 +31,9 @@ RSpec.describe StopCollar::Calculator do
     script_price_history(days: 40, ending: MarketDay.today - 10)
     expect(described_class.new(instrument, entry_price: 50).call.refusal).to include("more than 2 trading days old")
     Rails.cache.clear
+    Schwab::FakeClient.instance.enqueue(:price_history, sticky: true) { raise Schwab::RateLimited.new("busy", retry_after: 30) }
+    expect { described_class.new(instrument, entry_price: 50).call }.to raise_error(Schwab::RateLimited) # a budget spent is not a verdict
+    Rails.cache.clear
     Agent::MarketData.quotes([ "XYZ" ])
     travel 3.minutes
     Schwab::FakeClient.instance.enqueue(:quotes, sticky: true) { raise Schwab::ServerError.new("down", status: 503) }

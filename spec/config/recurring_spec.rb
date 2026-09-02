@@ -21,6 +21,7 @@ RSpec.describe "config/recurring.yml" do
     expect(Fugit::Cron.parse(tasks.dig("agent_end_of_day", "schedule")).hours).to eq([ 16 ])
     expect(Fugit::Cron.parse(tasks.dig("agent_sunday_review", "schedule")).weekdays.flatten).to eq([ 0 ])
     expect(Fugit::Cron.parse(tasks.dig("failure_digest", "schedule")).hours).to eq([ 17 ])
+    expect(Fugit::Cron.parse(tasks.dig("stop_collar_trails", "schedule"))).to have_attributes(hours: [ 16 ], minutes: [ 10 ]) # before the 16:30 end-of-day
   end
 
   it "refreshes the token every 25 minutes and checks health at 08:00 and 20:00" do

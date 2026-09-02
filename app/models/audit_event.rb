@@ -7,7 +7,7 @@ class AuditEvent < ApplicationRecord
     instrument_identity_fallback instrument_delisted instrument_relisted sync_gap_unrecoverable trade_reviewed account_configured
     proposal_created proposal_evaluated proposal_approved proposal_approval_refused proposal_rejected proposal_submitting proposal_submitted
     would_have_submitted submission_unknown submission_reconciled submission_failed proposal_expired proposal_filled
-    proposal_cancelled stop_adjusted rule_changed rule_halt_tripped rule_halt_cleared unprotected_alert_sent agent_tool_used
+    proposal_cancelled stop_adjusted trade_annotated watchlist_changed rule_changed rule_halt_tripped rule_halt_cleared unprotected_alert_sent agent_tool_used
   ].freeze
 
   belongs_to :user, optional: true

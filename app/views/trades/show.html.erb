@@ -24,6 +24,7 @@
   <section class="post-mortem">
     <h2 class="sec">Post-mortem</h2>
     <% if @trade.post_mortem %><p class="thesis"><%= @trade.post_mortem %> · <%= @trade.followed_setup ? "followed setup" : "improvised" %></p><% end %>
+    <% if @trade.agent_notes.present? %><ul class="notes"><% @trade.agent_notes.each_line do |line| %><li class="muted"><%= line %></li><% end %></ul><% end %>
     <%= form_with url: trade_path(@trade), method: :patch do |f| %>
       <%= f.text_field :post_mortem, value: @trade.post_mortem, placeholder: "What actually happened…", required: true %>
       <div class="choice">

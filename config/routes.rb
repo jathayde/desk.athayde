@@ -13,6 +13,9 @@ Rails.application.routes.draw do
       resource :rejection, only: :create
     end
   end
+  resources :watchlist_items, path: "watchlist", only: %i[ index create ] do
+    resource :drop, only: :create, module: :watchlist_items
+  end
   resources :accounts, only: :update
   resources :instruments, only: :update
   resources :trades, only: %i[ index show update ] do

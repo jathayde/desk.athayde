@@ -5,7 +5,17 @@ class Position < ApplicationRecord
 
   validates :instrument_id, uniqueness: { scope: :account_id }
 
+  scope :suggestable, -> { where.not(working_stop_order_id: nil).joins(:instrument).where(instruments: { delisted_at: nil }) }
+  scope :suggesting_a_stop, -> { where.not(suggested_stop: nil).joins(:instrument).order("instruments.symbol") }
+
   def stop_price = working_stop_order&.stop_price
+
+  # Last night's trail, only while it still sits above the working stop and is not older than a trading day.
+  def stop_suggestion
+    return nil if suggested_stop.blank? || suggested_at.blank? || suggested_at < 2.days.ago
+    return nil if stop_price && suggested_stop <= stop_price
+    suggested_stop
+  end
 
   # Every live terminal sell stop on this instrument, so a scale-in covered by two stops reads as covered.
   def live_stops = @live_stops ||= account.orders.where(instrument: instrument).stops.sells.live.terminal.to_a

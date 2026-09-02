@@ -35,6 +35,9 @@ class Agent::Context
     end
   end
 
+  def watchlist = @watchlist ||= WatchlistItem.current.to_a
+  def stop_suggestions = @stop_suggestions ||= (account ? account.positions.suggesting_a_stop.includes(:working_stop_order).select(&:stop_suggestion) : [])
+
   # Held and delisted: an instrument the desk no longer holds is nobody's business in a brief.
   def delisted_symbols
     @delisted_symbols ||= account ? desk.rows.filter_map { |r| r.position.instrument.symbol if r.protection == :delisted } : []

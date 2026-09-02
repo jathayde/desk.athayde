@@ -368,7 +368,8 @@ CREATE TABLE public.order_proposals (
     shadow boolean DEFAULT false NOT NULL,
     broker_order_id character varying,
     parent_proposal_id bigint,
-    child_action character varying
+    child_action character varying,
+    lots jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 
@@ -462,7 +463,8 @@ CREATE TABLE public.positions (
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
     suggested_stop numeric(18,4),
-    suggested_stop_method character varying
+    suggested_stop_method character varying,
+    suggested_at timestamp with time zone
 );
 
 
@@ -1426,7 +1428,8 @@ CREATE TABLE public.trades (
     initial_quantity numeric(18,6),
     total_risk numeric(18,4),
     quantity numeric(18,6) DEFAULT 0.0 NOT NULL,
-    review_deferred_at timestamp(6) with time zone
+    review_deferred_at timestamp(6) with time zone,
+    agent_notes text
 );
 
 
@@ -2899,6 +2902,13 @@ CREATE INDEX index_watchlist_items_on_user_id ON public.watchlist_items USING bt
 
 
 --
+-- Name: index_watchlist_items_one_watching_per_symbol; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_watchlist_items_one_watching_per_symbol ON public.watchlist_items USING btree (symbol) WHERE ((status)::text = 'watching'::text);
+
+
+--
 -- Name: audit_events audit_events_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3287,6 +3297,8 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902160001'),
+('20260902150001'),
 ('20260902140001'),
 ('20260902130001'),
 ('20260902120001'),

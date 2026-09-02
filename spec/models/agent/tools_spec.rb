@@ -3,7 +3,7 @@ require "rails_helper"
 RSpec.describe Agent::Tools do
   it "exposes the read tools to both transports and the write tool to the interactive one only" do
     reads = %w[ get_portfolio get_account_health get_quotes get_price_history get_journal get_setup_stats get_risk_rules evaluate_hypothetical_order ]
-    expect(described_class.for(:mcp).map(&:tool_name)).to match_array(reads + %w[ propose_order ])
+    expect(described_class.for(:mcp).map(&:tool_name)).to match_array(reads + %w[ propose_order annotate_trade add_watchlist_item ])
     expect(described_class.for(:scheduled).map(&:tool_name)).to match_array(reads)
     expect(described_class.for(:scheduled)).to all(be_read_only)
     expect(described_class.definitions(:scheduled).first).to include(:name, :description, :input_schema)

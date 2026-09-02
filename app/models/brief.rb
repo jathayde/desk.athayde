@@ -43,6 +43,9 @@ class Brief
   def missing_post_mortem_count = @missing_post_mortem_count ||= Trade.journaled.missing_post_mortem.count
   def more_post_mortems = [ missing_post_mortem_count - missing_post_mortems.size, 0 ].max
   def snapshot = account && account.snapshots.find_by(as_of: date)
+  def watchlist = @watchlist ||= WatchlistItem.current.to_a
+  # Last night's trails that sit above the working stop: a tighten is suggested, never placed.
+  def stop_suggestions = @stop_suggestions ||= (account ? account.positions.suggesting_a_stop.includes(:working_stop_order).select(&:stop_suggestion) : [])
   def balance = @desk.balance
 
   def footer

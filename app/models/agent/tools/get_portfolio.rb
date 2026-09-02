@@ -26,6 +26,7 @@ class Agent::Tools::GetPortfolio < Agent::Tool
       { symbol: p.instrument.symbol, cusip: p.instrument.cusip, quantity: p.quantity, average_price: p.average_price, last_price: priced ? p.last_price : nil,
         market_value: priced ? p.market_value : nil, unrealized_pnl: priced ? p.unrealized_pnl : nil, protection: row.protection, stop_price: p.stop_price,
         covered_quantity: p.covered_quantity, distance_to_stop: priced ? p.distance_to_stop : nil, open_risk: p.open_risk,
+        suggested_stop: p.stop_suggestion, suggested_stop_method: p.stop_suggestion && p.suggested_stop_method,
         trade_id: row.trade&.id, needs_review: row.trade&.needs_review?, **stamp(row.as_of, row.stale) }
     end
 end

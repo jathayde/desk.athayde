@@ -8,7 +8,7 @@ module Agent::Tools
     def text = ok? ? JSON.generate(value) : error
   end
 
-  def self.all = [ GetPortfolio, GetAccountHealth, GetQuotes, GetPriceHistory, GetJournal, GetSetupStats, GetRiskRules, EvaluateHypotheticalOrder, ProposeOrder ]
+  def self.all = [ GetPortfolio, GetAccountHealth, GetQuotes, GetPriceHistory, GetJournal, GetSetupStats, GetRiskRules, EvaluateHypotheticalOrder, ProposeOrder, AnnotateTrade, AddWatchlistItem ]
 
   def self.for(transport)
     case transport.to_sym

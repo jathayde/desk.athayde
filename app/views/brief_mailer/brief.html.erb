@@ -1,7 +1,10 @@
 <p><%= @brief.token_line %></p>
 <% if @brief.degraded_reasons.any? %><p><b>Degraded:</b> <%= @brief.degraded_reasons.join("; ") %></p><% end %>
 <p>As of: <%= @brief.as_of_lines.join("; ") %></p>
-<% if @run.morning_brief? %><p>Earnings and economic calendar: not available in Phase 1.</p><% end %>
+<% if @run.morning_brief? %>
+  <p>Earnings and economic calendar: not available in Phase 1.</p>
+  <% if @brief.watchlist.any? %><p>Watching: <%= @brief.watchlist.map { |w| "#{w.symbol} (#{w.trigger})" }.join("; ") %></p><% end %>
+<% end %>
 <% if @brief.unavailable %>
   <p><b><%= @brief.unavailable %></b></p>
 <% else %>

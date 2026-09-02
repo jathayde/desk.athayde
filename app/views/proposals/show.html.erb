@@ -5,6 +5,16 @@
 <% if proposal.thesis.present? %><p class="thesis"><%= proposal.thesis %></p><% end %>
 
 <%= render "proposals/evaluation", proposal: proposal, results: proposal.guardrail_results, sizing: proposal.sizing, collar: proposal.collar %>
+<% if proposal.kind_exit? %>
+  <h2 class="sec">Lots this sale takes, <%= proposal.tax_lot_method %> <small class="muted">(as the journal knows them, split-adjusted and net of earlier sales, frozen when proposed; Schwab's method names are unverified)</small></h2>
+  <dl class="kv-list">
+    <% proposal.lots.each do |lot| %>
+      <div class="kv <%= "muted" if lot["selling"].to_d.zero? %>"><dt><%= lot["acquired_at"] ? stamp(Time.zone.parse(lot["acquired_at"])) : "unknown date" %></dt>
+        <dd><%= quantity(lot["selling"].to_d) %> of <%= quantity(lot["quantity"].to_d) %> @ <%= money(lot["price"]) %> · <%= lot["term"] == "unknown" ? "term unknown" : "#{lot["term"]}-term" %></dd></div>
+    <% end %>
+    <% if proposal.lots.empty? %><div class="kv"><dt>Lots</dt><dd>no journaled entry legs for this position</dd></div><% end %>
+  </dl>
+<% end %>
 
 <% if proposal.submission_unknown? %>
   <p class="warn">Submission unknown: check Schwab before doing anything else on <%= proposal.instrument.symbol %>. The app is looking for the order and says when it finds it or confirms it was never placed.<% if proposal.ambiguous_orders.any? %> More than one order at Schwab could be it (<%= proposal.ambiguous_orders.join(", ") %>): cancel the extra there and the next look will link the one that remains.<% end %></p>

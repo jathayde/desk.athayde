@@ -10,6 +10,8 @@ module Schwab
     LIVE_STATUSES = %w[ WORKING ACCEPTED QUEUED PENDING_ACTIVATION ].freeze # in the market, not awaiting a parent or condition
     STOP_TYPES = %w[ STOP STOP_LIMIT TRAILING_STOP TRAILING_STOP_LIMIT ].freeze
     LIMIT = "LIMIT"
+    TAX_LOT_METHODS = %w[ FIFO LIFO HIGH_COST LOW_COST ].freeze # SCHWAB_SHAPE_UNVERIFIED: taxLotMethod enum values (verify-on-approval item 51)
+    DEFAULT_TAX_LOT_METHOD = "FIFO"
     WORKING = "WORKING"
     SELL = "SELL"
     BUY = "BUY"

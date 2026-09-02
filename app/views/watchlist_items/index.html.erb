@@ -1,0 +1,35 @@
+<% content_for :title, "Watchlist" %>
+<h1>Watchlist</h1>
+<% if @items.empty? %>
+  <p class="empty">Nothing on the list. The morning brief reads what is here.</p>
+<% else %>
+  <ul class="trades">
+    <% @items.each do |item| %>
+      <li class="kv">
+        <span><b><%= item.symbol %></b> · <%= item.trigger %><% if item.thesis.present? %><br><small class="muted"><%= item.thesis %></small><% end %><br><small class="muted"><%= item.origin %>, <%= stamp(item.created_at) %></small></span>
+        <% if Current.user&.approver? %>
+          <span class="choice">
+            <%= link_to "Propose", new_proposal_path(symbol: item.symbol, thesis: item.thesis), class: "chip" %>
+            <%= button_to "Drop", watchlist_item_drop_path(item), method: :post, class: "link-button" %>
+          </span>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+<% end %>
+<% if Current.user&.approver? %>
+<h2 class="sec">Watch a symbol</h2>
+<%= form_with url: watchlist_items_path, method: :post, class: "account-form" do |f| %>
+  <%= f.label :symbol, "Symbol" %>
+  <%= f.text_field :symbol, autocapitalize: "characters", required: true %>
+  <%= f.label :trigger, "What would make it a trade" %>
+  <%= f.text_field :trigger, required: true %>
+  <%= f.label :thesis, "Thesis" %>
+  <%= f.text_area :thesis, rows: 2 %>
+  <%= f.submit "Watch" %>
+<% end %>
+<% end %>
+<% if @dropped.any? %>
+  <h2 class="sec">Dropped</h2>
+  <ul class="trades"><% @dropped.each do |item| %><li class="kv muted"><span><%= item.symbol %> · <%= item.trigger %></span><b><%= stamp(item.updated_at) %></b></li><% end %></ul>
+<% end %>

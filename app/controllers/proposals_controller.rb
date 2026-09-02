@@ -21,7 +21,7 @@ class ProposalsController < ApplicationController
     proposal = Proposals::Create.call(**proposal_arguments, origin: :human, user: Current.user)
     redirect_to proposal_path(proposal), notice: "Proposed #{proposal.instrument.symbol}."
   rescue Proposals::Error, ArgumentError => e
-    redirect_to new_proposal_path(params.permit(:kind, :symbol, :limit_price, :stop_price, :setup_id, :thesis, :quantity)), alert: e.message
+    redirect_to new_proposal_path(params.permit(:kind, :symbol, :limit_price, :stop_price, :setup_id, :thesis, :quantity, :tax_lot_method)), alert: e.message
   end
 
   private
@@ -38,7 +38,7 @@ class ProposalsController < ApplicationController
       kind = params[:kind].presence_in(%w[ entry exit ]) || "entry"
       { account: Account.trading.order(:id).first, kind: kind, side: kind == "entry" ? :buy : :sell, symbol: params[:symbol].to_s,
         limit_price: decimal(params[:limit_price]), stop_price: decimal(params[:stop_price]), setup: Setup.find_by(id: params[:setup_id]),
-        thesis: params[:thesis].presence, quantity: params[:quantity].presence&.to_i }
+        thesis: params[:thesis].presence, quantity: params[:quantity].presence&.to_i, tax_lot_method: params[:tax_lot_method].presence }
     end
 
     def decimal(value) = value.present? ? BigDecimal(value.to_s.strip) : nil

@@ -12,6 +12,8 @@
   <%= f.text_field :stop_price, value: params[:stop_price], inputmode: "decimal" %>
   <%= f.label :quantity, "Quantity (exits; defaults to the position)" %>
   <%= f.text_field :quantity, value: params[:quantity], inputmode: "numeric" %>
+  <%= f.label :tax_lot_method, "Lot method (exits)" %>
+  <%= f.select :tax_lot_method, options_for_select(Schwab::Order::TAX_LOT_METHODS, params[:tax_lot_method] || Schwab::Order::DEFAULT_TAX_LOT_METHOD) %>
   <%= f.label :setup_id, "Setup" %>
   <%= f.select :setup_id, options_from_collection_for_select(@setups, :id, :name, params[:setup_id]), include_blank: "No setup" %>
   <%= f.label :thesis, "Thesis" %>
@@ -23,7 +25,7 @@
   <h2 class="sec">Preview: <%= draft.side.upcase %> <%= quantity(draft.quantity) %> <%= draft.instrument.symbol %> @ <%= money(draft.limit_price) %></h2>
   <%= render "proposals/evaluation", proposal: draft, results: report.to_h, sizing: draft.sizing, collar: draft.collar %>
   <%= form_with url: proposals_path, method: :post do |f| %>
-    <% %i[ kind symbol limit_price stop_price quantity setup_id thesis ].each { |key| concat f.hidden_field(key, value: params[key]) } %>
+    <% %i[ kind symbol limit_price stop_price quantity setup_id thesis tax_lot_method ].each { |key| concat f.hidden_field(key, value: params[key]) } %>
     <%= f.submit report.blocked? ? "Propose anyway (it will be rejected by rules)" : "Propose" %>
   <% end %>
 <% end %>

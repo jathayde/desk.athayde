@@ -5,7 +5,7 @@ class Proposals::Create
 
   def self.call(**) = new(**).call
 
-  def initialize(**arguments) = @arguments = arguments
+  def initialize(**arguments) = @arguments = arguments # the keywords Proposals.draft takes
 
   def call
     settings = SystemSettings.instance

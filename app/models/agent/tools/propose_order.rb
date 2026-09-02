@@ -19,7 +19,7 @@ class Agent::Tools::ProposeOrder < Agent::Tool
     proposal = Proposals::Create.call(account: account, kind: side == "buy" ? :entry : :exit, side: side, symbol: symbol, limit_price: BigDecimal(limit_price.to_s),
                                       stop_price: stop_price && BigDecimal(stop_price.to_s), setup: setup_row, thesis: thesis, origin: :agent, quantity: quantity)
     { proposal_id: proposal.id, status: proposal.status, blocked: proposal.rejected_by_rules?, warnings: proposal.warnings, quantity: proposal.quantity&.to_i, results: proposal.guardrail_results }
-  rescue Proposals::Error, ArgumentError => e # a refusal, an unknown symbol, or a bad decimal string
+  rescue Proposals::Error, ArgumentError => e # a refusal, an unknown symbol or lot method, or a bad decimal string
     raise InvalidArguments, e.message
   end
 end

@@ -29,6 +29,13 @@ Missing post-mortems:
   and <%= brief.more_post_mortems %> more: <%= trades_url(filter: "missing_post_mortem") %>
 <% end -%>
 
+<% if brief.stop_suggestions.any? -%>
+Tighten stop (the latest trails; suggestion only):
+<% brief.stop_suggestions.each do |position| -%>
+  <%= position.instrument.symbol %>: <%= position.suggested_stop_method %> trail <%= money(position.stop_suggestion) %> vs working stop <%= position.stop_price ? money(position.stop_price) : "none" %>
+<% end -%>
+
+<% end -%>
 <% if brief.snapshot -%>
 Snapshot <%= brief.snapshot.as_of %>: equity <%= money(brief.snapshot.equity) %>, drawdown <%= percent(brief.snapshot.drawdown) %>, open risk <%= brief.snapshot.open_risk_amount ? money(brief.snapshot.open_risk_amount) : "unknown" %>, unprotected <%= brief.snapshot.unprotected_count %>
 <% elsif brief.balance -%>
