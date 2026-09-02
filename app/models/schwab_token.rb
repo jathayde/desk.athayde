@@ -37,9 +37,7 @@ class SchwabToken < ApplicationRecord
   # serializes this against a stale refresh trying to pause), then sync catches up.
   def self.issue!(response, now: Time.current)
     token = transaction do
-      settings = SystemSettings.instance.lock!
-      AuditEvent.log("sync_resumed", actor: :system, reason: settings.sync_paused_reason) if settings.sync_paused_reason
-      settings.update!(sync_paused_reason: nil)
+      SystemSettings.resume_sync!
       create!(access_token: response.fetch("access_token"), refresh_token: response.fetch("refresh_token"),
               access_expires_at: now + response.fetch("expires_in").to_i.seconds - ACCESS_MARGIN,
               refresh_expires_at: now + REFRESH_LIFETIME, issued_at: now, scope: response["scope"])

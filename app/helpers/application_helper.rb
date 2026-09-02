@@ -35,6 +35,8 @@ module ApplicationHelper
     tag.time(stale ? "stale · #{time_ago_in_words(time)} ago" : "#{time_ago_in_words(time)} ago", datetime: time.iso8601, title: l(time, format: :weekday_time), class: [ "as-of", ("stale" if stale) ])
   end
 
+  # An absolute stamp for email, where relative words age badly.
+  def stamp(time) = time ? l(time, format: :stamp) : "never"
   def protection_label(protection) = PROTECTION_LABELS.fetch(protection)
   def review_reason_label(trade) = REVIEW_REASON_LABELS.fetch(trade.review_reason.to_s, "Needs a look")
   def excluded_summary(by_reason) = by_reason.map { |reason, n| "#{n} #{protection_label(reason)}" }.to_sentence

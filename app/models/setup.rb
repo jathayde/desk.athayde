@@ -6,6 +6,13 @@ class Setup < ApplicationRecord
 
   scope :active, -> { where(active: true) }
 
+  # What the agent reads about the setups, from the tool and from the scheduled prompt alike.
+  def self.agent_stats
+    { setups: order(:name).map { |s| { name: s.name, active: s.active?, definition: s.definition, sample_size: s.sample_size, win_rate: s.win_rate,
+                                       avg_r: s.avg_r, expectancy: s.expectancy, stats_computed_at: s.stats_computed_at } },
+      eligibility: "closed, reviewed, not excluded, not bootstrapped, initial_risk > 0" }
+  end
+
   def self.named(name)
     name = name.to_s.strip
     return nil if name.blank?

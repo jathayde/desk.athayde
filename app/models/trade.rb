@@ -32,6 +32,9 @@ class Trade < ApplicationRecord
   validate :stop_below_entry, on: :review
   validates :setup, presence: { message: "is required: pick one or name a new one" }, on: :review
 
+  # The next trade waiting after this one, in queue order.
+  def self.next_to_review(after:) = review_queue.excluding(after).first
+
   # The journal browser's views of the journaled trades, by name.
   def self.listing(name)
     case name.to_s

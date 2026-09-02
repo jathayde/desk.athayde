@@ -3,6 +3,7 @@ en:
     formats:
       weekday_time: "%A %-l:%M %p %Z"
       connection: "%A, %B %-d at %-l:%M %p %Z"
+      stamp: "%a %b %-d, %-l:%M %p"
   token_mailer:
     nag:
       subject:

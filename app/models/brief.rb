@@ -20,15 +20,13 @@ class Brief
   end
 
   def token_line
-    status = SchwabToken.status
-    token = SchwabToken.current
-    return "Schwab: #{status}" unless token && status.in?(%i[ healthy expiring ])
-    "Schwab: #{status}, token expires #{stamp(token.refresh_expires_at, date: true)}"
+    return "Schwab: #{@desk.token_status}" unless @desk.token && @desk.token_status.in?(%i[ healthy expiring ])
+    "Schwab: #{@desk.token_status}, token expires #{I18n.l(@desk.token.refresh_expires_at, format: :stamp)}"
   end
 
   def as_of_lines
     return [ "No trading account is set up." ] unless account
-    SyncRun::ACCOUNT_FEEDS.map { |feed| "#{feed.to_s.humanize}: #{stamp(account.last_sync(feed))}" }
+    SyncRun::ACCOUNT_FEEDS.map { |feed| "#{feed.to_s.humanize}: #{account.last_sync(feed) ? I18n.l(account.last_sync(feed), format: :stamp) : 'never'}" }
   end
 
   def unavailable = run.failed? ? "The brief is unavailable: #{run.error}" : nil
@@ -50,13 +48,11 @@ class Brief
   def footer
     parts = [ "#{run.tool_turns} #{'turn'.pluralize(run.tool_turns)}", "#{run.tool_calls_count} tool #{'call'.pluralize(run.tool_calls_count)}",
               "#{run.total_input_tokens} in / #{run.output_tokens.to_i} out tokens" ]
-    parts << (run.estimated_cost ? "$#{'%.4f' % run.estimated_cost}" : "unpriced")
+    parts << run.cost_label
     parts << "stopped: #{run.stop_reason}" if !run.failed? && run.stop_reason.present? && run.stop_reason != "end_turn"
     parts << run.error if run.capped? && run.error.present?
     parts.join(" · ")
   end
-
-  def stamp(time, date: false) = time ? time.in_time_zone(MarketDay::ZONE).strftime(date ? "%a %b %-d, %-l:%M %p" : "%a %-l:%M %p") : "never"
 
   private
     def day_range = date.in_time_zone(MarketDay::ZONE).all_day

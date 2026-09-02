@@ -1,14 +1,14 @@
-# The operations page's read model: token, feeds per account, failures, and accounts needing setup.
+# The operations page's read model: the desk's own token, halt, and pause facts, plus feeds per account,
+# failures, holdings, briefs, and accounts needing setup.
 class SystemStatus
   FeedRow = Data.define(:account, :feed, :latest, :last_success)
   AccountRow = Data.define(:account, :equity, :symbols)
 
-  def settings = @settings ||= SystemSettings.instance
-  def token = @token ||= SchwabToken.current
-  def token_status = SchwabToken.status(token)
+  def desk = @desk ||= Desk.new
+  delegate :settings, :token, :token_status, :halted_by, :sync_paused_since, to: :desk
+
   def next_sunday_email = SchwabToken.next_sunday_email
   def token_dies_before_sunday? = token && token.refresh_expires_at < next_sunday_email
-  def halted_by = @halted_by ||= AuditEvent.where(kind: "manual_halt_set").order(created_at: :desc).first
 
   def accounts
     @accounts ||= Account.order(:id).includes(:current_balance, positions: :instrument).map do |account|
@@ -21,8 +21,7 @@ class SystemStatus
   def feed_rows
     @feed_rows ||= accounts.flat_map do |row|
       SyncRun::ACCOUNT_FEEDS.map do |feed|
-        runs = SyncRun.for(feed, row.account)
-        FeedRow.new(account: row.account, feed: feed, latest: runs.recent_first.first, last_success: runs.advanced_cursor.maximum(:finished_at))
+        FeedRow.new(account: row.account, feed: feed, latest: SyncRun.for(feed, row.account).recent_first.first, last_success: row.account.last_sync(feed))
       end
     end
   end
@@ -36,5 +35,4 @@ class SystemStatus
   def memory_repo = @memory_repo ||= Memory::Repo.configured
   def memory_run = @memory_run ||= SyncRun.feed_memory_repo.recent_first.first
   def agent_runs = @agent_runs ||= AgentRun.recent_first.limit(5)
-  def sync_paused_since = SyncRun.skipped_token.where(started_at: (token&.issued_at || Time.at(0))..).minimum(:started_at)
 end

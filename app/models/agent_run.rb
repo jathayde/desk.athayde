@@ -35,6 +35,7 @@ class AgentRun < ApplicationRecord
   end
 
   def brief? = morning_brief? || eod?
+  def cost_label = estimated_cost ? "$#{'%.4f' % estimated_cost}" : "unpriced"
   def delivered? = emailed_at.present?
   def deliverable? = !running? && !skipped?
   def total_input_tokens = [ input_tokens, cache_creation_input_tokens, cache_read_input_tokens ].compact.sum

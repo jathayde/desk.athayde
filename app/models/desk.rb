@@ -10,7 +10,7 @@ class Desk
     @in_session = MarketDay.known_session_open?
   end
 
-  attr_reader :account
+  attr_reader :account, :settings
 
   def state
     return :not_connected if token_status == :missing

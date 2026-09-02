@@ -37,18 +37,9 @@ module Sync
         (today..today + CALENDAR_DAYS).each { |date| MarketDay.for(date) }
       end
 
-      # One skipped row per hour and one audit per episode; nothing is enqueued, so the queue cannot grow.
-      # The settings row lock serializes this against issue!, so a re-auth landing mid-tick cannot be marked paused.
+      # One skipped row per hour; nothing is enqueued, so the queue cannot grow.
       def pause!
-        reason = SystemSettings.transaction do
-          settings = SystemSettings.instance.lock!
-          next nil if SchwabToken.usable?
-          unless settings.sync_paused_reason
-            settings.update!(sync_paused_reason: "Schwab token unusable; re-authenticate")
-            AuditEvent.log("sync_paused_token_expired", actor: :system)
-          end
-          settings.sync_paused_reason
-        end
+        reason = SystemSettings.pause_for_token!
         return if reason.nil? || SyncRun.where(status: :skipped_token, started_at: 1.hour.ago..).exists?
         SyncRun.create!(feed: :positions, status: :skipped_token, started_at: Time.current, finished_at: Time.current, error: reason)
       end

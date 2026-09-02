@@ -50,7 +50,7 @@ RSpec.describe BriefMailer do
     trade = create(:trade, account: account, instrument: instrument, status: :closed, closed_at: at, post_mortem: nil, needs_review: false, realized_pnl: 25)
     account.snapshots.create!(as_of: Date.new(2026, 9, 1), equity: 6500, drawdown: BigDecimal("0.0123"), open_risk_amount: 120, unprotected_count: 1)
     text = described_class.brief(run(kind: :eod)).text_part.body.to_s
-    expect(text).to include("BUY 10 XYZ @ $50.00", "XYZ closed Tue 10:15 AM", "/trades/#{trade.id}", "Snapshot 2026-09-01: equity $6,500.00, drawdown 1.2%, open risk $120.00, unprotected 1")
+    expect(text).to include("BUY 10 XYZ @ $50.00", "XYZ closed Tue Sep 1, 10:15 AM", "/trades/#{trade.id}", "Snapshot 2026-09-01: equity $6,500.00, drawdown 1.2%, open risk $120.00, unprotected 1")
     expect(text).not_to include("SELL 10 XYZ")
     12.times { |n| create(:trade, account: account, instrument: instrument, status: :closed, closed_at: at - n.days, post_mortem: nil, needs_review: false) }
     expect(described_class.brief(run(kind: :eod)).text_part.body.to_s).to include("and 3 more: http://", "filter=missing_post_mortem")
@@ -68,7 +68,7 @@ RSpec.describe BriefMailer do
     create(:balance, account: account, equity: 6400, as_of: Time.zone.parse("2026-09-01 16:05 EDT"))
     account.snapshots.create!(as_of: Date.new(2026, 8, 31), equity: 6300)
     text = described_class.brief(run(kind: :eod)).text_part.body.to_s
-    expect(text).to include("Today's snapshot is not yet written; equity $6,400.00 as of Tue 4:05 PM")
+    expect(text).to include("Today's snapshot is not yet written; equity $6,400.00 as of Tue Sep 1, 4:05 PM")
     expect(text).not_to include("Snapshot 2026-08-31")
   end
 

@@ -27,7 +27,7 @@
   <h2 class="sec">Briefs</h2>
   <% status.agent_runs.each do |run| %>
     <div class="kv"><dt><%= run.title %></dt>
-      <dd><%= run.status %><%= " · degraded" if run.degraded? %><%= " · not emailed" if run.deliverable? && !run.delivered? %><% if run.estimated_cost %> · $<%= '%.4f' % run.estimated_cost %><% elsif run.unpriced? %> · unpriced<% end %><% if run.error %> <small><%= run.error.truncate(80) %></small><% end %></dd></div>
+      <dd><%= run.status %><%= " · degraded" if run.degraded? %><%= " · not emailed" if run.deliverable? && !run.delivered? %><% if run.estimated_cost || run.unpriced? %> · <%= run.cost_label %><% end %><% if run.error %> <small><%= run.error.truncate(80) %></small><% end %></dd></div>
   <% end %>
   <% if status.agent_runs.empty? %><div class="kv"><dt>Runs</dt><dd>none yet</dd></div><% end %>
 </dl>

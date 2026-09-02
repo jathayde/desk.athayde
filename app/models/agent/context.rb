@@ -41,9 +41,9 @@ class Agent::Context
   end
 
   # The same numbers the get_setup_stats tool returns, serialized the same way (decimal strings, never BigDecimal#to_s).
-  def setup_stats = @setup_stats ||= Agent.serialize(Agent::Tools::GetSetupStats.new.call).deep_symbolize_keys
+  def setup_stats = @setup_stats ||= Agent.serialize(Setup.agent_stats).deep_symbolize_keys
 
-  def stamp(time) = time ? time.in_time_zone(MarketDay::ZONE).strftime("%a %b %-d, %-l:%M %p %Z") : "never"
+  def stamp(time) = time ? I18n.l(time, format: :connection) : "never"
   def percent(ratio) = ratio ? "#{(BigDecimal(ratio.to_s) * 100).round(1).to_s('F')}%" : "n/a"
 
   # Rendered once per run: the same bytes on every turn is what makes the prompt cache hit.
