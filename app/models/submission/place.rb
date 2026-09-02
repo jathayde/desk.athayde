@@ -16,7 +16,11 @@ class Submission::Place
   end
 
   # A worker that wakes after the sweep already called its row unknown does not send: the reconcile job owns
-  # the row now, and a second send would be the double submission this whole path exists to prevent.
+  # the row now, and a second send would be the double submission this whole path exists to prevent. The check
+  # is not a lock and does not need one: transaction one serialises approves (a second approve finds the row
+  # not approvable), so at most one worker ever holds an attempt, and the sweep acts only after
+  # STALE_SUBMITTING, longer than the client's timeouts; only a suspended process can straddle it, and the
+  # late-answer transitions on the proposal cover that.
   def call
     return swept unless @proposal.reload.submitting?
     adjust_stop if @proposal.kind_exit?
@@ -46,8 +50,9 @@ class Submission::Place
     # answer cannot overturn) is kept on the record and reported, never retried and never a 500 for the operator.
     def record
       yield
-    rescue OrderProposal::IllegalTransition => e
-      AuditEvent.log("submission_answer_ignored", actor: :system, subject: @proposal, reason: e.message, data: { status: @proposal.status })
+    rescue OrderProposal::IllegalTransition, ActiveRecord::RecordNotUnique => e
+      # RecordNotUnique: the instrument already has another unresolved submission, so a late reopen cannot take the lock.
+      AuditEvent.log("submission_answer_ignored", actor: :system, subject: @proposal, reason: e.message.truncate(300), data: { status: @proposal.reload.status })
       Rails.error.report(e, handled: true, context: { proposal: @proposal.id })
       @proposal
     end

@@ -89,6 +89,27 @@ RSpec.describe Submission::Place do
     expect(late.submission_attempts.sole).to have_attributes(outcome: "failed", response: { "error" => "order not sent: Schwab responded 400: quantity invalid" })
   end
 
+  it "records, through the real path, a late id and a late maybe-sent answer that land after the reconcile job called the row not placed" do
+    verdict = lambda do
+      p = OrderProposal.last
+      p.record_unknown!(p.submission_attempts.sole, error: "left submitting") # the sweep
+      p.record_not_placed!(p.submission_attempts.sole.reload)                  # and the reconcile job, while the call hung
+    end
+    fake.enqueue(:place_order) { |_hash, payload| verdict.call; fake.place!(payload) }
+    expect { approve }.to have_enqueued_mail(AlertMailer, :late_submission)
+    late = OrderProposal.last
+    expect(late).to have_attributes(status: "submitted", broker_order_id: fake.placed.last["orderId"].to_s)
+    expect(late.submission_attempts.sole).to be_submitted
+    late.record_broker_outcome!(:filled) # free the instrument
+
+    fake.enqueue(:place_order) { |*| verdict.call; raise Schwab::UnknownOutcome.new("Net::ReadTimeout", attempts: 1) }
+    expect { approve }.to have_enqueued_job(Submission::ReconcileJob).once
+    reopened = OrderProposal.last
+    expect(reopened).to be_submission_unknown
+    expect(reopened.submission_attempts.sole).to have_attributes(outcome: "unknown", first_absence_at: nil)
+    expect(AuditEvent.where(subject: reopened, kind: "submission_unknown").last.data).to include("late" => true)
+  end
+
   it "puts a late id onto a row the reconcile job had called not placed, mails the operator, and the sync links the order" do
     proposal = Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, thesis: "t", origin: :human, user: john)
     attempt = proposal.start_submission!(user: john, acknowledged: acknowledged, override_reason: nil, payload: Schwab::OrderPayload.bracket(symbol: "XYZ", quantity: 33, limit_price: 50, stop_price: 47), shadow: false)

@@ -150,7 +150,7 @@ class OrderProposal < ApplicationRecord
   # reconcile job called it not placed, since the id is the last fact and a working order must be on the row
   # the sync links and the fill reaches. That second case is mailed: the operator was told nothing was placed.
   def record_submitted!(attempt, broker_order_id:)
-    late = attempt.not_placed?
+    late = attempt.reload.not_placed? # the worker's copy predates the sweep and the reconcile job
     outcome!(attempt, from: late ? %w[ submission_failed ] : %w[ submitting submission_unknown ], to: :submitted, event: "proposal_submitted",
              reason: late ? "late answer after not placed" : nil,
              attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id, late: late }) do
@@ -160,12 +160,15 @@ class OrderProposal < ApplicationRecord
     self
   end
 
-  # Unknown is the one outcome that mails at once: the operator must not touch the instrument until it is resolved.
+  # Unknown is the one outcome that mails at once: the operator must not touch the instrument until it is
+  # resolved. A maybe-sent answer arriving after the reconcile job called the row not placed reopens it: the
+  # job's verdict was about an order it could not yet see, and the row must go back to being looked at.
   def record_unknown!(attempt, error:)
-    outcome!(attempt, from: %w[ submitting ], to: :submission_unknown, event: "submission_unknown", reason: error) do
-      attempt.update!(outcome: :unknown, response: { "error" => error })
+    late = attempt.reload.not_placed?
+    outcome!(attempt, from: late ? %w[ submission_failed ] : %w[ submitting ], to: :submission_unknown, event: "submission_unknown", reason: error, data: { late: late }) do
+      attempt.update!(outcome: :unknown, response: { "error" => error }, first_absence_at: nil)
     end
-    AlertMailer.submission_unknown(self).deliver_later
+    ActiveRecord.after_all_transactions_commit { AlertMailer.submission_unknown(self).deliver_later } # the caller enqueues the look
     self
   end
 

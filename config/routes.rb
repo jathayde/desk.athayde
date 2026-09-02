@@ -30,6 +30,11 @@ Rails.application.routes.draw do
     end
   end
 
+  namespace :native do
+    resource :path_configuration, only: :show, defaults: { format: :json }
+    resources :devices, only: :create, defaults: { format: :json }
+  end
+
   resource :session, only: %i[ new create destroy ]
   resource :magic_link, only: %i[ show create ]
 

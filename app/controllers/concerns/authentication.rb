@@ -29,7 +29,10 @@ module Authentication
       Session.current.find_by(id: cookies.signed[:session_id]) if cookies.signed[:session_id]
     end
 
+    # A JSON caller (the shell's registration) gets a 401 and leaves no return path behind: stashing a JSON
+    # URL would send the next web sign-in to a page that does not exist.
     def request_authentication
+      return head :unauthorized if request.format.json?
       session[:return_to_after_authenticating] = request.url
       redirect_to new_session_path
     end

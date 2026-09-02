@@ -84,3 +84,10 @@ Everything the app assumes about Schwab that has not been checked against the po
 57. Whether `previewOrder` exists on the individual tier, so the payload builder can be checked without an order.
 58. Whether `cashAvailableForTrading` already nets working buy orders (item 10); the settled-cash rule double-subtracts until this is known.
 
+Added by the Phase 2.5 plan (docs/phase-2.5-plan.md §6):
+
+59. The deposit activity type and its fields on the transactions endpoint, so a cash inflow is detected and never mistaken for a dividend or a journal entry.
+60. Whether a plain LIMIT order with no child (`orderStrategyType` `SINGLE`) is accepted as the payload builder shapes it, for rebalances.
+61. SPY daily price history availability and the candles rate limit at the weekly volume of the correlation job.
+62. A stable source for ICI weekly long-term fund flows; until then the number is entered by hand.
+63. The Hotwire Native bridge contract for a signed approve confirmation (Phase 2 §10); until then the shell submits the web's typed confirmation.

@@ -70,7 +70,7 @@ A written table, state × action × result, including the crash points, from whi
 
 ## 10. iOS (Rails side)
 
-`GET /native/path_configuration.json`, `POST /native/devices`, `Push::Deliver` behind the alert events with email as the fallback; the approve endpoint accepts the web's typed confirmation or the shell's signed confirmation header (`# VERIFY: Hotwire Native bridge contract`).
+`GET /native/path_configuration.json`, `POST /native/devices`, `Push::Deliver` behind the alert events with email as the fallback; the approve endpoint accepts the web's typed confirmation or the shell's signed confirmation header (`# VERIFY: Hotwire Native bridge contract`). **Built 2026-09-02 without the gem:** `GET /native/path_configuration` (the shell is pointed at that path; unversioned, since one build and two users re-read it on launch; a catch-all default rule, modals for forms and sign-in, pull to refresh only on the three mobile-first screens), `POST /native/devices` behind the normal CSRF protection (the shell submits the registration from the web view so the token rides along; a JSON caller without a session gets 401 and no return path is stashed), `Device.register!` with its `device_registered` audit (registered, or reassigned to the other user), and a layout that gives the shell the brand and a sign-out and never the web navigation, keyed on turbo-rails' `hotwire_native_app?`. **Waiting on the user's APNs gem decision (§14):** `Push::Deliver` and the signed confirmation header (verify item 63).
 
 ## 11. Build order (green `bin/ci`, DHH and counselors review, commit per step)
 

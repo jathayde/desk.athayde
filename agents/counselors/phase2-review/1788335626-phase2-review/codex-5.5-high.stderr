@@ -1,0 +1,922 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a0611c-1ab2-79d2-84c4-6fef9ec396d7
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/phase2-review/1788335626-phase2-review/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the requested prompt first, then I’ll follow whatever task instructions it contains within the current read-only workspace constraints.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/phase2-review/1788335626-phase2-review/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+Re-check after fixes. Read only: app/models/submission/place.rb, app/models/order_proposal.rb (sweep_submitting!, record_submitted!, record_rejected!, record_unknown!, record_not_placed!), app/models/submission/matcher.rb, app/jobs/submission/reconcile_job.rb, app/models/orders/proposal_link.rb, app/models/guardrails/context.rb (realized_today, pending_new_positions), docs/phase-2-state-table.md, spec/models/submission/place_spec.rb.
+Fixed since the last review: a worker that wakes after the sweep does not send (Place#call reloads and skips); a late id after "not placed" moves submission_failed → submitted with a late_submission mail; a 4xx after the sweep is final (record_rejected! from submission_unknown); answers the row cannot take are audited and reported; the sweep rescues per row; the matcher requires session, duration, and exactly one stop sell child at the proposal's stop; realized_today counts scale-outs on open trades; max_positions excludes the proposal itself.
+Confirm each fix is real, and report any remaining interleaving that sends one proposal to Schwab twice, records a working order as not placed, or leaves a working order on a row the sync does not link. Concrete sequences with file:line and a fix. Do not restyle.
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The prompt is a focused re-review. I’m going to inspect only the listed files and verify the claimed interleaving fixes against the actual state transitions and reconciliation paths.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/models/order_proposal.rb | sed -n '1,360p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# One proposed order and its whole life (docs/phase-2-state-table.md). Sizing and the collar are frozen at
+     2	# creation; the approve gesture is the submission; nothing leaves the submission path by hand. Every
+     3	# transition locks the row, re-reads the state, and writes its audit row in the same transaction.
+     4	class OrderProposal < ApplicationRecord
+     5	  class IllegalTransition < StandardError; end
+     6	
+     7	  belongs_to :account
+     8	  belongs_to :instrument
+     9	  belongs_to :target_order, class_name: "Order", optional: true
+    10	  belongs_to :user, optional: true
+    11	  belongs_to :decided_by, class_name: "User", optional: true
+    12	  belongs_to :setup, optional: true
+    13	  belongs_to :parent_proposal, class_name: "OrderProposal", optional: true
+    14	  has_many :orders, dependent: :restrict_with_exception
+    15	  has_many :submission_attempts, dependent: :restrict_with_exception
+    16	  has_one :trade, dependent: :restrict_with_exception
+    17	
+    18	  enum :kind, { entry: "entry", exit: "exit", stop_adjustment: "stop_adjustment" }, prefix: true
+    19	  enum :origin, { agent: "agent", human: "human" }
+    20	  enum :side, { buy: Schwab::Order::BUY, sell: Schwab::Order::SELL }
+    21	  enum :child_action, { cancel_stop: "cancel_stop", replace_stop: "replace_stop" }, prefix: true
+    22	  enum :status, {
+    23	    proposed: "proposed", validated: "validated", rejected_by_rules: "rejected_by_rules", rejected: "rejected", expired: "expired",
+    24	    submitting: "submitting", submitted: "submitted", submission_unknown: "submission_unknown", submission_failed: "submission_failed",
+    25	    filled: "filled", cancelled: "cancelled"
+    26	  }
+    27	
+    28	  TERMINAL = %w[ rejected_by_rules rejected expired submission_failed filled cancelled ].freeze
+    29	  STALE_SUBMITTING = 5.minutes # past two writes at their timeouts, a refresh, and slack: the worker died
+    30	  LOOK_GAP = 15.minutes # an unknown row nobody has looked at for this long gets a reconcile enqueued again
+    31	  APPROVABLE = %w[ validated ].freeze
+    32	  UNRESOLVED = %w[ submitting submission_unknown ].freeze # locks the instrument for every other proposal
+    33	  COMMITTED = %w[ validated submitting submission_unknown submitted ].freeze # the desk has committed to these: they claim cash and count as positions
+    34	  AT_BROKER = %w[ submitting submission_unknown submitted ].freeze # at Schwab, or maybe at Schwab
+    35	  QUEUE = %w[ proposed validated submission_unknown ].freeze # what the operator still has to deal with
+    36	  BROKER_OUTCOMES = %w[ filled cancelled ].freeze
+    37	
+    38	  STATUS_LABELS = { "proposed" => "evaluating", "validated" => "waiting for you", "rejected_by_rules" => "rejected by rules", "rejected" => "rejected",
+    39	                    "expired" => "expired", "submitting" => "submitting", "submitted" => "submitted", "submission_unknown" => "submission unknown",
+    40	                    "submission_failed" => "not placed", "filled" => "filled", "cancelled" => "cancelled" }.freeze
+    41	
+    42	  scope :pending, -> { where(status: %w[ proposed validated ]) }
+    43	  scope :unresolved, -> { where(status: UNRESOLVED) }
+    44	  scope :committed, -> { where(status: COMMITTED) }
+    45	  scope :at_broker, -> { where(status: AT_BROKER) }
+    46	  scope :decided, -> { where.not(status: QUEUE) }
+    47	  scope :queue, -> { where(status: QUEUE).order(created_at: :desc) }
+    48	  scope :expiring, -> { where(status: %w[ proposed validated ]).where(expires_at: ..Time.current) }
+    49	  # A shadow approval the operator still has to place by hand: the phase's central concept, named once.
+    50	  scope :awaiting_hand_placement, -> { submitted.where(shadow: true, broker_order_id: nil) }
+    51	  scope :stale_submitting, ->(older_than) { submitting.where(updated_at: ..older_than.ago) }
+    52	
+    53	  validates :quantity, numericality: { greater_than: 0 }, allow_nil: true
+    54	  validates :quantity, presence: true, unless: :kind_entry? # an entry may be unsized (and blocked); a sell of nothing is not a proposal
+    55	
+    56	  def self.instrument_locked?(instrument) = unresolved.where(instrument: instrument).exists?
+    57	
+    58	  # A submitting row older than the call's timeouts is a worker that died mid-submission. Shadow rows finish as
+    59	  # what they were going to be; real rows become unknown and the reconcile job looks. Never back to validated.
+    60	  def self.sweep_submitting!
+    61	    stale_submitting(STALE_SUBMITTING).find_each do |proposal|
+    62	      attempt = proposal.submission_attempts.pending.first or next
+    63	      if proposal.shadow?
+    64	        proposal.record_shadow!(attempt)
+    65	      else
+    66	        proposal.record_unknown!(attempt, error: "left submitting")
+    67	        Submission::ReconcileJob.perform_later(proposal)
+    68	      end
+    69	    rescue IllegalTransition
+    70	      next # the worker answered between the query and the lock; its answer stands, and the rest of the sweep goes on
+    71	    end
+    72	  end
+    73	
+    74	  # An unknown row the reconcile job has not looked at in a while (its job lost, its retries spent) is looked at again.
+    75	  def self.redrive_unknown!
+    76	    submission_unknown.joins(:submission_attempts).merge(SubmissionAttempt.unknown.unlooked_at_since(LOOK_GAP.ago)).distinct.find_each do |proposal|
+    77	      Submission::ReconcileJob.perform_later(proposal)
+    78	    end
+    79	  end
+    80	
+    81	  def approvable? = APPROVABLE.include?(status)
+    82	  # The stored evaluation, read through the same object the evaluator produced: one implementation of what
+    83	  # counts as a warning, whichever side of the jsonb it is read from.
+    84	  def report = Guardrails::Report.load(guardrail_results)
+    85	  delegate :warnings, :needs_override?, to: :report
+    86	  def live_attempt = submission_attempts.live.first
+    87	  def awaiting_hand_placement? = submitted? && shadow? && broker_order_id.nil?
+    88	  def latest_attempt = submission_attempts.order(:id).last
+    89	  # What the operator reads on a failed or unresolved submission: Schwab's answer, or the orders that could each be it.
+    90	  def failure_reason = submission_failed? ? latest_attempt&.error : nil
+    91	  def ambiguous_orders = submission_unknown? ? Array(latest_attempt&.ambiguous_order_ids) : []
+    92	
+    93	  # The approve gesture: transaction one, then the shadow or real branch (Submission::Submit).
+    94	  def approve_and_submit!(user:, acknowledged: [], override_reason: nil) = Submission::Submit.call(self, user: user, acknowledged: acknowledged, override_reason: override_reason)
+    95	
+    96	  # ---- transitions, each a row of the table, each one audit row, each under the row lock ----------
+    97	
+    98	  # The evaluation's writer: stores the report and engages any halt its rules asked for, in the same transaction.
+    99	  def evaluate!(report)
+   100	    transaction do
+   101	      Guardrails.engage_halts!(report)
+   102	      transition!(from: %w[ proposed ], to: report.blocked? ? :rejected_by_rules : :validated, event: "proposal_evaluated",
+   103	                  attributes: { guardrail_results: report.to_h, evaluated_at: Time.current }, data: { blocked: report.blocked?, warnings: report.warnings })
+   104	    end
+   105	  end
+   106	
+   107	  def reject!(user:, reason:)
+   108	    raise ArgumentError, "a rejection needs a reason" if reason.blank?
+   109	    transition!(from: APPROVABLE, to: :rejected, event: "proposal_rejected", user: user, reason: reason,
+   110	                attributes: { decided_at: Time.current, decided_by: user, rejection_reason: reason })
+   111	  end
+   112	
+   113	  def expire!
+   114	    transition!(from: %w[ proposed validated ], to: :expired, event: "proposal_expired")
+   115	  end
+   116	
+   117	  # The one way a proposal is named in prose: emails, banners, the recap, the journal.
+   118	  def label = "#{side.upcase} #{quantity.to_s('F').sub(/\.0+\z/, '')} #{instrument.symbol}"
+   119	  def priced_label = "#{label} @ #{ActiveSupport::NumberHelper.number_to_currency(limit_price)}"
+   120	  def cost = quantity.to_d * limit_price.to_d
+   121	
+   122	  def status_label
+   123	    return "approved, place by hand" if awaiting_hand_placement?
+   124	    return "submission unknown, ambiguous" if ambiguous_orders.any?
+   125	    STATUS_LABELS.fetch(status)
+   126	  end
+   127	
+   128	  # Transaction one of the submission: the approval, the state, and the attempt row commit together, or not at all.
+   129	  # One live submission per instrument: refused here in words, and by the database's partial unique index.
+   130	  def start_submission!(user:, acknowledged:, override_reason:, payload:, shadow:)
+   131	    transaction do
+   132	      raise IllegalTransition, "#{instrument.symbol} has a submission still unresolved" if self.class.unresolved.where(instrument_id: instrument_id).where.not(id: id).exists?
+   133	      transition!(from: APPROVABLE, to: :submitting, event: "proposal_approved", user: user, reason: override_reason,
+   134	                  attributes: { decided_at: Time.current, decided_by: user, acknowledged_warnings: acknowledged, override_reason: override_reason, shadow: shadow },
+   135	                  data: { acknowledged: acknowledged, shadow: shadow })
+   136	      submission_attempts.create!(attempted_at: Time.current, payload: payload, outcome: :pending).tap do
+   137	        AuditEvent.log("proposal_submitting", actor: :human, user: user, subject: self)
+   138	      end
+   139	    end
+   140	  end
+   141	
+   142	  # Transaction two: what Schwab, or shadow mode, answered. The state moves first; the attempt follows.
+   143	  def record_shadow!(attempt)
+   144	    outcome!(attempt, from: %w[ submitting ], to: :submitted, event: "would_have_submitted", attributes: { submitted_at: Time.current }, data: { payload: attempt.payload }) do
+   145	      attempt.update!(outcome: :would_have_submitted)
+   146	    end
+   147	  end
+   148	
+   149	  # A late answer with the id is authoritative: after the sweep called the row unknown, and even after the
+   150	  # reconcile job called it not placed, since the id is the last fact and a working order must be on the row
+   151	  # the sync links and the fill reaches. That second case is mailed: the operator was told nothing was placed.
+   152	  def record_submitted!(attempt, broker_order_id:)
+   153	    late = attempt.not_placed?
+   154	    outcome!(attempt, from: late ? %w[ submission_failed ] : %w[ submitting submission_unknown ], to: :submitted, event: "proposal_submitted",
+   155	             reason: late ? "late answer after not placed" : nil,
+   156	             attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id, late: late }) do
+   157	      attempt.update!(outcome: :submitted, broker_order_id: broker_order_id)
+   158	    end
+   159	    ActiveRecord.after_all_transactions_commit { AlertMailer.late_submission(self).deliver_later } if late
+   160	    self
+   161	  end
+   162	
+   163	  # Unknown is the one outcome that mails at once: the operator must not touch the instrument until it is resolved.
+   164	  def record_unknown!(attempt, error:)
+   165	    outcome!(attempt, from: %w[ submitting ], to: :submission_unknown, event: "submission_unknown", reason: error) do
+   166	      attempt.update!(outcome: :unknown, response: { "error" => error })
+   167	    end
+   168	    AlertMailer.submission_unknown(self).deliver_later
+   169	    self
+   170	  end
+   171	
+   172	  # Schwab refused the payload (a 4xx): the operator reads the error and may re-propose. Final even after the
+   173	  # sweep called the row unknown: the one call was answered, and the reconcile job's first line then exits.
+   174	  def record_rejected!(attempt, error:)
+   175	    outcome!(attempt, from: %w[ submitting submission_unknown ], to: :submission_failed, event: "submission_failed", reason: error) do
+   176	      attempt.update!(outcome: :failed, response: { "error" => error })
+   177	    end
+   178	  end
+   179	
+   180	  # The reconcile job confirmed twice, ten minutes apart, that nothing was placed.
+   181	  def record_not_placed!(attempt)
+   182	    outcome!(attempt, from: %w[ submission_unknown ], to: :submission_failed, event: "submission_failed", reason: "confirmed not placed") do
+   183	      attempt.update!(outcome: :not_placed)
+   184	    end
+   185	  end
+   186	
+   187	  # The reconcile job found the order an unknown submission placed.
+   188	  def record_reconciled!(attempt, order:)
+   189	    outcome!(attempt, from: %w[ submission_unknown ], to: :submitted, event: "submission_reconciled",
+   190	             attributes: { submitted_at: Time.current, broker_order_id: order.broker_order_id }, data: { broker_order_id: order.broker_order_id }) do
+   191	      attempt.update!(outcome: :submitted, broker_order_id: order.broker_order_id, reconciled_order: order, reconciled_at: Time.current)
+   192	    end
+   193	  end
+   194	
+   195	  # A shadowed submission matched to the order the operator placed by hand: no state change, one audit row.
+   196	  def link_shadow_order!(attempt, order:)
+   197	    raise IllegalTransition, "#{status} is not a shadowed submission" unless submitted? && shadow? && attempt.would_have_submitted?
+   198	    transaction do
+   199	      attempt.update!(reconciled_order: order, reconciled_at: Time.current, broker_order_id: order.broker_order_id)
+   200	      update!(broker_order_id: order.broker_order_id)
+   201	      AuditEvent.log("submission_reconciled", actor: :system, subject: self, data: { broker_order_id: order.broker_order_id, shadow: true })
+   202	    end
+   203	    self
+   204	  end
+   205	
+   206	  # Written only by the orders sync, and only to the two states the broker can put an order in.
+   207	  def record_broker_outcome!(status)
+   208	    status = status.to_s
+   209	    raise ArgumentError, "#{status} is not a broker outcome" unless BROKER_OUTCOMES.include?(status)
+   210	    transition!(from: %w[ submitted ], to: status, event: "proposal_#{status}")
+   211	    ActiveRecord.after_all_transactions_commit { AlertMailer.fill_or_cancel(self).deliver_later }
+   212	    self
+   213	  end
+   214	
+   215	  private
+   216	    def outcome!(attempt, from:, to:, event:, attributes: {}, reason: nil, data: {})
+   217	      raise ArgumentError, "attempt #{attempt.id} belongs to another proposal" unless attempt.order_proposal_id == id
+   218	      transaction do
+   219	        transition!(from: from, to: to, event: event, attributes: attributes, reason: reason, data: data)
+   220	        yield
+   221	      end
+   222	      self
+   223	    end
+   224	
+   225	    # Lock, re-read, refuse from the wrong state, write, audit: one transaction, never a stale instance's guess.
+   226	    def transition!(from:, to:, event:, attributes: {}, user: nil, reason: nil, data: {})
+   227	      with_lock do
+   228	        raise IllegalTransition, "proposal #{id} cannot go from #{status} to #{to}" unless from.include?(status)
+   229	        update!(attributes.merge(status: to))
+   230	        AuditEvent.log(event, actor: user ? :human : :system, user: user, subject: self, reason: reason, data: data)
+   231	      end
+   232	      self
+   233	    end
+   234	end
+
+exec
+/bin/zsh -lc "nl -ba app/models/submission/place.rb | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# The real branch (docs/phase-2-plan.md §0.5, §0.6): the exit's stop action first, then the order, one call each,
+     2	# never retried; every answer Schwab can give lands as one named outcome on the proposal. A call that may have
+     3	# reached Schwab is unknown until the reconcile job says otherwise; one that certainly did not (a 4xx, an
+     4	# auth or budget refusal, a missing token) is a rejection that says the order was not sent.
+     5	class Submission::Place
+     6	  MAYBE_SENT = [ Schwab::UnknownOutcome, Schwab::ServerError, Schwab::TransportError ].freeze
+     7	
+     8	  # The stop step failed or went quiet: the sell is not sent, and the operator is told what to check.
+     9	  class StopNotAdjusted < StandardError; end
+    10	
+    11	  def self.call(proposal, attempt) = new(proposal, attempt).call
+    12	
+    13	  def initialize(proposal, attempt)
+    14	    @proposal, @attempt = proposal, attempt
+    15	    @account = proposal.account
+    16	  end
+    17	
+    18	  # A worker that wakes after the sweep already called its row unknown does not send: the reconcile job owns
+    19	  # the row now, and a second send would be the double submission this whole path exists to prevent.
+    20	  def call
+    21	    return swept unless @proposal.reload.submitting?
+    22	    adjust_stop if @proposal.kind_exit?
+    23	    order_id = client.place_order(@account.schwab_hash, @attempt.payload)
+    24	    record { @proposal.record_submitted!(@attempt, broker_order_id: order_id) }
+    25	  rescue StopNotAdjusted => e
+    26	    record { @proposal.record_rejected!(@attempt, error: e.message) }
+    27	  rescue *MAYBE_SENT => e
+    28	    record do
+    29	      @proposal.record_unknown!(@attempt, error: "#{e.class.name.demodulize}: #{e.message}")
+    30	      Submission::ReconcileJob.set(wait: Submission::ReconcileJob::QUIET_PERIOD).perform_later(@proposal)
+    31	    end
+    32	  rescue Schwab::Error => e # a 4xx, a rate limit, an auth failure, no token: nothing was accepted
+    33	    record { @proposal.record_rejected!(@attempt, error: "#{stop_note}order not sent: #{e.message}") }
+    34	  end
+    35	
+    36	  private
+    37	    def client = Schwab.client(wait: false)
+    38	    def stop_note = @proposal.child_action ? "the stop was #{@proposal.child_action_cancel_stop? ? "cancelled" : "shrunk"} first; " : ""
+    39	
+    40	    def swept
+    41	      AuditEvent.log("submission_skipped", actor: :system, subject: @proposal, reason: "swept to #{@proposal.status} before the call; not sent")
+    42	      @proposal
+    43	    end
+    44	
+    45	    # An answer the row can no longer take (the reconcile job already found the order, or a verdict this
+    46	    # answer cannot overturn) is kept on the record and reported, never retried and never a 500 for the operator.
+    47	    def record
+    48	      yield
+    49	    rescue OrderProposal::IllegalTransition => e
+    50	      AuditEvent.log("submission_answer_ignored", actor: :system, subject: @proposal, reason: e.message, data: { status: @proposal.status })
+    51	      Rails.error.report(e, handled: true, context: { proposal: @proposal.id })
+    52	      @proposal
+    53	    end
+    54	
+    55	    # Selling what a working stop covers: cancel the stop for a full exit, shrink it for a partial one, before
+    56	    # the sell goes in.
+    57	    def adjust_stop
+    58	      stop = @account.positions.find_by(instrument: @proposal.instrument)&.working_stop_order
+    59	      return unless stop&.working?
+    60	      remaining = stop.remaining.to_d - @proposal.quantity.to_d
+    61	      action = remaining <= 0 ? :cancel_stop : :replace_stop
+    62	      new_id = perform_stop_action(action, stop, remaining)
+    63	      @proposal.update!(child_action: action)
+    64	      AuditEvent.log("stop_adjusted", actor: :system, subject: @proposal, reason: action == :cancel_stop ? "stop cancelled" : "stop shrunk",
+    65	                     data: { stop_order: stop.broker_order_id, remaining: remaining, replacement_order: new_id })
+    66	    end
+    67	
+    68	    def perform_stop_action(action, stop, remaining)
+    69	      if action == :cancel_stop
+    70	        client.cancel_order(@account.schwab_hash, stop.broker_order_id)
+    71	        nil
+    72	      else
+    73	        client.replace_order(@account.schwab_hash, stop.broker_order_id, Schwab::OrderPayload.stop(symbol: @proposal.instrument.symbol, quantity: remaining, stop_price: stop.stop_price))
+    74	      end
+    75	    rescue *MAYBE_SENT => e
+    76	      raise StopNotAdjusted, "the stop #{action == :cancel_stop ? 'cancel' : 'shrink'} got no answer (#{e.message}); check the stop at Schwab before anything else; order not sent"
+    77	    rescue Schwab::Error => e
+    78	      raise StopNotAdjusted, "the stop could not be adjusted (#{e.message}); order not sent"
+    79	    end
+    80	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/models/submission/matcher.rb | sed -n '1,260p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Finds the broker order a submission produced when Schwab never told us its id: an ambiguous real submission
+     2	# (step 4) or a shadowed one the operator placed by hand. Conservative by design: unlinked orders only, alive
+     3	# or filled, the same instrument, side, quantity, type, price, session, and duration, and the same shape (an
+     4	# entry's bracket carries exactly one stop sell child for the quantity at the proposal's stop; an exit is a
+     5	# single), entered inside the attempt's window; two matches are ambiguous for the operator, never "found".
+     6	class Submission::Matcher
+     7	  PRICE_TOLERANCE = BigDecimal("0.01")
+     8	  SHADOW_WINDOW = 3.days
+     9	
+    10	  def initialize(proposal, attempt, window: SHADOW_WINDOW)
+    11	    @proposal, @attempt, @window = proposal, attempt, window
+    12	  end
+    13	
+    14	  def candidates
+    15	    @candidates ||= find_candidates
+    16	  end
+    17	
+    18	  # Exactly one, or nothing: the caller decides what "two" means.
+    19	  def match = candidates.one? ? candidates.first : nil
+    20	  def ambiguous? = candidates.many?
+    21	
+    22	  private
+    23	    def find_candidates
+    24	      window = @attempt.attempted_at - 5.minutes..@attempt.attempted_at + @window
+    25	    scope = @proposal.account.orders.where(order_proposal_id: nil, parent_order_id: nil, instrument: @proposal.instrument, side: OrderProposal.sides.fetch(@proposal.side),
+    26	                                           order_type: @proposal.order_type, session: Schwab::OrderPayload::NORMAL, duration: Schwab::OrderPayload::DAY, entered_at: window)
+    27	                                    .where.not(status: Schwab::Order::DEAD_STATUSES + [ Schwab::Order::GONE ])
+    28	    scope.includes(:child_orders).select { |o| o.quantity.to_d == @proposal.quantity.to_d && close?(o.limit_price, @proposal.limit_price) && shape_matches?(o) }
+    29	  end
+    30	
+    31	    def close?(a, b) = (a.to_d - b.to_d).abs <= PRICE_TOLERANCE
+    32	
+    33	    def shape_matches?(order)
+    34	      return order.child_orders.none? unless @proposal.kind_entry?
+    35	      child = order.child_orders.one? ? order.child_orders.first : nil
+    36	      child.present? && child.side == Schwab::Order::SELL && child.stop? && child.quantity.to_d == @proposal.quantity.to_d && close?(child.stop_price, @proposal.stop_price)
+    37	    end
+    38	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The submission state machine now has locks around each transition and `Place#call` reloads before sending. I’m checking the reconcile/linking side next, because that is where “working order but row not linked” failures usually hide.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/models/orders/proposal_link.rb | sed -n '1,300p'" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "nl -ba app/jobs/submission/reconcile_job.rb | sed -n '1,300p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# After every orders sync: the orders the app placed are linked by the broker id Schwab gave us and their
+     2	# broker outcomes recorded; the orders the operator placed by hand for shadowed proposals are matched and
+     3	# linked; a parent filled with no live child is the unprotected alert (step 4).
+     4	class Orders::ProposalLink
+     5	  def self.call(account) = new(account).call
+     6	
+     7	  def initialize(account) = @account = account
+     8	
+     9	  def call
+    10	    link_by_broker_id
+    11	    link_shadows
+    12	    record_outcomes
+    13	  end
+    14	
+    15	  private
+    16	    def link_by_broker_id
+    17	      @account.order_proposals.where(status: %w[ submitted filled cancelled ]).where.not(broker_order_id: nil).find_each do |proposal|
+    18	        order = @account.orders.find_by(broker_order_id: proposal.broker_order_id) or next
+    19	        next if order.order_proposal_id == proposal.id
+    20	        order.update!(order_proposal: proposal, placed_via: proposal.shadow? ? :schwab_direct : :app) # a hand-placed shadow stays the operator's
+    21	      end
+    22	    end
+    23	
+    24	    def link_shadows
+    25	      @account.order_proposals.awaiting_hand_placement.find_each do |proposal|
+    26	        attempt = proposal.submission_attempts.would_have_submitted.first or next
+    27	        order = Submission::Matcher.new(proposal, attempt).match or next
+    28	        order.update!(order_proposal: proposal)
+    29	        proposal.link_shadow_order!(attempt, order: order)
+    30	      end
+    31	    end
+    32	
+    33	    def record_outcomes
+    34	      @account.order_proposals.submitted.where.not(broker_order_id: nil).find_each do |proposal|
+    35	        order = @account.orders.find_by(broker_order_id: proposal.broker_order_id) or next
+    36	        outcome = :filled if order.status == Schwab::Order::FILLED
+    37	        outcome = :cancelled if Schwab::Order::DEAD_STATUSES.include?(order.status)
+    38	        proposal.record_broker_outcome!(outcome) if outcome
+    39	      rescue OrderProposal::IllegalTransition => e
+    40	        Rails.error.report(e, handled: true, context: { proposal: proposal.id }) # one raced row is not the sync's problem
+    41	      end
+    42	    end
+    43	end
+
+ succeeded in 0ms:
+     1	# An unknown submission is resolved only by looking (docs/phase-2-plan.md §0.7): after a quiet period, sync
+     2	# the orders feed and search; exactly one unlinked match links it, two stay with the operator and are looked
+     3	# at again, and nothing found is believed only when the sync itself was whole and a second look ten minutes
+     4	# later agrees. A look that could not see (a failed, partial, or quarantining sync) counts for nothing.
+     5	class Submission::ReconcileJob < ApplicationJob
+     6	  QUIET_PERIOD = 60.seconds
+     7	  CONFIRMATION_GAP = 10.minutes
+     8	  REAL_WINDOW = 15.minutes
+     9	  ORDER_QUARANTINES = %w[ orders_unmapped orders_unresolved ].freeze
+    10	
+    11	  limits_concurrency to: 1, key: ->(proposal) { "reconcile-#{proposal.instrument_id}" }, on_conflict: :discard
+    12	  retry_on ActiveRecord::Deadlocked, ActiveRecord::RecordNotUnique, wait: 1.minute, attempts: 3 # a database race is not a verdict
+    13	
+    14	  def perform(proposal)
+    15	    return unless proposal.submission_unknown?
+    16	    attempt = proposal.submission_attempts.unknown.first or return
+    17	    return look_again(proposal) if SyncRun.running?(:orders, proposal.account) # the scheduled sync has the feed; look after it
+    18	    run = Sync::OrdersJob.perform_now(proposal.account)
+    19	    attempt.looked!(could_see: whole?(run))
+    20	    matcher = Submission::Matcher.new(proposal, attempt, window: REAL_WINDOW)
+    21	    if (order = matcher.match)
+    22	      OrderProposal.transaction do
+    23	        order.update!(order_proposal: proposal, placed_via: :app)
+    24	        proposal.record_reconciled!(attempt, order: order)
+    25	      end
+    26	    elsif matcher.ambiguous?
+    27	      attempt.ambiguous!(matcher.candidates) # the operator resolves it at Schwab; the next look may find one
+    28	      look_again(proposal)
+    29	    elsif !attempt.last_look_could_see
+    30	      look_again(proposal)
+    31	    elsif attempt.absent_since?(CONFIRMATION_GAP)
+    32	      proposal.record_not_placed!(attempt)
+    33	    else
+    34	      attempt.absent!
+    35	      look_again(proposal)
+    36	    end
+    37	  end
+    38	
+    39	  private
+    40	    # A sync that succeeded and quarantined no order: only then does "not found" mean not there.
+    41	    def whole?(run) = run.is_a?(SyncRun) && run.succeeded? && run.unmapped_values.slice(*ORDER_QUARANTINES).none?
+    42	    def look_again(proposal) = self.class.set(wait: CONFIRMATION_GAP).perform_later(proposal)
+    43	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/models/guardrails/context.rb | sed -n '1,300p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Everything the rules read about the desk, computed once per evaluation from the database for one account:
+     2	# equity and its freshness, cash and what already claims it, positions, today's realized P&L, the drawdown,
+     3	# and the halts.
+     4	class Guardrails::Context
+     5	  attr_reader :account, :desk, :settings
+     6	
+     7	  def initialize(account)
+     8	    @account = account
+     9	    @desk = Desk.new(account: account)
+    10	    @settings = SystemSettings.instance
+    11	  end
+    12	
+    13	  def balance = desk.balance
+    14	  def equity = balance&.equity
+    15	  def balance_stale? = balance.nil? || desk.balance_stale?
+    16	  def fresh_equity = balance_stale? || equity.to_d <= 0 ? nil : equity
+    17	  def positions = @positions ||= account.positions.includes(:instrument, :working_stop_order).to_a
+    18	  def position_for(instrument) = positions.find { |p| p.instrument_id == instrument.id }
+    19	  def open_trade_for(instrument) = account.trades.open.find_by(instrument: instrument)
+    20	
+    21	  # Entries not yet filled on instruments not yet held: they count as positions the desk has committed to. The
+    22	  # proposal being judged is left out, so its own validated row is not counted twice at approval.
+    23	  def pending_new_positions(except: nil)
+    24	    scope = account.order_proposals.committed.where(kind: :entry).where.not(instrument_id: positions.map(&:instrument_id))
+    25	    scope = scope.where.not(id: except.id) if except&.persisted?
+    26	    scope.distinct.count(:instrument_id)
+    27	  end
+    28	
+    29	  # What unfilled entries on this instrument have already committed, so a second entry sees the first.
+    30	  def pending_cost_for(instrument, except: nil)
+    31	    account.order_proposals.committed.where(instrument: instrument, kind: :entry).where.not(id: except&.id).sum(&:cost)
+    32	  end
+    33	
+    34	  # Cash the broker reports as settled, minus every buy that already claims it (docs/phase-2-plan.md §0.9).
+    35	  # The app's own resting orders are counted once, as proposals; whether the broker's figure already nets
+    36	  # working buys is unverified (verify-on-approval item 58), so its other working buys are subtracted too.
+    37	  def projected_settled_cash
+    38	    return nil if balance_stale? || balance.settled_cash.nil?
+    39	    balance.settled_cash - pending_app_buys - live_broker_buys
+    40	  end
+    41	
+    42	  def pending_app_buys
+    43	    account.order_proposals.at_broker.buy.sum(&:cost)
+    44	  end
+    45	
+    46	  # A market buy claims an unknown sum; the position's last price is the conservative stand-in.
+    47	  def live_broker_buys
+    48	    account.orders.working.where(side: Schwab::Order::BUY, order_proposal_id: nil).includes(:instrument).sum do |o|
+    49	      o.remaining.to_d * (o.limit_price || o.stop_price || position_for(o.instrument)&.last_price || 0).to_d
+    50	    end
+    51	  end
+    52	
+    53	  # Today's realized P&L: the trades that closed today, plus every scale-out on a still-open trade, priced
+    54	  # against that trade's average entry, so a loss taken in parts is seen before the trade is done.
+    55	  def realized_today
+    56	    @realized_today ||= account.trades.closed.where(closed_at: today_range).sum(:realized_pnl) +
+    57	      account.trades.open.joins(:trade_legs).where(trade_legs: { kind: "exit", executed_at: today_range }).where.not(trade_legs: { cash_amount: nil }).where.not(avg_entry: nil)
+    58	             .sum("trade_legs.cash_amount - trade_legs.quantity * trades.avg_entry")
+    59	  end
+    60	  def prior_equity = desk.prior_snapshot&.equity
+    61	  def drawdown = desk.latest_snapshot&.drawdown
+    62	
+    63	  # What the day has already committed on the buy side, resting or filled, unknown included.
+    64	  def notional_today
+    65	    account.order_proposals.where(status: OrderProposal::AT_BROKER + %w[ filled ]).buy.where(decided_at: today_range).sum(&:cost)
+    66	  end
+    67	
+    68	  private
+    69	    def today_range = MarketDay.today.in_time_zone(MarketDay::ZONE).all_day
+    70	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+So far the stated fixes for late answers, final 4xx responses, per-row sweep rescue, and matcher strictness are present in the code. I’m reading the spec and state table now to compare intended behavior against covered behavior.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba docs/phase-2-state-table.md | sed -n '1,280p'" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "nl -ba spec/models/submission/place_spec.rb | sed -n '1,360p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Order proposal state table (Phase 2 step 0)
+     2	
+     3	The transition specs in `spec/models/order_proposal_spec.rb` are written from this table. A row is state × action → result. Every legal transition writes one audit event; every illegal one raises `OrderProposal::IllegalTransition` and writes nothing. Crash points are marked ✕ and say what the next actor sees.
+     4	
+     5	| From | Action (actor) | To | Audit | Notes |
+     6	|---|---|---|---|---|
+     7	| (none) | create (tool or form, via `Proposals::Create`) | `proposed` | `proposal_created` | sizing and collar frozen on the row at creation |
+     8	| `proposed` | evaluate, no hard fail (system) | `validated` | `proposal_evaluated` | results snapshot rule ids, versions, params, numbers |
+     9	| `proposed` | evaluate, any hard fail (system) | `rejected_by_rules` | `proposal_evaluated` | terminal; re-propose |
+    10	| `proposed`, `validated` | end of the proposal's market day (tick) | `expired` | `proposal_expired` | terminal |
+    11	| `validated` | reject (approver) | `rejected` | `proposal_rejected` | terminal; reason required |
+    12	| `validated` | approve (approver): transaction 1 = lock, gates, re-evaluate over frozen sizing, acknowledge warnings, override reason | `submitting` + attempt row | `proposal_approved`, `proposal_submitting` | refused with "re-propose" when the re-evaluation would have changed the quantity or turned a pass into a fail; refused (in words by `start_submission!`, and by the partial unique index) when the instrument has a `submitting` or `submission_unknown` proposal |
+    13	| `submitting` | ✕ worker dies before the HTTP call | `submitting` | — | the sweep (tick) moves rows older than the timeouts to `submission_unknown`; the operator sees "unknown, check Schwab"; never back to `validated` |
+    14	| `submitting` | shadow branch (system) | `submitted` (shadow), attempt `would_have_submitted` | `would_have_submitted` | the operator places it by hand; the matcher links the Schwab-direct order later (`submission_reconciled`) |
+    15	| `submitting`, `submission_unknown` | HTTP 2xx with an order id (system) | `submitted`, attempt `submitted` | `proposal_submitted` | `broker_order_id` on the row; the sync links the order by it; a late answer after the sweep is still authoritative |
+    16	| `submitting` | HTTP 2xx without a parsable id, timeout, 5xx, dropped connection (system) | `submission_unknown`, attempt `unknown` | `submission_unknown` | reconcile job enqueued; the instrument is locked for every other proposal |
+    17	| `submitting`, `submission_unknown` | HTTP 4xx (system, `record_rejected!`) | `submission_failed`, attempt `failed` | `submission_failed` | terminal; the error shown; re-propose. From `submission_unknown` only when the sweep moved the row before the one call was answered; the answer is final |
+    18	| `submitting` | ✕ worker dies after the call, before transaction 2 | `submitting` | — | swept to `submission_unknown`; the reconcile job may find the order |
+    19	| `submission_unknown` | reconcile finds exactly one unlinked match (job) | `submitted`, attempt `submitted` | `submission_reconciled` | linked by `broker_order_id` |
+    20	| `submission_unknown` | reconcile finds two or more (job) | `submission_unknown` | — | "ambiguous" on the queue; the operator resolves at Schwab |
+    21	| `submission_unknown` | reconcile finds nothing twice, ten minutes apart, after a 60 s quiet period (job, `record_not_placed!`) | `submission_failed`, attempt `not_placed` | `submission_failed` | terminal; the instrument unlocks; re-propose |
+    22	| `submitted` | sync sees the order filled | `filled` | `proposal_filled` | written only by the sync |
+    23	| `submitted` | sync sees the order cancelled, rejected, or expired at the broker | `cancelled` | `proposal_cancelled` | written only by the sync; a filled parent with no live child is the unprotected alert |
+    24	| `submission_failed` with attempt `not_placed` | HTTP 2xx with an id, late (system, `record_submitted!`) | `submitted`, attempt `submitted`, audited `late: true`, `late_submission` mail | `submitted` | the id is the last fact: the order is working, the sync links it, the fill reaches it; the operator checks for a duplicate |
+    25	| any terminal (`rejected_by_rules`, `rejected`, `expired`, `submission_failed` except the late-answer row above, `filled`, `cancelled`) | anything | raises | — | |
+    26	| `submitting`, `submission_unknown`, `submitted` | reject, approve, expire | raises | — | nothing leaves the submission path by hand |
+    27	
+    28	Invariants the database enforces: one attempt per proposal whose outcome is not `failed` or `not_placed` (partial unique index); one proposal per account and instrument in `submitting` or `submission_unknown` (partial unique index); `broker_order_id` unique among proposals when present. Attempt outcomes: `pending` (transaction one wrote it and the call has not answered; it is what holds the index between the two transactions), `submitted`, `would_have_submitted`, `unknown`, `not_placed`, `failed`. "A `submitted` proposal has an attempt" is a model invariant kept by the transitions, which write both in one transaction, not a database constraint.
+
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe Submission::Place do
+     4	  let!(:account) { create(:account, schwab_hash: Schwab::FakeClient::ACCOUNT_HASH) }
+     5	  let!(:token) { create(:schwab_token) }
+     6	  let!(:xyz) { create(:instrument, symbol: "XYZ", cusip: "037833100") }
+     7	  let(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
+     8	  let(:acknowledged) { %w[ max_sector_exposure earnings_blackout ] }
+     9	  let(:fake) { Schwab::FakeClient.instance }
+    10	
+    11	  before { ready_desk(account, settled: 6000); SystemSettings.instance.update!(shadow_mode: false) }
+    12	
+    13	  def approve(kind: :entry, quantity: nil, limit: 50)
+    14	    proposal = Proposals::Create.call(account: account, kind: kind, side: kind == :entry ? :buy : :sell, symbol: "XYZ", limit_price: limit, stop_price: kind == :entry ? 47 : nil,
+    15	                                      thesis: "t", origin: :human, user: john, quantity: quantity)
+    16	    proposal.approve_and_submit!(user: john, acknowledged: kind == :entry ? acknowledged : [])
+    17	    proposal.reload
+    18	  end
+    19	
+    20	  it "places the bracket, records the broker id, and the next orders sync links the order and its child stop" do
+    21	    proposal = approve
+    22	    expect(proposal).to have_attributes(status: "submitted", shadow: false)
+    23	    expect(proposal.broker_order_id).to eq(fake.placed.first["orderId"].to_s)
+    24	    expect(proposal.submission_attempts.sole).to have_attributes(outcome: "submitted", broker_order_id: proposal.broker_order_id)
+    25	    Sync::OrdersJob.perform_now(account)
+    26	    order = account.orders.find_by(broker_order_id: proposal.broker_order_id)
+    27	    expect(order).to have_attributes(order_proposal: proposal, placed_via: "app", status: "WORKING")
+    28	    expect(order.child_orders.sole.order_type).to eq("STOP")
+    29	  end
+    30	
+    31	  it "records a 4xx as rejected by Schwab with the error, the row terminal and the instrument free" do
+    32	    fake.enqueue(:place_order) { raise Schwab::RequestError.new("Schwab responded 400: quantity invalid", status: 400) }
+    33	    proposal = approve
+    34	    expect(proposal).to be_submission_failed
+    35	    expect(proposal.submission_attempts.sole).to have_attributes(outcome: "failed", response: { "error" => "order not sent: Schwab responded 400: quantity invalid" })
+    36	    expect(OrderProposal.instrument_locked?(xyz)).to be(false)
+    37	  end
+    38	
+    39	  it "records a timeout after send as unknown, mails the operator, and hands the proposal to the reconcile job after the quiet period" do
+    40	    fake.enqueue(:place_order) { raise Schwab::UnknownOutcome.new("Net::ReadTimeout", attempts: 1) }
+    41	    expect { approve }.to have_enqueued_job(Submission::ReconcileJob).at(a_value_within(5.seconds).of(Submission::ReconcileJob::QUIET_PERIOD.from_now))
+    42	      .and have_enqueued_mail(AlertMailer, :submission_unknown)
+    43	    proposal = OrderProposal.last
+    44	    expect(proposal).to be_submission_unknown
+    45	    expect(OrderProposal.instrument_locked?(xyz)).to be(true)
+    46	    expect(proposal.submission_attempts.sole).to have_attributes(outcome: "unknown", response: { "error" => "UnknownOutcome: Net::ReadTimeout" })
+    47	  end
+    48	
+    49	  it "cancels the working stop before a full exit and shrinks it before a partial one, audited, and does not sell when the stop cannot be adjusted" do
+    50	    stop = create(:order, :working_stop, account: account, instrument: xyz, quantity: 40, remaining_quantity: 40, stop_price: 47, broker_order_id: "stop-1")
+    51	    create(:position, account: account, instrument: xyz, quantity: 40, last_price: 50, market_value: 2000, working_stop_order: stop)
+    52	    account.reload
+    53	    partial = approve(kind: :exit, quantity: 10, limit: 55)
+    54	    expect(partial).to have_attributes(status: "submitted", child_action: "replace_stop")
+    55	    expect(fake.calls.map(&:first)).to include(:replace_order, :place_order)
+    56	    expect(AuditEvent.where(subject: partial, kind: "stop_adjusted").sole).to have_attributes(reason: "stop shrunk")
+    57	    expect(AuditEvent.where(subject: partial, kind: "stop_adjusted").sole.data["replacement_order"]).to be_present
+    58	
+    59	    partial.record_broker_outcome!(:filled)
+    60	    fake.enqueue(:cancel_order) { raise Schwab::RequestError.new("Schwab responded 404: order not found", status: 404) }
+    61	    full = approve(kind: :exit, quantity: 40, limit: 55)
+    62	    expect(full).to be_submission_failed
+    63	    expect(full.submission_attempts.sole.response["error"]).to include("the stop could not be adjusted", "order not sent")
+    64	    expect(fake.calls.map(&:first).last).to eq(:cancel_order) # the sell never went in
+    65	
+    66	    fake.enqueue(:cancel_order) { raise Schwab::UnknownOutcome.new("Net::ReadTimeout", attempts: 1) }
+    67	    quiet = approve(kind: :exit, quantity: 40, limit: 55)
+    68	    expect(quiet).to be_submission_failed # a stop step that went quiet is not a sell to reconcile
+    69	    expect(quiet.submission_attempts.sole.response["error"]).to include("got no answer", "check the stop at Schwab")
+    70	    expect(OrderProposal.instrument_locked?(xyz)).to be(false)
+    71	  end
+    72	
+    73	  it "does not send when the sweep moved the row before the call, and keeps a 4xx that lands after the sweep as final" do
+    74	    proposal = Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, thesis: "t", origin: :human, user: john)
+    75	    attempt = proposal.start_submission!(user: john, acknowledged: acknowledged, override_reason: nil, payload: {}, shadow: false)
+    76	    proposal.record_unknown!(attempt, error: "left submitting") # the sweep got there first
+    77	    described_class.call(proposal, attempt)
+    78	    expect(fake.placed).to be_empty
+    79	    expect(proposal.reload).to be_submission_unknown
+    80	    expect(AuditEvent.where(subject: proposal, kind: "submission_skipped")).to exist
+    81	
+    82	    fake.enqueue(:place_order) do |*|
+    83	      OrderProposal.last.then { |p| p.record_unknown!(p.submission_attempts.sole, error: "left submitting") } # swept mid-call
+    84	      raise Schwab::RequestError.new("Schwab responded 400: quantity invalid", status: 400)
+    85	    end
+    86	    proposal.record_rejected!(attempt, error: "cleared") # free the instrument for the next one
+    87	    late = approve
+    88	    expect(late).to be_submission_failed
+    89	    expect(late.submission_attempts.sole).to have_attributes(outcome: "failed", response: { "error" => "order not sent: Schwab responded 400: quantity invalid" })
+    90	  end
+    91	
+    92	  it "puts a late id onto a row the reconcile job had called not placed, mails the operator, and the sync links the order" do
+    93	    proposal = Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, thesis: "t", origin: :human, user: john)
+    94	    attempt = proposal.start_submission!(user: john, acknowledged: acknowledged, override_reason: nil, payload: Schwab::OrderPayload.bracket(symbol: "XYZ", quantity: 33, limit_price: 50, stop_price: 47), shadow: false)
+    95	    proposal.record_unknown!(attempt, error: "Net::ReadTimeout")
+    96	    proposal.record_not_placed!(attempt.reload)
+    97	    expect(proposal.reload).to be_submission_failed
+    98	    id = fake.place!(attempt.payload) # Schwab had accepted it after all
+    99	    expect { proposal.record_submitted!(attempt.reload, broker_order_id: id) }.to have_enqueued_mail(AlertMailer, :late_submission)
+   100	    expect(proposal.reload).to have_attributes(status: "submitted", broker_order_id: id)
+   101	    expect(attempt.reload).to have_attributes(outcome: "submitted", broker_order_id: id)
+   102	    expect(AuditEvent.where(subject: proposal, kind: "proposal_submitted").sole.data).to include("late" => true)
+   103	    Sync::OrdersJob.perform_now(account)
+   104	    expect(account.orders.find_by(broker_order_id: id)).to have_attributes(order_proposal: proposal, placed_via: "app")
+   105	    expect { proposal.record_submitted!(attempt.reload, broker_order_id: id) }.to raise_error(OrderProposal::IllegalTransition) # once
+   106	  end
+   107	
+   108	  it "rejects, as not sent, what certainly never reached Schwab: a rate limit, an auth failure, no token" do
+   109	    fake.enqueue(:place_order) { raise Schwab::RateLimited.new("busy", retry_after: 30) }
+   110	    expect(approve).to be_submission_failed
+   111	    expect(OrderProposal.last.submission_attempts.sole.response["error"]).to include("order not sent")
+   112	    SchwabToken.current.update!(revoked_at: Time.current)
+   113	    proposal = Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, thesis: "t", origin: :human, user: john)
+   114	    allow(Schwab).to receive(:client).and_raise(Schwab::NoUsableToken, "no usable Schwab token")
+   115	    proposal.approve_and_submit!(user: john, acknowledged: acknowledged)
+   116	    expect(proposal.reload).to be_submission_failed
+   117	  end
+   118	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "rg -n \"class SubmissionAttempt|scope :unknown|def looked|def absent|def ambiguous|enum :outcome|not_placed|live\" app/models spec -g '*.rb'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+app/models/user.rb:27:    MagicLinkMailer.sign_in(self).deliver_later
+app/models/submission/matcher.rb:2:# (step 4) or a shadowed one the operator placed by hand. Conservative by design: unlinked orders only, alive
+app/models/submission/matcher.rb:20:  def ambiguous? = candidates.many?
+spec/jobs/submission/reconcile_job_spec.rb:56:    expect(attempt.reload).to be_not_placed
+app/models/proposals/create.rb:25:    ActiveRecord.after_all_transactions_commit { AlertMailer.new_proposal(proposal).deliver_later } if proposal.agent? # the operator made the human ones
+spec/jobs/failure_digest_job_spec.rb:11:    expect(ActionMailer::Base.deliveries).to be_empty
+spec/jobs/failure_digest_job_spec.rb:14:  it "sweeps stuck runs and reports them as failed, with undelivered briefs and failed jobs by class" do
+spec/jobs/failure_digest_job_spec.rb:22:    mail = ActionMailer::Base.deliveries.last
+app/models/submission_attempt.rb:1:# One attempt to place a proposal's order; at most one may be live per proposal (database index). The
+app/models/submission_attempt.rb:2:# reconcile job's bookkeeping lives in columns: when it last looked, whether it could see, when an absence
+app/models/submission_attempt.rb:4:class SubmissionAttempt < ApplicationRecord
+app/models/submission_attempt.rb:8:  enum :outcome, { pending: "pending", submitted: "submitted", would_have_submitted: "would_have_submitted", unknown: "unknown", not_placed: "not_placed", failed: "failed" }
+app/models/submission_attempt.rb:10:  DEAD = %w[ failed not_placed ].freeze # the proposal is resubmittable past these
+app/models/submission_attempt.rb:12:  scope :live, -> { where.not(outcome: DEAD) }
+app/models/submission_attempt.rb:16:  def looked!(could_see:) = update!(last_looked_at: Time.current, last_look_could_see: could_see)
+app/models/submission_attempt.rb:17:  def ambiguous!(orders) = update!(ambiguous_order_ids: orders.map(&:broker_order_id))
+app/models/submission_attempt.rb:18:  def absent!
+app/models/submission_attempt.rb:21:  def absent_since?(gap) = first_absence_at.present? && first_absence_at <= gap.ago
+spec/jobs/schwab/token_health_job_spec.rb:4:  let(:mail) { ActionMailer::Base.deliveries }
+app/models/sync_run.rb:18:  scope :live, -> { running.where(started_at: STALE_AFTER.ago..) }
+app/models/sync_run.rb:44:  def self.running?(feed, account) = self.for(feed, account).live.exists?
+app/models/sync_run.rb:46:  # Due when nothing is live and the last start is older than the interval, with a minute of slack for cron drift.
+spec/support/journal.rb:21:  # A share delivery as the sync stores it from a RECEIVE_AND_DELIVER: quantity from the security item, direction in raw.
+spec/support/journal.rb:22:  def delivery(account, instrument, shares, at:, cash: 0)
+app/models/submission.rb:2:# two transactions, one live attempt, shadow mode as the branch between "would have" and a real call.
+app/models/agent_run.rb:31:  def deliver!
+app/models/agent_run.rb:33:    (sunday_review? ? BriefMailer.sunday_review(self) : BriefMailer.brief(self)).deliver_now
+app/models/agent_run.rb:39:  def delivered? = emailed_at.present?
+app/models/agent_run.rb:40:  def deliverable? = !running? && !skipped?
+spec/jobs/agent/brief_jobs_spec.rb:4:  let(:mail) { ActionMailer::Base.deliveries }
+spec/jobs/agent/brief_jobs_spec.rb:29:  it "keeps the finished run when delivery fails so it can be resent without another API call" do
+spec/jobs/agent/brief_jobs_spec.rb:35:    run.deliver!
+spec/jobs/agent/brief_jobs_spec.rb:38:    expect { AgentRun.create!(kind: :eod, market_date: date, status: :skipped, started_at: Time.current).deliver! }.to raise_error(ArgumentError, /skipped/)
+spec/jobs/agent/brief_jobs_spec.rb:58:  it "waits for live feed and memory runs before reading, then proceeds at the limit even if they never finish" do
+spec/jobs/agent/brief_jobs_spec.rb:90:    expect(ActionMailer::Base.deliveries.map(&:subject)).to eq([ "Athayde Desk: Sunday review, re-authenticate Schwab" ])
+app/models/position.rb:20:  # Every live terminal sell stop on this instrument, so a scale-in covered by two stops reads as covered.
+app/models/position.rb:21:  def live_stops = @live_stops ||= account.orders.where(instrument: instrument).stops.sells.live.terminal.to_a
+app/models/position.rb:25:    live_stops.filter_map(&:remaining).sum
+app/models/position.rb:31:    @protection = @live_stops = nil if @protection_for != working_stop_order_id
+app/models/position.rb:37:    @protection = @live_stops = nil
+app/models/position.rb:44:    return :awaiting if !working_stop_order.live?
+app/models/position.rb:45:    return :trailing_unknown if stop_price.blank? || live_stops.any? { |o| o.stop_price.blank? }
+app/models/position.rb:69:    live_stops.sum { |stop| [ stop.remaining * (last_price - stop.stop_price), 0 ].max }
+app/models/position.rb:72:  # The newest terminal working sell stop on this instrument, preferring live statuses over AWAITING_* so a
+app/models/position.rb:76:    pick = newest(candidates.select(&:live?)) || newest(candidates)
+app/models/position.rb:77:    @live_stops = nil
+app/models/orders/protection_watch.rb:13:      AlertMailer.unprotected_position(position).deliver_later
+app/models/order.rb:16:  scope :live, -> { where(status: Schwab::Order::LIVE_STATUSES) }
+app/models/order.rb:18:  # narrow it to "not replaced by a live one".
+app/models/order.rb:22:  def live? = Schwab::Order::LIVE_STATUSES.include?(status)
+spec/mailers/brief_mailer_spec.rb:107:    failed.submission_attempts.create!(attempted_at: 3.hours.ago, outcome: :not_placed, payload: {}, response: { "error" => "not found at Schwab after two looks" })
+app/models/activity.rb:29:  # Shares delivered in are positive, delivered out negative, read from the security item itself
+app/models/activity.rb:30:  # because the cash amount on a share delivery is zero.
+app/models/activity.rb:31:  def delivered_quantity
+spec/support/vcr.rb:1:# The suite never touches the live Schwab API. Cassettes are scrubbed of credentials, tokens,
+spec/support/vcr.rb:3:# method and URI only, because scrubbed bodies would never match a live refresh grant.
+app/models/agent.rb:5:  REQUEST_TIMEOUT = 120 # seconds per call; the SDK default of ten minutes would outlive the run's own deadline
+app/models/orders/proposal_link.rb:3:# linked; a parent filled with no live child is the unprotected alert (step 4).
+spec/spec_helper.rb:2:# specs live under a `spec` directory, which RSpec adds to the `$LOAD_PATH`.
+spec/mailers/alert_mailer_spec.rb:10:  let(:deliveries) { ActionMailer::Base.deliveries }
+spec/mailers/alert_mailer_spec.rb:18:    expect(deliveries.map(&:subject)).to eq([ "Athayde Desk: BUY 33 XYZ waiting for you" ])
+spec/mailers/alert_mailer_spec.rb:19:    expect(deliveries.last.text_part.body.to_s).to include("base breakout", "To acknowledge: earnings blackout and max sector exposure.", "/proposals/")
+spec/mailers/alert_mailer_spec.rb:24:    expect(deliveries.size).to eq(1)
+spec/mailers/alert_mailer_spec.rb:30:    expect(deliveries.last.subject).to eq("Athayde Desk: BUY 33 XYZ rejected by rules")
+spec/mailers/alert_mailer_spec.rb:36:    expect(deliveries.last.subject).to eq("Athayde Desk: BUY 10 XYZ filled")
+spec/mailers/alert_mailer_spec.rb:37:    expect(deliveries.last.text_part.body.to_s).to include("order o-1", "The bracket's stop should now be working")
+spec/mailers/alert_mailer_spec.rb:40:    expect(deliveries.last.subject).to eq("Athayde Desk: SELL 10 DEF cancelled")
+spec/mailers/alert_mailer_spec.rb:41:    expect(deliveries.last.text_part.body.to_s).not_to include("bracket")
+spec/mailers/alert_mailer_spec.rb:46:    expect(deliveries.last.subject).to eq("Athayde Desk: entries halted by daily loss halt")
+spec/mailers/alert_mailer_spec.rb:47:    expect(deliveries.last.text_part.body.to_s).to include("down 3.2%", "Exits and tighten-only stop changes stay available", "when you clear it on the System page")
+app/models/agent/conversation.rb:3:# The email is the job's business: a run that produced text can be delivered whatever else happened.
+app/models/agent/conversation.rb:36:  rescue Anthropic::Errors::Error => e # API, transport, timeout, and request-shape errors are all deliverable failures
+app/models/journal/linker.rb:118:    # Shares delivered onto an open trade: a clean ratio is a split or stock dividend, anything else is a transfer to review.
+app/models/journal/linker.rb:120:      delivered = activity.delivered_quantity
+app/models/journal/linker.rb:121:      return true if delivered.nil?
+app/models/journal/linker.rb:124:      ratio = split_ratio(trade.quantity, delivered)
+app/models/journal/linker.rb:126:        trade.trade_legs.create!(activity: activity, kind: :adjustment, ratio: ratio, quantity: delivered, cash_amount: 0, executed_at: activity.executed_at, note: "split or stock dividend")
+app/models/journal/linker.rb:128:        trade.trade_legs.create!(activity: activity, kind: :adjustment, quantity: delivered, cash_amount: activity.net_amount, executed_at: activity.executed_at, note: "transfer")
+app/models/journal/linker.rb:135:    def split_ratio(running, delivered)
+app/models/journal/linker.rb:136:      return nil unless running.positive? && delivered.positive?
+app/models/journal/linker.rb:137:      ratio = (running + delivered) / running
+app/models/journal/linker.rb:145:      delivered_out = securities.find { |s| s.amount&.negative? }
+app/models/journal/linker.rb:146:      delivered_in = securities.find { |s| s.amount&.positive? }
+app/models/journal/linker.rb:147:      predecessor = delivered_out && Instrument.resolve(delivered_out.instrument)
+app/models/journal/linker.rb:148:      successor = delivered_in && Instrument.resolve(delivered_in.instrument)
+app/models/journal/linker.rb:156:      ratio = delivered_out.amount.abs.positive? ? delivered_in.amount / delivered_out.amount.abs : nil
+spec/support/schwab.rb:11:    # Real app credentials live only in the production file; the suite never needs real ones.
+app/models/schwab/client.rb:179:      # Returns [response, attempts]. Retries live here and nowhere else.
+app/models/system_settings.rb:7:  LIVE_CONFIRMATION, SHADOW_CONFIRMATION = "go live", "shadow"
+app/models/system_settings.rb:24:      ActiveRecord.after_all_transactions_commit { AlertMailer.halt_tripped(rule: rule, reason: reason, resets_at: resets_at).deliver_later }
+app/models/system_settings.rb:59:  # with the shadow evidence that justified it. The typed word is checked under the row lock, so two "go live"
+spec/requests/proposals_spec.rb:46:    create(:instrument, symbol: "DEF", cusip: "594918104") # a second name: XYZ now carries a live entry and the exposure cap says so
+app/models/guardrails/context.rb:39:    balance.settled_cash - pending_app_buys - live_broker_buys
+app/models/guardrails/context.rb:47:  def live_broker_buys
+spec/schwab_isolation_spec.rb:3:# The kickoff's isolation rule: every Schwab shape assumption lives in the adapter layer.
+app/models/order_proposal.rb:86:  def live_attempt = submission_attempts.live.first
+app/models/order_proposal.rb:91:  def ambiguous_orders = submission_unknown? ? Array(latest_attempt&.ambiguous_order_ids) : []
+app/models/order_proposal.rb:129:  # One live submission per instrument: refused here in words, and by the database's partial unique index.
+app/models/order_proposal.rb:153:    late = attempt.not_placed?
+app/models/order_proposal.rb:159:    ActiveRecord.after_all_transactions_commit { AlertMailer.late_submission(self).deliver_later } if late
+app/models/order_proposal.rb:168:    AlertMailer.submission_unknown(self).deliver_later
+app/models/order_proposal.rb:181:  def record_not_placed!(attempt)
+app/models/order_proposal.rb:183:      attempt.update!(outcome: :not_placed)
+app/models/order_proposal.rb:211:    ActiveRecord.after_all_transactions_commit { AlertMailer.fill_or_cancel(self).deliver_later }
+app/models/schwab/fake_client.rb:49:    # ---- OAuth: the fake authorize page lives in the app (step 4) and redirects straight back
+spec/requests/system_spec.rb:36:    post shadow_mode_system_path, params: { shadow: { confirmation: "go live", reason: "x" } }
+spec/requests/system_spec.rb:39:    post shadow_mode_system_path, params: { shadow: { confirmation: "go live", reason: "" } }
+spec/requests/system_spec.rb:41:    post shadow_mode_system_path, params: { shadow: { confirmation: "live", reason: "12 shadow approvals matched" } }
+spec/requests/system_spec.rb:42:    expect(flash[:alert]).to include("Type go live")
+app/models/schwab.rb:1:# Everything that knows a Schwab field name lives under this namespace. See docs/schwab-api-contract.md.
+app/models/schwab/activity.rb:37:          quantity: SHARE_TYPES.include?(raw["type"]) && securities.one? ? primary.amount&.abs : nil, # shares on a trade or a single delivery; a dividend's amount is dollars
+app/models/schwab/order_payload.rb:2:  # The order bodies the app sends (docs/phase-2-plan.md §0.5). Every Schwab field name lives here.
+app/models/failure_digest.rb:17:  def undelivered = @undelivered ||= AgentRun.unemailed.where(finished_at: window).recent_first.to_a
+app/models/failure_digest.rb:25:  def empty? = sync_failures.none? && agent_failures.none? && undelivered.none? && failed_jobs.none? && failed_attempts.none? && unresolved_proposals.none?
+app/models/schwab/account_summary.rb:12:    # The account-level payload without the positions array, which is large and lives on the position rows.
+spec/models/order_proposal_matrix_spec.rb:15:      record_not_placed: { "submission_unknown" => "submission_failed" }, record_reconciled: { "submission_unknown" => "submitted" },
+spec/models/order_proposal_matrix_spec.rb:37:    when :record_not_placed then proposal.record_not_placed!(attempt_of(proposal))
+spec/models/order_proposal_matrix_spec.rb:75:  it "refuses a second live submission on the instrument, in words and in the database" do
+spec/models/agent_run_spec.rb:16:    live = described_class.create!(kind: :eod, market_date: Date.new(2026, 9, 1), status: :running, started_at: 2.minutes.ago)
+spec/models/agent_run_spec.rb:19:    expect(live.reload.status).to eq("running")
+spec/models/position_protection_spec.rb:12:  it "displays the newest live stop while coverage counts every live stop" do
+spec/models/position_protection_spec.rb:20:  it "reads two full-size live stops on one lot as oversized, since both would trigger" do
+spec/models/position_protection_spec.rb:27:  it "prefers a live stop over a newer awaiting bracket child" do
+spec/models/position_protection_spec.rb:28:    live = stop(entered_at: 2.days.ago)
+spec/models/position_protection_spec.rb:31:    expect(position.working_stop_order).to eq(live)
+spec/models/position_protection_spec.rb:48:  it "sums live stops so a scaled-in position covered by two stops reads as protected" do
+spec/models/journal/linker_spec.rb:129:  it "applies a 2:1 split delivered through the mapper: quantity doubles, the stop displays halved, risk unchanged, and the next bootstrap adds no plug" do
+spec/models/journal/linker_spec.rb:135:    delivery(account, xyz, 40, at: t0 + 5.days)
+spec/models/submission/submit_spec.rb:62:  it "counts an unfilled entry's cost against the exposure cap, so one name cannot carry two live orders" do
+spec/models/submission/place_spec.rb:96:    proposal.record_not_placed!(attempt.reload)
+spec/models/snapshot_spec.rb:86:    delivery(account, xyz, 5, at: Time.zone.parse("2026-09-08 09:00 EDT"))
+spec/models/delisted_holding_spec.rb:12:    live = create(:instrument, symbol: "LIVE")
+spec/models/delisted_holding_spec.rb:13:    create(:position, account: account, instrument: live, quantity: 10, last_price: 20, market_value: 200)
+spec/models/position_spec.rb:68:RSpec.describe Position, "with two live stops" do
+spec/models/order_proposal_spec.rb:49:  it "walks approve into submitting with one live attempt, then submitted with the broker id, and locks the instrument meanwhile" do
+spec/models/order_proposal_spec.rb:81:    proposal.record_not_placed!(attempt)
+spec/models/order_proposal_spec.rb:83:    expect(attempt.reload).to be_not_placed
+spec/models/order_proposal_spec.rb:94:    expect(proposal.live_attempt).to be_nil
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+One issue is emerging: the pre-send reload prevents a worker that starts after a sweep from sending, but it does not serialize the check with the actual Schwab call. That leaves room for duplicate jobs or a pause between check and send.
+codex
+**Findings**
+- High: late IDs after `not_placed` are only handled when the caller reloads the attempt first. The real worker path passes stale `@attempt` into `record_submitted!` at [place.rb:24](/Users/jathayde/Development/Personal/desk.athayde/app/models/submission/place.rb:24), while `record_submitted!` decides `late = attempt.not_placed?` from that object at [order_proposal.rb:153](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:153). Sequence: worker enters Schwab call with pending attempt; sweep moves row to `submission_unknown`; reconcile marks attempt `not_placed`; Schwab finally returns an ID; stale attempt makes `late` false; transition from `submission_failed` to `submitted` is rejected and swallowed by `Place#record` at [place.rb:49](/Users/jathayde/Development/Personal/desk.athayde/app/models/submission/place.rb:49). The working order is then left on a failed row. Fix: reload and lock the attempt/status inside `record_submitted!` before computing `late`, and add a spec through `Submission::Place.call`, not a direct `attempt.reload` call like [place_spec.rb:99](/Users/jathayde/Development/Personal/desk.athayde/spec/models/submission/place_spec.rb:99).
+
+- High: duplicate place workers can still send the same proposal twice. Two workers can both pass the unlocked `@proposal.reload.submitting?` check at [place.rb:21](/Users/jathayde/Development/Personal/desk.athayde/app/models/submission/place.rb:21), both call Schwab at [place.rb:23](/Users/jathayde/Development/Personal/desk.athayde/app/models/submission/place.rb:23), and only afterward does the row-lock transition reject the second answer at [order_proposal.rb:227](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:227). By then the duplicate order has already been sent. Fix: serialize `Place#call` per proposal/attempt with an advisory lock or durable send lease that covers check/send/record, with the second worker rechecking state after acquiring it.
+
+- High: a late no-ID maybe-sent answer after `not_placed` still leaves a working order unlinked. Sequence: worker passes [place.rb:21](/Users/jathayde/Development/Personal/desk.athayde/app/models/submission/place.rb:21), sweep/reconcile records `not_placed` via [order_proposal.rb:181](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:181), then Schwab accepted the order but the client raises `UnknownOutcome`; `record_unknown!` only allows `submitting` at [order_proposal.rb:165](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:165), so `Place#record` swallows it. Later sync will not link it because `ProposalLink` only links submitted/filled/cancelled rows with `broker_order_id` at [proposal_link.rb:17](/Users/jathayde/Development/Personal/desk.athayde/app/models/orders/proposal_link.rb:17), and reconcile exits unless the proposal is `submission_unknown` at [reconcile_job.rb:15](/Users/jathayde/Development/Personal/desk.athayde/app/jobs/submission/reconcile_job.rb:15). Fix: either prevent sweep/reconcile from finalizing while any worker can still send, or allow a late maybe-sent answer from `submission_failed`/`not_placed` to reopen `submission_unknown` and enqueue reconcile.
+
+**Confirmed**
+The other stated fixes are present: post-sweep worker skip, 4xx from `submission_unknown` to final failed, ignored illegal answers audited/reported, per-row sweep rescue, stricter matcher fields/shape, scale-out realized P&L, and `pending_new_positions(except:)`.
+
+I did not run tests; this was a read-only review.
+hook: Stop
+hook: Stop Completed
+tokens used
+45,055

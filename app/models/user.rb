@@ -2,6 +2,7 @@ class User < ApplicationRecord
   MAGIC_LINK_TTL = 15.minutes
 
   has_many :sessions, dependent: :destroy
+  has_many :devices, dependent: :destroy
 
   normalizes :email_address, with: ->(e) { e.strip.downcase }
   validates :email_address, :name, presence: true

@@ -249,6 +249,41 @@ ALTER SEQUENCE public.balances_id_seq OWNED BY public.balances.id;
 
 
 --
+-- Name: devices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.devices (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    platform character varying NOT NULL,
+    token character varying NOT NULL,
+    app_version character varying,
+    last_seen_at timestamp(6) with time zone NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: devices_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.devices_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: devices_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.devices_id_seq OWNED BY public.devices.id;
+
+
+--
 -- Name: instruments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1560,6 +1595,13 @@ ALTER TABLE ONLY public.balances ALTER COLUMN id SET DEFAULT nextval('public.bal
 
 
 --
+-- Name: devices id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devices ALTER COLUMN id SET DEFAULT nextval('public.devices_id_seq'::regclass);
+
+
+--
 -- Name: instruments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1836,6 +1878,14 @@ ALTER TABLE ONLY public.audit_events
 
 ALTER TABLE ONLY public.balances
     ADD CONSTRAINT balances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: devices devices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devices
+    ADD CONSTRAINT devices_pkey PRIMARY KEY (id);
 
 
 --
@@ -2227,6 +2277,20 @@ CREATE INDEX index_balances_on_account_id ON public.balances USING btree (accoun
 --
 
 CREATE INDEX index_balances_on_account_id_and_as_of ON public.balances USING btree (account_id, as_of);
+
+
+--
+-- Name: index_devices_on_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_devices_on_token ON public.devices USING btree (token);
+
+
+--
+-- Name: index_devices_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_devices_on_user_id ON public.devices USING btree (user_id);
 
 
 --
@@ -2987,6 +3051,14 @@ ALTER TABLE ONLY public.trades
 
 
 --
+-- Name: devices fk_rails_410b63ef65; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.devices
+    ADD CONSTRAINT fk_rails_410b63ef65 FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: risk_rules fk_rails_48618bfc42; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3297,6 +3369,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902180001'),
 ('20260902170001'),
 ('20260902160001'),
 ('20260902150001'),
