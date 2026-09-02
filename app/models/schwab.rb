@@ -12,9 +12,9 @@ module Schwab
 
   def self.fake? = Rails.configuration.x.schwab.adapter == :fake
 
-  def self.client(token: nil, wait: true)
+  def self.client(token: nil, wait: true, budget: RATE_BUDGET_PER_MINUTE)
     return FakeClient.instance if fake?
-    Client.new(token: token || usable_token!, wait: wait)
+    Client.new(token: token || usable_token!, wait: wait, budget: budget)
   end
 
   # The three-legged flow and the refresh grant authenticate with the app key, not a bearer token.

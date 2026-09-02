@@ -1,6 +1,8 @@
 Rails.application.routes.draw do
   root "dashboard#show"
 
+  match "/mcp", to: "mcp#handle", via: %i[ post get delete ]
+
   resource :system, only: :show, controller: "system" do
     post :halt
     post :resume

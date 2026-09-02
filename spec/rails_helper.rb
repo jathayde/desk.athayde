@@ -22,5 +22,6 @@ RSpec.configure do |config|
 
   config.include FactoryBot::Syntax::Methods
   config.include ActiveSupport::Testing::TimeHelpers
+  config.after { travel_back } # RSpec never runs Minitest's after_teardown, so a blockless travel would leak
   config.include ActiveJob::TestHelper, type: :job
 end

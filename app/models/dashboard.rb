@@ -54,7 +54,9 @@ class Dashboard
     @sync_failure = account && SchwabToken.usable? ? unresolved_failures.max_by(&:started_at) : nil
   end
 
+  def ready? = state == :ready
   def balance = @balance ||= account&.current_balance
+  def latest_snapshot = @latest_snapshot ||= account && account.snapshots.chronological.last
   def equity = balance&.equity
 
   # Flow-adjusted change since the prior snapshot by date, never by recency.

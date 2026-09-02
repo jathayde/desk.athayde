@@ -29,7 +29,3 @@ test("halt needs a reason; resume needs the typed word", async ({ page }) => {
   await page.getByRole("button", { name: "Resume" }).click();
   await expect(page.getByText("Resumed.")).toBeVisible();
 });
-
-test("the MCP endpoint rejects a bad bearer with a plain page", async ({ page }) => {
-  test.skip(true, "MCP lands in step 8");
-});

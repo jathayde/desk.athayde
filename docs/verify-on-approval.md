@@ -46,7 +46,7 @@ Everything the app assumes about Schwab that has not been checked against the po
 ## Platform
 28. Whether `Retry-After` is sent on 429, and the 429 body (community: `errors[].status="429"`, codes 429-001 and 429-005).
 29. Actual per-minute read limit, and whether it is per app, per token, or per account.
-30. Claude app custom connector: static bearer header availability for this org (plan decision 0.8).
+30. RESOLVED 2026-09-01: the Claude desktop app's Add custom connector dialog offers an additional request header for this account, so the bearer-only design ships. Header name `Authorization`, value `Bearer <mcp.bearer_token>` verbatim; the value cannot be edited later, so rotating the token means removing and re-adding the connector.
 
 ## Added by the step 4 review
 31. PARTLY RESOLVED: two refresh grants in a row both succeeded and the refresh token did not rotate, so a retried refresh is safe. The dropped-connection variant was not exercised.

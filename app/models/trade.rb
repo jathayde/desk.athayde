@@ -20,6 +20,11 @@ class Trade < ApplicationRecord
   scope :needing_review, -> { journaled.where(needs_review: true) }
   # Most serious reason first, never-skipped before skipped, oldest first.
   scope :review_queue, -> { needing_review.in_order_of(:review_reason, REVIEW_REASONS).order(Arel.sql("review_deferred_at ASC NULLS FIRST"), :created_at) }
+  scope :in_setup, ->(name) { joins(:setup).where(setups: { name: name }) }
+  scope :in_symbol, ->(symbol) { joins(:instrument).where(instruments: { symbol: symbol.to_s.upcase }) }
+  scope :opened_after, ->(date) { where(opened_at: date.beginning_of_day..) }
+  scope :closed_after, ->(date) { where(closed_at: date.beginning_of_day..) }
+  scope :newest_first, -> { order(Arel.sql("COALESCE(trades.closed_at, trades.opened_at, trades.created_at) DESC"), id: :desc) }
   scope :missing_post_mortem, -> { closed.where(post_mortem: nil, needs_review: false, excluded_from_stats: false) }
   # bootstrapped means "has a plug leg now": a trade whose entry the journal never saw stays out of the stats.
   scope :eligible_for_stats, -> { closed.where(needs_review: false, excluded_from_stats: false, bootstrapped: false).where("initial_risk > 0") }

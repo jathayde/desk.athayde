@@ -26,6 +26,9 @@ gem "solid_cache"
 gem "solid_queue"
 gem "solid_cable"
 
+# Model Context Protocol server: the read tools Claude connects to (official Ruby SDK)
+gem "mcp"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 

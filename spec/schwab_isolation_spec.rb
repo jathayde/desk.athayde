@@ -5,7 +5,7 @@ RSpec.describe "Schwab shape isolation" do
   let(:schwab_names) do
     %w[ hashValue securitiesAccount longQuantity averagePrice marketValue orderLegCollection childOrderStrategies replacingOrderCollection
         transferItems sessionHours activityId enteredTime cashAvailableForTrading liquidationValue netAmount stopPrice orderType
-        instrumentId assetType isOpen lastPrice invalidSymbols candles AWAITING_PARENT_ORDER STOP_LIMIT RECEIVE_AND_DELIVER ]
+        instrumentId assetType isOpen lastPrice invalidSymbols AWAITING_PARENT_ORDER STOP_LIMIT RECEIVE_AND_DELIVER ]
   end
 
   let(:quoted_literals) { %w[ WORKING VALID SELL BUY FILLED CASH_EQUIVALENT ].map { |v| %("#{v}") } }

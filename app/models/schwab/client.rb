@@ -21,11 +21,13 @@ module Schwab
 
     # token responds to #access_token and, if it can renew itself, #refresh!
     # wait: false raises on the first retriable failure instead of sleeping; web callers use it.
+    # budget: the per-minute ceiling this client draws against on the shared counter; callers that must not
+    # starve sync pass a lower one. One take per request, here and nowhere else.
     def initialize(token: nil, app_key: Schwab.app_key, app_secret: Schwab.app_secret, callback_url: Schwab.callback_url,
-                   sleeper: method(:sleep), wait: true)
+                   sleeper: method(:sleep), wait: true, budget: Schwab::RATE_BUDGET_PER_MINUTE)
       # A missing app key would send an empty Basic auth header and read Schwab's 401 as a revoked token.
       raise NotConfigured, "Schwab app key and secret are not in credentials" if app_key.blank? || app_secret.blank?
-      @token, @app_key, @app_secret, @callback_url, @sleeper, @wait = token, app_key, app_secret, callback_url, sleeper, wait
+      @token, @app_key, @app_secret, @callback_url, @sleeper, @wait, @budget = token, app_key, app_secret, callback_url, sleeper, wait, budget
     end
 
     # ---- OAuth -----------------------------------------------------------------------------
@@ -159,7 +161,7 @@ module Schwab
       end
 
       def dispatch(request, template)
-        RateBudget.take!
+        RateBudget.take!(budget: @budget)
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         http(request.uri).request(request).tap { |response| log(request, template, response.code, started) }
       rescue *TRANSPORT_FAILURES

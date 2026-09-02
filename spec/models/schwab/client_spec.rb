@@ -166,6 +166,12 @@ RSpec.describe Schwab::Client do
       expect(sleeps).to be_empty
     end
 
+    it "takes from the shared budget once per request, at the ceiling the caller chose" do
+      stub_request(:get, %r{/trader/v1/accounts/accountNumbers}).to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+      expect(Schwab::RateBudget).to receive(:take!).with(budget: 70).once
+      described_class.new(token: token, app_key: "k", app_secret: "s", callback_url: "https://x/cb", budget: 70).account_numbers
+    end
+
     it "surfaces the local rate budget through the client" do
       stub_request(:get, "#{trader}/accounts/accountNumbers").to_return(status: 200, body: "[]")
       Schwab::RATE_BUDGET_PER_MINUTE.times { Schwab::RateBudget.take! }
