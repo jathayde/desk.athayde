@@ -8,7 +8,7 @@ class Agent::Tools::AddWatchlistItem < Agent::Tool
        read_only: false, scheduled: false
 
   def call(symbol:, trigger:, thesis: nil)
-    item = WatchlistItem.create!(symbol: symbol, trigger: trigger, thesis: thesis, origin: :agent)
+    item = WatchlistItem.watch!(symbol: symbol, trigger: trigger, thesis: thesis, origin: :agent)
     { watchlist_item_id: item.id, symbol: item.symbol, status: item.status }
   rescue ActiveRecord::RecordInvalid => e
     raise InvalidArguments, e.record.errors.full_messages.to_sentence

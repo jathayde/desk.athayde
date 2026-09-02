@@ -8,6 +8,8 @@ FactoryBot.define do
     quantity { 10 }
     order_type { "LIMIT" }
     entered_at { Time.current }
+    session { "NORMAL" }
+    duration { "DAY" }
 
     trait :working_stop do
       status { "WORKING" }

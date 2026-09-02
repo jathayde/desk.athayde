@@ -70,6 +70,41 @@ RSpec.describe Submission::Place do
     expect(OrderProposal.instrument_locked?(xyz)).to be(false)
   end
 
+  it "does not send when the sweep moved the row before the call, and keeps a 4xx that lands after the sweep as final" do
+    proposal = Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, thesis: "t", origin: :human, user: john)
+    attempt = proposal.start_submission!(user: john, acknowledged: acknowledged, override_reason: nil, payload: {}, shadow: false)
+    proposal.record_unknown!(attempt, error: "left submitting") # the sweep got there first
+    described_class.call(proposal, attempt)
+    expect(fake.placed).to be_empty
+    expect(proposal.reload).to be_submission_unknown
+    expect(AuditEvent.where(subject: proposal, kind: "submission_skipped")).to exist
+
+    fake.enqueue(:place_order) do |*|
+      OrderProposal.last.then { |p| p.record_unknown!(p.submission_attempts.sole, error: "left submitting") } # swept mid-call
+      raise Schwab::RequestError.new("Schwab responded 400: quantity invalid", status: 400)
+    end
+    proposal.record_rejected!(attempt, error: "cleared") # free the instrument for the next one
+    late = approve
+    expect(late).to be_submission_failed
+    expect(late.submission_attempts.sole).to have_attributes(outcome: "failed", response: { "error" => "order not sent: Schwab responded 400: quantity invalid" })
+  end
+
+  it "puts a late id onto a row the reconcile job had called not placed, mails the operator, and the sync links the order" do
+    proposal = Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, thesis: "t", origin: :human, user: john)
+    attempt = proposal.start_submission!(user: john, acknowledged: acknowledged, override_reason: nil, payload: Schwab::OrderPayload.bracket(symbol: "XYZ", quantity: 33, limit_price: 50, stop_price: 47), shadow: false)
+    proposal.record_unknown!(attempt, error: "Net::ReadTimeout")
+    proposal.record_not_placed!(attempt.reload)
+    expect(proposal.reload).to be_submission_failed
+    id = fake.place!(attempt.payload) # Schwab had accepted it after all
+    expect { proposal.record_submitted!(attempt.reload, broker_order_id: id) }.to have_enqueued_mail(AlertMailer, :late_submission)
+    expect(proposal.reload).to have_attributes(status: "submitted", broker_order_id: id)
+    expect(attempt.reload).to have_attributes(outcome: "submitted", broker_order_id: id)
+    expect(AuditEvent.where(subject: proposal, kind: "proposal_submitted").sole.data).to include("late" => true)
+    Sync::OrdersJob.perform_now(account)
+    expect(account.orders.find_by(broker_order_id: id)).to have_attributes(order_proposal: proposal, placed_via: "app")
+    expect { proposal.record_submitted!(attempt.reload, broker_order_id: id) }.to raise_error(OrderProposal::IllegalTransition) # once
+  end
+
   it "rejects, as not sent, what certainly never reached Schwab: a rate limit, an auth failure, no token" do
     fake.enqueue(:place_order) { raise Schwab::RateLimited.new("busy", retry_after: 30) }
     expect(approve).to be_submission_failed

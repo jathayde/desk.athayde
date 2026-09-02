@@ -7,8 +7,7 @@ class WatchlistItemsController < ApplicationController
   end
 
   def create
-    item = WatchlistItem.create!(symbol: params[:symbol], trigger: params[:trigger], thesis: params[:thesis], origin: :human, user: Current.user)
-    AuditEvent.log("watchlist_changed", actor: :human, user: Current.user, subject: item, reason: "added", data: { symbol: item.symbol })
+    item = WatchlistItem.watch!(symbol: params[:symbol], trigger: params[:trigger], thesis: params[:thesis], origin: :human, user: Current.user)
     redirect_to watchlist_items_path, notice: "Watching #{item.symbol}."
   rescue ActiveRecord::RecordInvalid => e
     redirect_to watchlist_items_path, alert: e.record.errors.full_messages.to_sentence

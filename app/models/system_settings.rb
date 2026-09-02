@@ -26,6 +26,24 @@ class SystemSettings < ApplicationRecord
     self
   end
 
+  # The kill switch (Flow 8), under the same lock and with the same audit discipline as the rule halts.
+  def halt!(user:, reason:)
+    with_lock do
+      update!(manual_halt: true, manual_halt_reason: reason, manual_halt_at: Time.current)
+      AuditEvent.log("manual_halt_set", actor: :human, user: user, reason: reason)
+    end
+    self
+  end
+
+  def resume!(user:)
+    with_lock do
+      next unless manual_halt?
+      AuditEvent.log("manual_halt_cleared", actor: :human, user: user, reason: manual_halt_reason)
+      update!(manual_halt: false, manual_halt_reason: nil, manual_halt_at: nil)
+    end
+    self
+  end
+
   def clear_rule_halt!(user: nil, reason: nil)
     with_lock do
       next unless rule_halt_tripped_at

@@ -16,6 +16,16 @@ Sizing = Data.define(:equity, :risk_percent, :risk_budget, :per_share_risk, :qua
     new(equity: equity, risk_percent: percent, risk_budget: budget, per_share_risk: per_share, quantity: quantity, reason: nil)
   end
 
+  # The frozen jsonb back as the object, so a rule reads sized? and quantity rather than string keys.
+  def self.load(hash)
+    hash = hash.to_h
+    new(equity: decimal(hash["equity"]), risk_percent: decimal(hash["risk_percent"]), risk_budget: decimal(hash["risk_budget"]), per_share_risk: decimal(hash["per_share_risk"]),
+        quantity: hash["quantity"], reason: hash["reason"])
+  end
+
+  def self.decimal(value) = value.nil? ? nil : BigDecimal(value.to_s)
+  private_class_method :decimal
+
   def self.refused(reason, equity: nil, percent: nil, budget: nil, per_share: nil)
     new(equity: equity, risk_percent: percent, risk_budget: budget, per_share_risk: per_share, quantity: nil, reason: reason)
   end

@@ -21,6 +21,10 @@ RSpec.describe Orders::ProposalLink do
     create(:order, account: account, instrument: xyz, status: "WORKING", side: "BUY", order_type: "LIMIT", quantity: 10, limit_price: 50, entered_at: 10.minutes.from_now, broker_order_id: "501") # wrong size
     create(:order, account: account, instrument: xyz, status: "WORKING", side: "BUY", order_type: "LIMIT", quantity: 33, limit_price: 50, entered_at: 10.minutes.from_now, broker_order_id: "502") # no child stop: not a bracket
     create(:order, account: account, instrument: xyz, status: "CANCELED", side: "BUY", order_type: "LIMIT", quantity: 33, limit_price: 50, entered_at: 10.minutes.from_now, broker_order_id: "503") # dead
+    wrong_stop = create(:order, account: account, instrument: xyz, status: "FILLED", side: "BUY", order_type: "LIMIT", quantity: 33, limit_price: 50, entered_at: 10.minutes.from_now, broker_order_id: "504")
+    create(:order, :working_stop, account: account, instrument: xyz, quantity: 33, remaining_quantity: 33, stop_price: 40, parent_order: wrong_stop, broker_order_id: "504-1") # someone else's bracket
+    extended = create(:order, account: account, instrument: xyz, status: "FILLED", side: "BUY", order_type: "LIMIT", quantity: 33, limit_price: 50, entered_at: 10.minutes.from_now, broker_order_id: "505", session: "SEAMLESS")
+    create(:order, :working_stop, account: account, instrument: xyz, quantity: 33, remaining_quantity: 33, stop_price: 47, parent_order: extended, broker_order_id: "505-1") # wrong session
     described_class.call(account)
     expect(proposal.reload.broker_order_id).to eq("500")
     expect(Order.find_by(broker_order_id: "500")).to have_attributes(order_proposal: proposal, placed_via: "schwab_direct") # the operator placed it

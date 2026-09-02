@@ -82,15 +82,21 @@ RSpec.describe Guardrails::Evaluator do
     OrderProposal.create!(account: account, instrument: create(:instrument), kind: :entry, origin: :human, side: :buy, status: "validated", quantity: 1, limit_price: 1)
     Position.delete_all
     expect(described_class.new(entry).call.to_h.dig("max_positions", "detail")).to include("pending" => 1)
+    saved = entry.tap(&:save!) # at approval the proposal's own validated row is not counted against it
+    saved.update!(status: "validated")
+    expect(described_class.new(saved).call.to_h.dig("max_positions", "detail")).to include("pending" => 1, "held" => 0)
     create(:position, account: account, instrument: xyz, quantity: 40, market_value: 2000, last_price: 50)
     expect(outcomes(described_class.new(entry).call)["max_position_exposure"]).to eq("block") # 2000 + 1650 = 36.5% of 10,000
   end
 
   it "asks for a halt from a loss or a drawdown but writes nothing itself; the writer engages it, and exits stay open" do
     ready
-    create(:trade, account: account, instrument: xyz, status: :closed, closed_at: Time.current, realized_pnl: -400)
+    scaled = create(:trade, account: account, instrument: create(:instrument, symbol: "DEF"), status: :open, avg_entry: 50, quantity: 10, peak_quantity: 20)
+    scaled.trade_legs.create!(kind: :exit, quantity: 10, price: 30, cash_amount: 300, executed_at: Time.current, activity: create(:activity, account: account, instrument: scaled.instrument)) # a 200 loss on an open trade
+    expect(outcomes(described_class.new(entry).call)["daily_loss_halt"]).to eq("pass") # 2% of 10,000
+    create(:trade, account: account, instrument: xyz, status: :closed, closed_at: Time.current, realized_pnl: -200)
     report = described_class.new(entry).call
-    expect(outcomes(report)["daily_loss_halt"]).to eq("block")
+    expect(outcomes(report)["daily_loss_halt"]).to eq("block") # 4% with the scale-out counted
     expect(report.trips.map { |t| t[:rule] }).to eq([ "daily_loss_halt" ])
     expect(SystemSettings.instance).not_to be_rule_halted
     Guardrails.engage_halts!(report)

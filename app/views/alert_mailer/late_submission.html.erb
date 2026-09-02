@@ -1,0 +1,3 @@
+<p><b><%= @proposal.label %> @ <%= money(@proposal.limit_price) %> is working at Schwab</b> (order <%= @proposal.broker_order_id %>), after the app had confirmed it was not placed.</p>
+<p>Schwab's answer arrived late. If you re-proposed or placed this order by hand in the meantime, check Schwab now for a duplicate and cancel the extra one.</p>
+<p><%= link_to "Proposal", proposal_url(@proposal) %></p>

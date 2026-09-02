@@ -60,6 +60,8 @@ class OrderProposal < ApplicationRecord
         proposal.record_unknown!(attempt, error: "left submitting")
         Submission::ReconcileJob.perform_later(proposal)
       end
+    rescue IllegalTransition
+      next # the worker answered between the query and the lock; its answer stands, and the rest of the sweep goes on
     end
   end
 
@@ -72,15 +74,16 @@ class OrderProposal < ApplicationRecord
 
   def terminal? = TERMINAL.include?(status)
   def approvable? = APPROVABLE.include?(status)
-  # Everything the approver must acknowledge: warnings and the rules that could not be checked.
-  def warnings = guardrail_results.select { |_, r| r["outcome"].in?(%w[ caution unavailable ]) }.keys
+  # The stored evaluation, read through the same object the evaluator produced: one implementation of what
+  # counts as a warning, whichever side of the jsonb it is read from.
+  def report = Guardrails::Report.load(guardrail_results)
+  delegate :warnings, :needs_override?, to: :report
   def live_attempt = submission_attempts.live.first
   def awaiting_hand_placement? = submitted? && shadow? && broker_order_id.nil?
   def latest_attempt = submission_attempts.order(:id).last
   # What the operator reads on a failed or unresolved submission: Schwab's answer, or the orders that could each be it.
   def failure_reason = submission_failed? ? latest_attempt&.error : nil
   def ambiguous_orders = submission_unknown? ? Array(latest_attempt&.ambiguous_order_ids) : []
-  def needs_override? = guardrail_results.any? { |_, r| r["outcome"] == "caution" && r["overridable"] }
 
   # The approve gesture: transaction one, then the shadow or real branch (Submission::Submit).
   def approve_and_submit!(user:, acknowledged: [], override_reason: nil) = Submission::Submit.call(self, user: user, acknowledged: acknowledged, override_reason: override_reason)
@@ -137,12 +140,18 @@ class OrderProposal < ApplicationRecord
     end
   end
 
-  # A late answer with the id is authoritative, even after the sweep called the row unknown.
+  # A late answer with the id is authoritative: after the sweep called the row unknown, and even after the
+  # reconcile job called it not placed, since the id is the last fact and a working order must be on the row
+  # the sync links and the fill reaches. That second case is mailed: the operator was told nothing was placed.
   def record_submitted!(attempt, broker_order_id:)
-    outcome!(attempt, from: %w[ submitting submission_unknown ], to: :submitted, event: "proposal_submitted",
-             attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id }) do
+    late = attempt.not_placed?
+    outcome!(attempt, from: late ? %w[ submission_failed ] : %w[ submitting submission_unknown ], to: :submitted, event: "proposal_submitted",
+             reason: late ? "late answer after not placed" : nil,
+             attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id, late: late }) do
       attempt.update!(outcome: :submitted, broker_order_id: broker_order_id)
     end
+    ActiveRecord.after_all_transactions_commit { AlertMailer.late_submission(self).deliver_later } if late
+    self
   end
 
   # Unknown is the one outcome that mails at once: the operator must not touch the instrument until it is resolved.
@@ -154,9 +163,10 @@ class OrderProposal < ApplicationRecord
     self
   end
 
-  # Schwab refused the payload (a 4xx): the operator reads the error and may re-propose.
+  # Schwab refused the payload (a 4xx): the operator reads the error and may re-propose. Final even after the
+  # sweep called the row unknown: the one call was answered, and the reconcile job's first line then exits.
   def record_rejected!(attempt, error:)
-    outcome!(attempt, from: %w[ submitting ], to: :submission_failed, event: "submission_failed", reason: error) do
+    outcome!(attempt, from: %w[ submitting submission_unknown ], to: :submission_failed, event: "submission_failed", reason: error) do
       attempt.update!(outcome: :failed, response: { "error" => error })
     end
   end

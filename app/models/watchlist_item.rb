@@ -17,5 +17,20 @@ class WatchlistItem < ApplicationRecord
 
   scope :current, -> { watching.order(:symbol) }
 
-  def drop! = update!(status: :dropped)
+  # The two writes the watchlist takes, each with its audit row, whoever the writer is.
+  def self.watch!(symbol:, trigger:, thesis: nil, origin:, user: nil)
+    transaction do
+      create!(symbol: symbol, trigger: trigger, thesis: thesis, origin: origin, user: user).tap do |item|
+        AuditEvent.log("watchlist_changed", actor: origin.to_sym, user: user, subject: item, reason: "added", data: { symbol: item.symbol })
+      end
+    end
+  end
+
+  def drop!(user: nil)
+    transaction do
+      update!(status: :dropped)
+      AuditEvent.log("watchlist_changed", actor: user ? :human : :system, user: user, subject: self, reason: "dropped", data: { symbol: symbol })
+    end
+    self
+  end
 end

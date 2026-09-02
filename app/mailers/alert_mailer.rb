@@ -25,6 +25,13 @@ class AlertMailer < ApplicationMailer
     alert "#{proposal.label} #{proposal.status}"
   end
 
+  # Schwab answered with an id after the reconcile job had called the order not placed: the operator was told
+  # nothing was working, and now something is.
+  def late_submission(proposal)
+    @proposal = proposal
+    alert "#{proposal.label} is working at Schwab after all"
+  end
+
   def halt_tripped(rule:, reason:, resets_at:)
     @rule, @reason, @resets_at = rule, reason, resets_at
     alert "entries halted by #{rule.humanize.downcase}"

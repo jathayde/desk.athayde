@@ -4,8 +4,7 @@ class WatchlistItems::DropsController < ApplicationController
 
   def create
     item = WatchlistItem.watching.find(params[:watchlist_item_id])
-    item.drop!
-    AuditEvent.log("watchlist_changed", actor: :human, user: Current.user, subject: item, reason: "dropped", data: { symbol: item.symbol })
+    item.drop!(user: Current.user)
     redirect_to watchlist_items_path, notice: "Dropped #{item.symbol}."
   end
 end

@@ -6,13 +6,13 @@ class Guardrails::StopCollar < Guardrails::Rule
 
   def evaluate
     return skipped unless entry?
-    collar = proposal.collar
-    return block(reason: "no collar computed") if collar.blank?
-    return block(reason: collar["refusal"]) unless collar["quality"] == "ok"
+    return block(reason: "no collar computed") if proposal.collar.blank?
+    collar = ::StopCollar::Collar.load(proposal.collar)
+    return block(reason: collar.refusal) unless collar.ok?
     stop = proposal.stop_price.to_d
-    ceiling = collar["floor_dominates"] ? proposal.limit_price.to_d : BigDecimal(collar["tight"].to_s)
-    inside = stop >= BigDecimal(collar["wide"].to_s) && stop <= ceiling
-    detail = { stop: stop, tight: collar["tight"], wide: collar["wide"], floor: collar["floor"], floor_dominates: collar["floor_dominates"], methods: collar["methods"] }
+    ceiling = collar.floor_dominates ? proposal.limit_price.to_d : collar.tight
+    inside = stop >= collar.wide && stop <= ceiling
+    detail = { stop: stop, tight: collar.tight, wide: collar.wide, floor: collar.floor, floor_dominates: collar.floor_dominates, methods: collar.methods }
     inside ? pass(**detail) : caution(overridable: true, reason: "stop outside the collar", **detail)
   end
 end

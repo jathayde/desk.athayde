@@ -27,6 +27,17 @@ RSpec.describe OrderProposal, "sweeps" do
     expect(fresh.reload).to be_submitting
   end
 
+  it "goes on past a row a worker answered between the query and the lock" do
+    raced = submitting(shadow: false, age: 6.minutes)
+    other = submitting(shadow: false, age: 6.minutes)
+    allow_any_instance_of(OrderProposal).to receive(:record_unknown!).and_wrap_original do |m, *args, **kwargs|
+      raise OrderProposal::IllegalTransition, "raced" if m.receiver.id == raced.id
+      m.call(*args, **kwargs)
+    end
+    expect { OrderProposal.sweep_submitting! }.to have_enqueued_job(Submission::ReconcileJob).with(other)
+    expect(other.reload).to be_submission_unknown
+  end
+
   it "re-drives an unknown row nobody has looked at in a while, whether the last look was long ago or never happened" do
     stale = unknown(looked_at: 16.minutes.ago)
     never = unknown(looked_at: nil, attempted: 20.minutes.ago)

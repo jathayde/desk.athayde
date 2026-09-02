@@ -11,7 +11,11 @@ module Sync
       SystemSettings.instance.sweep_rule_halt!
       OrderProposal.sweep_submitting!
       OrderProposal.redrive_unknown!
-      OrderProposal.expiring.find_each { |proposal| proposal.expire! rescue OrderProposal::IllegalTransition } # a race with an approve is not the tick's problem
+      OrderProposal.expiring.find_each do |proposal|
+        proposal.expire!
+      rescue OrderProposal::IllegalTransition
+        next # a race with an approve is not the tick's problem
+      end
       refresh_calendar
       return pause! unless SchwabToken.usable?
 

@@ -1,8 +1,8 @@
 # Finds the broker order a submission produced when Schwab never told us its id: an ambiguous real submission
 # (step 4) or a shadowed one the operator placed by hand. Conservative by design: unlinked orders only, alive
-# or filled, the same instrument, side, quantity, type, price, and shape (a bracket parent for an entry, a
-# single for an exit), entered inside the attempt's window; two matches are ambiguous for the operator, never
-# "found".
+# or filled, the same instrument, side, quantity, type, price, session, and duration, and the same shape (an
+# entry's bracket carries exactly one stop sell child for the quantity at the proposal's stop; an exit is a
+# single), entered inside the attempt's window; two matches are ambiguous for the operator, never "found".
 class Submission::Matcher
   PRICE_TOLERANCE = BigDecimal("0.01")
   SHADOW_WINDOW = 3.days
@@ -23,9 +23,16 @@ class Submission::Matcher
     def find_candidates
       window = @attempt.attempted_at - 5.minutes..@attempt.attempted_at + @window
     scope = @proposal.account.orders.where(order_proposal_id: nil, parent_order_id: nil, instrument: @proposal.instrument, side: OrderProposal.sides.fetch(@proposal.side),
-                                           order_type: @proposal.order_type, entered_at: window).where.not(status: Schwab::Order::DEAD_STATUSES + [ Schwab::Order::GONE ])
-    scope.includes(:child_orders).select { |o| o.quantity.to_d == @proposal.quantity.to_d && (o.limit_price.to_d - @proposal.limit_price.to_d).abs <= PRICE_TOLERANCE && shape_matches?(o) }
+                                           order_type: @proposal.order_type, session: Schwab::OrderPayload::NORMAL, duration: Schwab::OrderPayload::DAY, entered_at: window)
+                                    .where.not(status: Schwab::Order::DEAD_STATUSES + [ Schwab::Order::GONE ])
+    scope.includes(:child_orders).select { |o| o.quantity.to_d == @proposal.quantity.to_d && close?(o.limit_price, @proposal.limit_price) && shape_matches?(o) }
   end
 
-    def shape_matches?(order) = @proposal.kind_entry? ? order.child_orders.any? : order.child_orders.none?
+    def close?(a, b) = (a.to_d - b.to_d).abs <= PRICE_TOLERANCE
+
+    def shape_matches?(order)
+      return order.child_orders.none? unless @proposal.kind_entry?
+      child = order.child_orders.one? ? order.child_orders.first : nil
+      child.present? && child.side == Schwab::Order::SELL && child.stop? && child.quantity.to_d == @proposal.quantity.to_d && close?(child.stop_price, @proposal.stop_price)
+    end
 end

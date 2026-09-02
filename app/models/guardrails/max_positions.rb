@@ -5,7 +5,7 @@ class Guardrails::MaxPositions < Guardrails::Rule
   def evaluate
     return skipped unless entry?
     held = context.positions.count
-    pending = context.pending_new_positions
+    pending = context.pending_new_positions(except: proposal)
     detail = { held: held, pending: pending, cap: param(:count) }
     return pass(**detail, adding: false) if context.position_for(proposal.instrument)
     held + pending + 1 <= param(:count) ? pass(**detail) : block(**detail)

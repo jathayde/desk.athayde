@@ -14,8 +14,15 @@ module Guardrails
     def skipped? = outcome == :skipped
   end
 
-  # What one evaluation said, in the shape the proposal stores and the detail page reads.
+  # What one evaluation said, in the shape the proposal stores and the detail page reads; loaded back from
+  # that shape so the stored evaluation is read by the same predicates that judged it.
   Report = Data.define(:results) do
+    def self.load(hash)
+      new(hash.to_h.map do |type, r|
+        Result.new(rule_type: type, outcome: r["outcome"].to_sym, detail: r["detail"] || {}, version: r["version"], params: r["params"] || {}, overridable: r["overridable"] == true)
+      end)
+    end
+
     def blocked? = results.any?(&:block?)
     def warnings = results.select { |r| r.caution? || r.unavailable? }.map(&:rule_type)
     def needs_override? = results.any? { |r| r.caution? && r.overridable }

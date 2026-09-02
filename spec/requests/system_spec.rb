@@ -21,11 +21,15 @@ RSpec.describe "System page" do
     post halt_system_path, params: { reason: "market closed early" }
     expect(SystemSettings.instance).to have_attributes(manual_halt: true, manual_halt_reason: "market closed early")
     expect(AuditEvent.where(kind: "manual_halt_set").last.user).to eq(user)
+    post resume_system_path, params: { confirmation: "Resume" }
+    expect(response).to redirect_to(root_path) # the second user may halt, never resume
+    expect(SystemSettings.instance.manual_halt).to be(true)
+    user.update!(approver: true)
     post resume_system_path, params: { confirmation: "nope" }
     expect(SystemSettings.instance.manual_halt).to be(true)
     post resume_system_path, params: { confirmation: "Resume" }
     expect(SystemSettings.instance.manual_halt).to be(false)
-    expect(AuditEvent.where(kind: "manual_halt_cleared")).to exist
+    expect(AuditEvent.where(kind: "manual_halt_cleared").sole).to have_attributes(user: user, reason: "market closed early")
   end
 
   it "turns shadow mode off only for an approver with the typed words and a reason, audited with the shadow evidence, and back on the same way" do

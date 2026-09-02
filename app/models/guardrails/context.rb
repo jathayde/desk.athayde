@@ -18,9 +18,12 @@ class Guardrails::Context
   def position_for(instrument) = positions.find { |p| p.instrument_id == instrument.id }
   def open_trade_for(instrument) = account.trades.open.find_by(instrument: instrument)
 
-  # Entries not yet filled on instruments not yet held: they count as positions the desk has committed to.
-  def pending_new_positions
-    account.order_proposals.where(kind: :entry, status: %w[ validated submitting submission_unknown submitted ]).where.not(instrument_id: positions.map(&:instrument_id)).distinct.count(:instrument_id)
+  # Entries not yet filled on instruments not yet held: they count as positions the desk has committed to. The
+  # proposal being judged is left out, so its own validated row is not counted twice at approval.
+  def pending_new_positions(except: nil)
+    scope = account.order_proposals.where(kind: :entry, status: %w[ validated submitting submission_unknown submitted ]).where.not(instrument_id: positions.map(&:instrument_id))
+    scope = scope.where.not(id: except.id) if except&.persisted?
+    scope.distinct.count(:instrument_id)
   end
 
   # What unfilled entries on this instrument have already committed, so a second entry sees the first.
@@ -47,8 +50,13 @@ class Guardrails::Context
     end
   end
 
-  # Only closed trades carry realized P&L today; a scale-out at a loss on an open trade is not seen here.
-  def realized_today = @realized_today ||= account.trades.closed.where(closed_at: today_range).sum(:realized_pnl)
+  # Today's realized P&L: the trades that closed today, plus every scale-out on a still-open trade, priced
+  # against that trade's average entry, so a loss taken in parts is seen before the trade is done.
+  def realized_today
+    @realized_today ||= account.trades.closed.where(closed_at: today_range).sum(:realized_pnl) +
+      account.trades.open.joins(:trade_legs).where(trade_legs: { kind: "exit", executed_at: today_range }).where.not(trade_legs: { cash_amount: nil }).where.not(avg_entry: nil)
+             .sum("trade_legs.cash_amount - trade_legs.quantity * trades.avg_entry")
+  end
   def prior_equity = desk.prior_snapshot&.equity
   def drawdown = desk.latest_snapshot&.drawdown
 
