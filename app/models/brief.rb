@@ -5,13 +5,13 @@ class Brief
 
   def initialize(run)
     @run = run
-    @dashboard = Dashboard.new
+    @desk = Desk.new
   end
 
   attr_reader :run
   delegate :kind, :market_date, :degraded_reasons, :output_markdown, to: :run
 
-  def account = @dashboard.account
+  def account = @desk.account
   def date = market_date || Time.current.in_time_zone(MarketDay::ZONE).to_date
 
   def subject
@@ -37,15 +37,15 @@ class Brief
 
   # End-of-day sections, from the database. Only fills the journal would accept count as fills, and while the
   # activities feed is stale the database cannot say what filled today: nil, rendered as unknown, not "none".
-  def activities_stale? = account.nil? || @dashboard.stale?(account.last_sync(:activities), :activities)
+  def activities_stale? = account.nil? || @desk.stale?(account.last_sync(:activities), :activities)
   def fills_today = @fills_today ||= activities_stale? ? nil : account.activities.fill.valid_for_journal.where(executed_at: day_range).chronological.includes(:instrument).to_a
   def trades_touched_today = @trades_touched_today ||= activities_stale? ? nil : account.trades.where(updated_at: day_range).includes(:instrument, :setup).order(:id).to_a
-  def balance_stale? = @dashboard.balance_stale?
+  def balance_stale? = @desk.balance_stale?
   def missing_post_mortems = @missing_post_mortems ||= Trade.journaled.missing_post_mortem.includes(:instrument).order(closed_at: :desc).limit(LIST_LIMIT).to_a
   def missing_post_mortem_count = @missing_post_mortem_count ||= Trade.journaled.missing_post_mortem.count
   def more_post_mortems = [ missing_post_mortem_count - missing_post_mortems.size, 0 ].max
   def snapshot = account && account.snapshots.find_by(as_of: date)
-  def balance = @dashboard.balance
+  def balance = @desk.balance
 
   def footer
     parts = [ "#{run.tool_turns} #{'turn'.pluralize(run.tool_turns)}", "#{run.tool_calls_count} tool #{'call'.pluralize(run.tool_calls_count)}",

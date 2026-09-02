@@ -25,7 +25,7 @@ module Agent
 
       # Whatever raises, the row ends failed with the reason and the email still goes out before the queue hears about it.
       def converse(run)
-        Agent::Run.new(run).perform
+        Agent::Conversation.new(run).perform
       rescue StandardError => e
         run.finish!(:failed, error: "#{e.class}: #{e.message.truncate(300)}") if run.reload.running?
         run.deliver!

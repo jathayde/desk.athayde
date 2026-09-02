@@ -1,5 +1,5 @@
 class Agent::Tools::GetPortfolio < Agent::Tool
-  include Agent::Tool::Desk
+  include Agent::Tool::ReadsDesk
 
   tool description: "Open positions in the trading account with last price, unrealized P&L, the working stop and its protection state, " \
                     "distance to stop, and open risk. Unknown risk is null, never zero. Every number carries as_of and stale. " \
@@ -8,12 +8,12 @@ class Agent::Tools::GetPortfolio < Agent::Tool
                  open_risk: { type: [ "object", "null" ] } }
 
   def call
-    return { state: dashboard.state, account: "trading", positions: [], open_risk: nil } unless dashboard.ready?
+    return { state: desk.state, account: "trading", positions: [], open_risk: nil } unless desk.ready?
     {
       state: :ready,
       account: "trading",
-      positions: dashboard.rows.map { |row| position(row) },
-      open_risk: { amount: dashboard.open_risk, ratio_of_equity: dashboard.open_risk_ratio, excluded: dashboard.excluded_by_reason,
+      positions: desk.rows.map { |row| position(row) },
+      open_risk: { amount: desk.open_risk, ratio_of_equity: desk.open_risk_ratio, excluded: desk.excluded_by_reason,
                    note: "sums protected positions only; excluded positions carry unknown or insufficient risk" }
     }
   end

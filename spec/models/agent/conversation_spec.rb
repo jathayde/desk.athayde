@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Agent::Run do
+RSpec.describe Agent::Conversation do
   let(:fake) { Agent::FakeAnthropic.instance }
   let(:run) { AgentRun.create!(kind: :morning_brief, market_date: Date.new(2026, 9, 1), status: :running, started_at: Time.current) }
 
@@ -32,7 +32,7 @@ RSpec.describe Agent::Run do
     fake.enqueue(content: [ text("Brief.") ], stop_reason: :end_turn)
     perform
     request = fake.requests.last
-    expect(request).to include(model: Agent::MODEL, max_tokens: Agent::Run::MAX_OUTPUT_TOKENS, cache_control: { type: :ephemeral }, tool_choice: { type: :auto },
+    expect(request).to include(model: Agent::MODEL, max_tokens: Agent::Conversation::MAX_OUTPUT_TOKENS, cache_control: { type: :ephemeral }, tool_choice: { type: :auto },
                                request_options: { timeout: Agent::REQUEST_TIMEOUT })
   end
 
@@ -56,7 +56,7 @@ RSpec.describe Agent::Run do
   end
 
   it "runs nothing when a batch would pass the call cap, answers each id with an error, and makes one final call without tools" do
-    stub_const("Agent::Run::MAX_TOOL_CALLS", 1)
+    stub_const("Agent::Conversation::MAX_TOOL_CALLS", 1)
     fake.enqueue(content: [ tool_use("get_portfolio", id: "a"), tool_use("get_setup_stats", id: "b") ], stop_reason: :tool_use)
     fake.enqueue(content: [ text("From what I have.") ], stop_reason: :end_turn)
     perform
@@ -64,11 +64,11 @@ RSpec.describe Agent::Run do
     expect(ToolCall.count).to eq(0)
     final = fake.requests.last
     expect(final[:tool_choice]).to eq(type: :none)
-    expect(final[:messages].last[:content]).to all(include(type: :tool_result, is_error: true, content: Agent::Run::BUDGET_EXHAUSTED))
+    expect(final[:messages].last[:content]).to all(include(type: :tool_result, is_error: true, content: Agent::Conversation::BUDGET_EXHAUSTED))
   end
 
   it "reserves the last turn for a final call with no tools" do
-    stub_const("Agent::Run::MAX_TURNS", 3)
+    stub_const("Agent::Conversation::MAX_TURNS", 3)
     2.times { fake.enqueue(content: [ tool_use("get_setup_stats") ], stop_reason: :tool_use) }
     fake.enqueue(content: [ text("Done.") ], stop_reason: :end_turn)
     perform
@@ -77,7 +77,7 @@ RSpec.describe Agent::Run do
   end
 
   it "stops a model that keeps asking for tools after they were withdrawn" do
-    stub_const("Agent::Run::MAX_TURNS", 3)
+    stub_const("Agent::Conversation::MAX_TURNS", 3)
     3.times { fake.enqueue(content: [ tool_use("get_setup_stats") ], stop_reason: :tool_use, ignoring_tool_choice: true) }
     expect(perform).to have_attributes(status: "failed", error: "3 turns passed without a final answer", tool_calls_count: 2)
   end
@@ -112,7 +112,7 @@ RSpec.describe Agent::Run do
   end
 
   it "truncates an oversized tool result with a note" do
-    stub_const("Agent::Run::TOOL_RESULT_LIMIT", 64)
+    stub_const("Agent::Conversation::TOOL_RESULT_LIMIT", 64)
     fake.enqueue(content: [ tool_use("get_setup_stats") ], stop_reason: :tool_use)
     fake.enqueue(content: [ text("ok") ], stop_reason: :end_turn)
     perform
@@ -120,7 +120,7 @@ RSpec.describe Agent::Run do
   end
 
   it "fails when the wall-clock deadline passes, without a misleading stop reason" do
-    stub_const("Agent::Run::DEADLINE", 0.seconds)
+    stub_const("Agent::Conversation::DEADLINE", 0.seconds)
     expect(perform).to have_attributes(status: "failed", error: a_string_including("deadline"), stop_reason: nil)
   end
 

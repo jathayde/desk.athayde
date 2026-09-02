@@ -1,6 +1,6 @@
-# The glance screen's read model: one place that decides the banner, the numbers, and their freshness.
+# The desk as one read model, for the glance screen, the briefs, and the agent tools: one place that decides the banner, the numbers, and their freshness.
 # Everything it reads is already in the database; a page render never calls Schwab.
-class Dashboard
+class Desk
   STALE_MULTIPLIER = 2
   Row = Data.define(:position, :protection, :as_of, :stale, :trade)
 

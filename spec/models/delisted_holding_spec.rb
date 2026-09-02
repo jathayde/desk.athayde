@@ -16,7 +16,7 @@ RSpec.describe "A delisted holding" do
     expect(instrument.reload).to be_delisted
     expect(AuditEvent.where(kind: "instrument_delisted", subject: instrument).count).to eq(1)
 
-    dashboard = Dashboard.new
+    dashboard = Desk.new
     expect(dashboard.rows.map { |r| [ r.position.instrument.symbol, r.protection ] }).to eq([ [ "LIVE", :unprotected ], [ "GONE", :delisted ] ])
     expect(dashboard.excluded_by_reason).to eq(unprotected: 1, delisted: 1)
     expect(Snapshot.risk_now(account, BigDecimal("6500"))).to include(unprotected_count: 1)

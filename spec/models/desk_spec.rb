@@ -1,22 +1,22 @@
 require "rails_helper"
 
-RSpec.describe Dashboard do
+RSpec.describe Desk do
   let(:account) { create(:account, trading_enabled: true) }
 
   describe "#state" do
     it "is not connected without a token" do
-      expect(Dashboard.new.state).to eq(:not_connected)
+      expect(Desk.new.state).to eq(:not_connected)
     end
 
     it "waits for accounts, then setup, then the first sync, then is ready" do
       create(:schwab_token)
-      expect(Dashboard.new.state).to eq(:waiting_for_accounts)
+      expect(Desk.new.state).to eq(:waiting_for_accounts)
       create(:account, account_type: nil, trading_enabled: false)
-      expect(Dashboard.new.state).to eq(:needs_setup)
+      expect(Desk.new.state).to eq(:needs_setup)
       account
-      expect(Dashboard.new.state).to eq(:waiting_first_sync)
+      expect(Desk.new.state).to eq(:waiting_first_sync)
       create(:balance, account: account, equity: 10_000, as_of: Time.current)
-      expect(Dashboard.new.state).to eq(:ready)
+      expect(Desk.new.state).to eq(:ready)
     end
   end
 
@@ -24,24 +24,24 @@ RSpec.describe Dashboard do
     it "puts a halt first and carries the token problem as a status line" do
       create(:schwab_token, :revoked)
       SystemSettings.instance.update!(manual_halt: true, manual_halt_reason: "testing")
-      d = Dashboard.new
+      d = Desk.new
       expect(d.banner).to eq(:halted)
       expect(d.secondary_statuses).to include(:revoked)
     end
 
     it "shows revoked, expired, and expiring in that order of seriousness" do
       create(:schwab_token, :revoked)
-      expect(Dashboard.new.banner).to eq(:revoked)
+      expect(Desk.new.banner).to eq(:revoked)
       SchwabToken.delete_all
       create(:schwab_token, issued_at: 8.days.ago)
-      expect(Dashboard.new.banner).to eq(:expired)
+      expect(Desk.new.banner).to eq(:expired)
       SchwabToken.delete_all
       create(:schwab_token, issued_at: 6.days.ago - 2.hours)
-      expect(Dashboard.new.banner).to eq(:expiring)
+      expect(Desk.new.banner).to eq(:expiring)
     end
 
     it "has no banner without a token; the connect state carries it" do
-      expect(Dashboard.new.banner).to be_nil
+      expect(Desk.new.banner).to be_nil
     end
   end
 
@@ -51,14 +51,14 @@ RSpec.describe Dashboard do
     it "reports a pause for a non-token reason and a fallback calendar" do
       SystemSettings.instance.update!(sync_paused_reason: "operator")
       MarketDay.for(MarketDay.today).update!(source: :fallback)
-      expect(Dashboard.new.secondary_statuses).to include(:sync_paused, :calendar_fallback)
+      expect(Desk.new.secondary_statuses).to include(:sync_paused, :calendar_fallback)
     end
 
     it "reports a failed sync only until something succeeds after it, including on a feed that never succeeded" do
       create(:sync_run, feed: "orders", account: account, status: "failed", error: "503", started_at: 5.minutes.ago)
-      expect(Dashboard.new.sync_failure.error).to eq("503")
+      expect(Desk.new.sync_failure.error).to eq("503")
       create(:sync_run, feed: "orders", account: account, status: "succeeded", started_at: 1.minute.ago, finished_at: 1.minute.ago)
-      expect(Dashboard.new.sync_failure).to be_nil
+      expect(Desk.new.sync_failure).to be_nil
     end
   end
 
@@ -68,7 +68,7 @@ RSpec.describe Dashboard do
     create(:snapshot, account: account, as_of: MarketDay.today - 3, equity: 10_000)
     create(:snapshot, account: account, as_of: MarketDay.today, equity: 11_500) # today's exists but is not the prior
     flow(account, "deposit", 1_000, on: MarketDay.today)
-    d = Dashboard.new
+    d = Desk.new
     expect(d.prior_snapshot.as_of).to eq(MarketDay.today - 3)
     expect(d.day_change).to eq(1_000)
     expect(d.day_change_ratio).to eq(BigDecimal("0.1"))
@@ -83,7 +83,7 @@ RSpec.describe Dashboard do
     create(:position, account: account, instrument: bare, quantity: 10, last_price: 20)
     trade = create(:trade, account: account, instrument: near)
     create(:sync_run, feed: "orders", account: account, status: "succeeded", finished_at: 1.minute.ago)
-    d = Dashboard.new
+    d = Desk.new
     expect(d.rows.map { |r| r.position.instrument.symbol }).to eq(%w[ BARE NEAR FAR ])
     expect(d.rows.map(&:stale)).to eq([ false, true, false ])
     expect(d.rows.find { |r| r.position.instrument == near }.trade).to eq(trade)
@@ -96,11 +96,11 @@ RSpec.describe Dashboard do
     create(:balance, account: account, equity: 10_000, as_of: Time.current)
     xyz = create(:instrument)
     create(:position, account: account, instrument: xyz, quantity: 40, last_price: 53, working_stop_order: create(:order, :working_stop, account: account, instrument: xyz), synced_at: Time.current)
-    expect(Dashboard.new.rows.sole.stale).to be(true) # no orders run has ever finished
+    expect(Desk.new.rows.sole.stale).to be(true) # no orders run has ever finished
     create(:sync_run, feed: "orders", account: account, status: "succeeded", finished_at: 3.hours.ago)
-    expect(Dashboard.new.rows.sole.stale).to be(true)
+    expect(Desk.new.rows.sole.stale).to be(true)
     create(:sync_run, feed: "orders", account: account, status: "succeeded", finished_at: 1.minute.ago)
-    expect(Dashboard.new.rows.sole.stale).to be(false)
+    expect(Desk.new.rows.sole.stale).to be(false)
   end
 
   it "treats everything as stale while sync is paused, and dates the pause from the current token" do
@@ -109,7 +109,7 @@ RSpec.describe Dashboard do
     create(:sync_run, feed: "positions", status: "skipped_token", started_at: 1.hour.ago)
     create(:balance, account: account, equity: 10_000, as_of: Time.current)
     SystemSettings.instance.update!(sync_paused_reason: "expired")
-    d = Dashboard.new
+    d = Desk.new
     expect(d.balance_stale?).to be(true)
     expect(d.sync_paused_since).to be_within(1.second).of(1.hour.ago)
   end
@@ -120,7 +120,7 @@ RSpec.describe Dashboard do
     create(:position, account: account, instrument: create(:instrument), quantity: 10, last_price: 20)
     MarketDay.for(MarketDay.today).update!(source: :fallback)
     Schwab::FakeClient.instance.reset!
-    d = Dashboard.new
+    d = Desk.new
     d.rows; d.secondary_statuses; d.balance_stale?
     expect(Schwab::FakeClient.instance.calls).to be_empty
   end

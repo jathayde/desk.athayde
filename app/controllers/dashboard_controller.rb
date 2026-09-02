@@ -1,5 +1,5 @@
 class DashboardController < ApplicationController
   def show
-    @dashboard = Dashboard.new
+    @desk = Desk.new
   end
 end

@@ -21,7 +21,7 @@ RSpec.describe "Unpriced broker inputs" do
     create(:schwab_token)
     create(:balance, account: account, equity: 6500, as_of: Time.current)
     account.snapshots.create!(as_of: MarketDay.today - 1, equity: 6300)
-    expect(Dashboard.new.day_change).to be_nil # an unpriced flow makes the day change unknown, never off by that flow
+    expect(Desk.new.day_change).to be_nil # an unpriced flow makes the day change unknown, never off by that flow
   end
 
   it "excludes a stop-covered position with no price from every risk sum and names it" do
@@ -30,7 +30,7 @@ RSpec.describe "Unpriced broker inputs" do
     create(:position, account: account, instrument: instrument, quantity: 40, average_price: 50, last_price: nil, market_value: nil, working_stop_order: stop, synced_at: Time.current)
     create(:schwab_token)
     create(:balance, account: account, equity: 6500, as_of: Time.current)
-    dashboard = Dashboard.new
+    dashboard = Desk.new
     expect(dashboard.open_risk).to eq(0)
     expect(dashboard.excluded_by_reason).to eq(unpriced: 1)
     expect(Snapshot.risk_now(account, BigDecimal("6500"))).to include(open_risk_amount: 0, unprotected_count: 1)

@@ -1,7 +1,7 @@
 # One Messages API conversation over the read-only tool registry, bounded four ways: turns, tool calls,
 # input tokens, and wall clock. Every stop reason is handled deliberately and the row records how it ended.
 # The email is the job's business: a run that produced text can be delivered whatever else happened.
-class Agent::Run
+class Agent::Conversation
   MAX_TURNS = 12 # one Messages API round trip is a turn; parallel tool_use blocks in one response are one turn
   MAX_TOOL_CALLS = 20
   MAX_INPUT_TOKENS = 400_000 # cumulative across turns, cache reads included: a spend bound, not a context bound

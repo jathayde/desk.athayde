@@ -3,14 +3,14 @@
 class Agent::Context
   def initialize(kind:, date:, memory: Memory::Repo.configured)
     @kind, @date, @memory = kind, date, memory
-    @dashboard = Dashboard.new
+    @desk = Desk.new
   end
 
-  attr_reader :kind, :date, :memory, :dashboard
+  attr_reader :kind, :date, :memory, :desk
 
-  def account = dashboard.account
+  def account = desk.account
   def market_day = @market_day ||= MarketDay.find_by(date: date)
-  def token_status = dashboard.token_status
+  def token_status = desk.token_status
 
   def as_of
     @as_of ||= {
@@ -22,11 +22,11 @@ class Agent::Context
   # Reasons known before the first call; the run adds what the tools report.
   def degraded_reasons
     @degraded_reasons ||= [].tap do |reasons|
-      reasons << "Schwab token #{token_status}: nothing has synced since #{dashboard.sync_paused_since&.in_time_zone(MarketDay::ZONE)&.strftime('%a %-l:%M %p') || 'the token died'}" unless SchwabToken.usable?
+      reasons << "Schwab token #{token_status}: nothing has synced since #{desk.sync_paused_since&.in_time_zone(MarketDay::ZONE)&.strftime('%a %-l:%M %p') || 'the token died'}" unless SchwabToken.usable?
       reasons << "calendar unverified (Schwab hours unavailable); today may be a holiday" if market_day&.fallback?
-      reasons << "positions are stale (last sync #{stamp(as_of[:positions])})" if dashboard.balance_stale?
-      reasons << "orders are stale (last sync #{stamp(as_of[:orders])}); stop and protection states may be wrong" if account && dashboard.stale?(as_of[:orders], :orders)
-      reasons << "activities are stale (last sync #{stamp(as_of[:activities])}); fills and journal rows may be missing" if account && dashboard.stale?(as_of[:activities], :activities)
+      reasons << "positions are stale (last sync #{stamp(as_of[:positions])})" if desk.balance_stale?
+      reasons << "orders are stale (last sync #{stamp(as_of[:orders])}); stop and protection states may be wrong" if account && desk.stale?(as_of[:orders], :orders)
+      reasons << "activities are stale (last sync #{stamp(as_of[:activities])}); fills and journal rows may be missing" if account && desk.stale?(as_of[:activities], :activities)
       reasons << "no trading account is set up yet" if account.nil?
       reasons << "memory repo missing at #{memory.path || 'unset MEMORY_REPO_PATH'}" unless memory.present?
       reasons << "memory repo has none of its files at #{memory.path}" if memory.empty?
@@ -37,7 +37,7 @@ class Agent::Context
 
   # Held and delisted: an instrument the desk no longer holds is nobody's business in a brief.
   def delisted_symbols
-    @delisted_symbols ||= account ? dashboard.rows.filter_map { |r| r.position.instrument.symbol if r.protection == :delisted } : []
+    @delisted_symbols ||= account ? desk.rows.filter_map { |r| r.position.instrument.symbol if r.protection == :delisted } : []
   end
 
   # The same numbers the get_setup_stats tool returns, serialized the same way (decimal strings, never BigDecimal#to_s).

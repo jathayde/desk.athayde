@@ -16,7 +16,7 @@ RSpec.describe "db/seeds.rb" do
       ActiveJob::Base.queue_adapter = adapter
     end
     expect(Account.count).to eq(1)
-    expect(Dashboard.new.state).to eq(:ready)
+    expect(Desk.new.state).to eq(:ready)
     expect(Trade.journaled.closed.count).to be >= 1
     expect(Setup.find_by!(name: "Breakout").sample_size).to eq(1)
     expect(AgentRun.morning_brief.count).to eq(1)
