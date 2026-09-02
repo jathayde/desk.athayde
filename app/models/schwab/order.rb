@@ -13,6 +13,8 @@ module Schwab
     WORKING = "WORKING"
     SELL = "SELL"
     BUY = "BUY"
+    FILLED = "FILLED"
+    DEAD_STATUSES = %w[ CANCELED REJECTED EXPIRED REPLACED ].freeze # the broker will never fill these
     GONE = "UNKNOWN_TO_SCHWAB" # local sentinel: Schwab no longer returns this order by id
 
     def self.from(raw, parent_order_id: nil, replaces_order_id: nil)

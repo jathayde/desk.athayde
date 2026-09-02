@@ -9,7 +9,7 @@ test("healthy: no banner, distance to stop is the loudest number, cash and revie
   await expect(page.getByText("$10,240.00")).toBeVisible();
   await expect(page.getByText("1.1% to stop")).toBeVisible();
   await expect(page.getByText("$2,110.00 / $980.00")).toBeVisible();
-  await expect(page.getByText("Proposals")).toBeVisible();
+  await expect(page.getByRole("main").getByText("Proposals")).toBeVisible();
 });
 
 test("expiring: banner links to re-auth", async ({ page }) => {

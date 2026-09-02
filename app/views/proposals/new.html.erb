@@ -1,0 +1,29 @@
+<% content_for :title, "New proposal" %>
+<h1>Propose an order</h1>
+<p class="muted">Rails sizes an entry from the max-risk rule and computes the collar; preview runs the guardrails without saving.</p>
+<%= form_with url: new_proposal_path, method: :get, class: "account-form" do |f| %>
+  <%= f.label :kind, "Kind" %>
+  <%= f.select :kind, options_for_select([ [ "Entry (buy with a stop)", "entry" ], [ "Exit (sell)", "exit" ] ], params[:kind]) %>
+  <%= f.label :symbol, "Symbol" %>
+  <%= f.text_field :symbol, value: params[:symbol], autocapitalize: "characters" %>
+  <%= f.label :limit_price, "Limit price" %>
+  <%= f.text_field :limit_price, value: params[:limit_price], inputmode: "decimal" %>
+  <%= f.label :stop_price, "Stop (entries)" %>
+  <%= f.text_field :stop_price, value: params[:stop_price], inputmode: "decimal" %>
+  <%= f.label :quantity, "Quantity (exits; defaults to the position)" %>
+  <%= f.text_field :quantity, value: params[:quantity], inputmode: "numeric" %>
+  <%= f.label :setup_id, "Setup" %>
+  <%= f.select :setup_id, options_from_collection_for_select(@setups, :id, :name, params[:setup_id]), include_blank: "No setup" %>
+  <%= f.label :thesis, "Thesis" %>
+  <%= f.text_area :thesis, value: params[:thesis], rows: 3 %>
+  <%= f.submit "Preview" %>
+<% end %>
+<% if @draft %>
+  <% draft, report = @draft %>
+  <h2 class="sec">Preview: <%= draft.side.upcase %> <%= quantity(draft.quantity) %> <%= draft.instrument.symbol %> @ <%= money(draft.limit_price) %></h2>
+  <%= render "proposals/evaluation", proposal: draft, results: report.to_h, sizing: draft.sizing, collar: draft.collar %>
+  <%= form_with url: proposals_path, method: :post do |f| %>
+    <% %i[ kind symbol limit_price stop_price quantity setup_id thesis ].each { |key| concat f.hidden_field(key, value: params[key]) } %>
+    <%= f.submit report.blocked? ? "Propose anyway (it will be rejected by rules)" : "Propose" %>
+  <% end %>
+<% end %>

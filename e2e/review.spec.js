@@ -29,3 +29,15 @@ test("post-mortem: one line and a choice, saved from the phone", async ({ page }
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".post-mortem .thesis")).toContainText("held to target, sold into strength · followed setup");
 });
+
+test("a proposal is approved from the phone in shadow mode: acknowledge, type the word, and see the shadow instruction", async ({ page }) => {
+  await page.goto("/playwright/scenarios/proposal?then=%2Fproposals");
+  await page.getByRole("link", { name: /BUY \d+ XYZ/ }).click();
+  await expect(page.getByRole("heading", { name: "Stop collar" })).toBeVisible();
+  await page.getByLabel(/I acknowledge max sector exposure/).check();
+  await page.getByLabel(/I acknowledge earnings blackout/).check();
+  await page.getByLabel("Type approve to confirm").fill("approve");
+  await page.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByText("Approved in shadow mode")).toBeVisible();
+  await expect(page.getByText("place this order at Schwab by hand")).toBeVisible();
+});

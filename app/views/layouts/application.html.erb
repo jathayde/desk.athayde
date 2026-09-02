@@ -27,6 +27,7 @@
       <% if authenticated? %>
         <nav class="shell-nav">
           <%= nav_link "Dashboard", root_path %>
+          <%= nav_link "Proposals", proposals_path %>
           <%= nav_link "Journal", trades_path %>
           <%= nav_link "System", system_path %>
           <%= button_to "Sign out", session_path, method: :delete, class: "link-button" %>

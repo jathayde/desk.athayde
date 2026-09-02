@@ -7,6 +7,12 @@ Rails.application.routes.draw do
     post :halt
     post :resume
   end
+  resources :proposals, only: %i[ index show new create ] do
+    scope module: :proposals do
+      resource :approval, only: :create
+      resource :rejection, only: :create
+    end
+  end
   resources :accounts, only: :update
   resources :instruments, only: :update
   resources :trades, only: %i[ index show update ] do

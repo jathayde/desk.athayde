@@ -4,7 +4,7 @@ module Playwright::Scenario
   extend self
 
   ACCOUNT_HASH = Schwab::FakeClient::ACCOUNT_HASH
-  SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade ].freeze
+  SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade proposal ].freeze
 
   # Guarded here as well as at the route: reset! empties the database.
   def load!(name)
@@ -18,8 +18,9 @@ module Playwright::Scenario
   def reset!
     Schwab::FakeClient.instance.reset!
     Rails.cache.clear
-    [ TradeLeg, Trade, Snapshot, Position, Balance, Activity, Order, OrderProposal, SyncRun, MarketDay, SchwabToken, Session, Account, Instrument, Setup ].each(&:delete_all)
-    SystemSettings.instance.update!(shadow_mode: true, manual_halt: false, manual_halt_reason: nil, manual_halt_at: nil, sync_paused_reason: nil)
+    [ TradeLeg, Trade, Snapshot, Position, Balance, Activity, SubmissionAttempt, Order, OrderProposal, WatchlistItem, RiskRule, SyncRun, MarketDay, SchwabToken, Session, Account, Instrument, Setup ].each(&:delete_all)
+    SystemSettings.instance.update!(shadow_mode: true, manual_halt: false, manual_halt_reason: nil, manual_halt_at: nil, sync_paused_reason: nil,
+                                    rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
     Rails.application.load_seed
     MarketDay.for(MarketDay.today)
   end
@@ -61,6 +62,17 @@ module Playwright::Scenario
     position = Position.find_by!(instrument: Instrument.find_by!(symbol: "DEF"))
     position.working_stop_order.update!(status: "CANCELED")
     position.update!(working_stop_order: nil)
+  end
+
+  # A validated entry waiting for the approver, with the two not-checked rules to acknowledge.
+  def proposal
+    healthy
+    User.first.update!(approver: true)
+    RiskRule.active_for("max_position_exposure").supersede!(params: { "percent" => "60" }, user: User.first, note: "a scale-in on a held name") # the seeds carry the rest
+    account = Account.first
+    account.balances.create!(as_of: Time.current, equity: 10_240, settled_cash: 5000, unsettled_cash: 0, cash_available_for_trading: 5000)
+    Schwab::FakeClient.instance.script_daily_history(symbol: "XYZ", close: 50) # the fake's quote fixture already knows XYZ
+    Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: BigDecimal("50"), stop_price: BigDecimal("47"), thesis: "Adding to the base breakout on volume.", origin: :agent)
   end
 
   def delisted

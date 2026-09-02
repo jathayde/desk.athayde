@@ -1,0 +1,32 @@
+<% content_for :title, "Proposals" %>
+<h1>Proposals <small><%= link_to "New", new_proposal_path, class: "chip" %></small></h1>
+<% if SystemSettings.instance.shadow_mode? %><p class="muted">Shadow mode: an approval records what would have been sent; place it at Schwab by hand and the sync matches it.</p><% end %>
+<% if @awaiting.any? %>
+  <h2 class="sec">Place by hand at Schwab</h2>
+  <ul class="trades">
+    <% @awaiting.each do |proposal| %>
+      <li class="kv"><span><%= link_to "#{proposal.side.upcase} #{quantity(proposal.quantity)} #{proposal.instrument.symbol} @ #{money(proposal.limit_price)}", proposal_path(proposal) %></span><b>approved <%= stamp(proposal.decided_at) %></b></li>
+    <% end %>
+  </ul>
+<% end %>
+<h2 class="sec">Waiting for you</h2>
+<% if @queue.empty? %>
+  <p class="empty">Nothing waiting on you.</p>
+<% else %>
+  <ul class="trades">
+    <% @queue.each do |proposal| %>
+      <li class="kv">
+        <span><%= link_to "#{proposal.side.upcase} #{quantity(proposal.quantity)} #{proposal.instrument.symbol} @ #{money(proposal.limit_price)}", proposal_path(proposal) %><% if proposal.setup %> · <%= proposal.setup.name %><% end %></span>
+        <b><%= proposal_status_label(proposal) %></b>
+      </li>
+    <% end %>
+  </ul>
+<% end %>
+<% if @decided.any? %>
+  <h2 class="sec">Decided</h2>
+  <ul class="trades">
+    <% @decided.each do |proposal| %>
+      <li class="kv"><span><%= link_to "#{proposal.side.upcase} #{quantity(proposal.quantity)} #{proposal.instrument.symbol}", proposal_path(proposal) %></span><b><%= proposal_status_label(proposal) %></b></li>
+    <% end %>
+  </ul>
+<% end %>

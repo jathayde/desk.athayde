@@ -19,7 +19,7 @@ RSpec.describe OrderProposal do
     expect(proposal.warnings).to eq(%w[ wash_sale earnings_blackout ]) # what could not be checked is acknowledged too
     expect(proposal.guardrail_results.dig("settled_cash", "outcome")).to eq("pass")
 
-    other = described_class.create!(account: account, instrument: instrument, kind: :entry, origin: :agent, side: :buy)
+    other = described_class.create!(account: account, instrument: create(:instrument), kind: :entry, origin: :agent, side: :buy)
     other.evaluate!(report(result("settled_cash", :block)))
     expect(other).to be_rejected_by_rules
     expect(other).to be_terminal

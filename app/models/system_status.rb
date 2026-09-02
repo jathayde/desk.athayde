@@ -16,6 +16,10 @@ class SystemStatus
     end
   end
 
+  # Shadow mode's evidence: approvals recorded, and how many the operator's hand-placed orders matched.
+  def shadowed_approvals = @shadowed_approvals ||= OrderProposal.where(shadow: true).where.not(status: %w[ submitting ]).count
+  def shadow_reconciled = @shadow_reconciled ||= OrderProposal.where(shadow: true).where.not(broker_order_id: nil).count
+  def awaiting_hand_placement = @awaiting_hand_placement ||= OrderProposal.awaiting_hand_placement.count
   def holdings = @holdings ||= Position.joins(:account, :instrument).merge(Account.trading).includes(:instrument).order("instruments.symbol").to_a
 
   def feed_rows

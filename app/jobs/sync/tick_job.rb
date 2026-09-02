@@ -9,6 +9,7 @@ module Sync
     def perform
       SyncRun.sweep_stale!
       SystemSettings.instance.sweep_rule_halt!
+      OrderProposal.expiring.find_each { |proposal| proposal.expire! rescue OrderProposal::IllegalTransition } # a race with an approve is not the tick's problem
       refresh_calendar
       return pause! unless SchwabToken.usable?
 

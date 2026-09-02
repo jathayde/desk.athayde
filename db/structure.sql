@@ -2328,6 +2328,13 @@ CREATE INDEX index_order_proposals_on_user_id ON public.order_proposals USING bt
 
 
 --
+-- Name: index_order_proposals_one_open_per_instrument_and_side; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_order_proposals_one_open_per_instrument_and_side ON public.order_proposals USING btree (account_id, instrument_id, side) WHERE ((status)::text = ANY ((ARRAY['proposed'::character varying, 'validated'::character varying])::text[]));
+
+
+--
 -- Name: index_order_proposals_one_unresolved_per_instrument; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3276,6 +3283,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902130001'),
 ('20260902120001'),
 ('20260902110001'),
 ('20260902100001'),

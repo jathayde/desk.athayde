@@ -17,7 +17,7 @@ class Agent::Tools::EvaluateHypotheticalOrder < Agent::Tool
     report = Guardrails::Evaluator.new(proposal).call
     { blocked: report.blocked?, warnings: report.warnings, needs_override: report.needs_override?, would_trip_halt: report.trips.map { |t| t[:rule] },
       quantity: proposal.quantity&.to_i, sizing: proposal.sizing, collar: proposal.collar, results: report.to_h }
-  rescue ArgumentError => e # a bad decimal string
+  rescue Proposals::Error, ArgumentError => e # an unknown symbol or a bad decimal string
     raise InvalidArguments, e.message
   end
 end

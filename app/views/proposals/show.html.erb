@@ -1,0 +1,35 @@
+<% content_for :title, "Proposal #{@proposal.instrument.symbol}" %>
+<% proposal = @proposal %>
+<h1><%= proposal.side.upcase %> <%= quantity(proposal.quantity) %> <%= proposal.instrument.symbol %> @ <%= money(proposal.limit_price) %> <small><%= proposal_status_label(proposal) %></small></h1>
+<p class="callout"><%= proposal.kind.humanize %> · <%= proposal.origin %><% if proposal.setup %> · <%= proposal.setup.name %><% end %><% if proposal.stop_price %> · stop <%= money(proposal.stop_price) %><% end %><% if proposal.shadow? %> · shadow<% end %></p>
+<% if proposal.thesis.present? %><p class="thesis"><%= proposal.thesis %></p><% end %>
+
+<%= render "proposals/evaluation", proposal: proposal, results: proposal.guardrail_results, sizing: proposal.sizing, collar: proposal.collar %>
+
+<% if proposal.submission_unknown? %>
+  <p class="warn">Submission unknown: check Schwab before doing anything else on <%= proposal.instrument.symbol %>. The reconcile job is looking for the order.</p>
+<% elsif proposal.awaiting_hand_placement? %>
+  <p class="warn">Shadow approval: place this order at Schwab by hand. The next orders sync matches it and records the payload check.<% if proposal.kind_exit? && @position&.working_stop_order %> Adjust the working stop by hand too; the exit does not yet carry it.<% end %></p>
+<% end %>
+
+<% if proposal.approvable? %>
+  <%= form_with url: proposal_approval_path(proposal), method: :post do |f| %>
+    <% proposal.warnings.each do |rule| %>
+      <label><%= f.check_box :acknowledged, { multiple: true, id: "ack_#{rule}" }, rule, nil %> I acknowledge <%= rule.humanize.downcase %><%= " (not checked)" if proposal.guardrail_results.dig(rule, "outcome") == "unavailable" %></label>
+    <% end %>
+    <% if proposal.needs_override? %>
+      <%= f.label :override_reason, "The stop is outside the collar. Why?" %>
+      <%= f.text_field :override_reason %>
+    <% end %>
+    <%= f.label :confirmation, "Type approve to confirm" %>
+    <%= f.text_field :confirmation, autocomplete: "off" %>
+    <%= f.submit "Approve", class: "danger" %>
+  <% end %>
+  <%= form_with url: proposal_rejection_path(proposal), method: :post do |f| %>
+    <%= f.label :reason, "Reject with a reason" %>
+    <%= f.text_field :reason %>
+    <%= f.submit "Reject", class: "secondary" %>
+  <% end %>
+<% end %>
+<% if proposal.rejection_reason.present? %><p class="muted">Rejected: <%= proposal.rejection_reason %></p><% end %>
+<% if proposal.override_reason.present? %><p class="muted">Override: <%= proposal.override_reason %></p><% end %>

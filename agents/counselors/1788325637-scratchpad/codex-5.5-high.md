@@ -1,0 +1,15 @@
+Findings:
+
+- High: duplicate proposals can be created through the form/tool and later approved. `Proposals::Create` always saves a new row ([create.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/proposals/create.rb:13)), and the only DB duplicate guard covers `submitting/submission_unknown` ([migration](/Users/jathayde/Development/Personal/desk.athayde/db/migrate/20260902120001_phase_two_prerequisites.rb:20)). Same-proposal two-tab approval is protected by the row lock/state check, but duplicate validated rows are not. Must fix before commit.
+
+- High: if `shadow_mode` is false, approval commits transaction one, then raises “not built yet” ([submit.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/submission/submit.rb:15)). The spec even asserts the row is left `submitting` ([submit_spec.rb](/Users/jathayde/Development/Personal/desk.athayde/spec/models/submission/submit_spec.rb:56)). A refusal should leave the row as it was. Move this refusal before transaction one until step 4.
+
+- High: the matcher is not conservative enough. It ignores session, duration, status, child stop/bracket shape, and any payload diff; it can link a same-account same-symbol same-side same-qty same-limit standalone manual order within 3 days ([matcher.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/submission/matcher.rb:13)). Must tighten before commit or explicitly defer matching to step 4.
+
+- Medium: shadow provenance can be corrupted. `link_shadows` links the manual order without changing `placed_via`, but the next `link_by_broker_id` pass will relabel it `app` because the proposal now has `broker_order_id` ([proposal_link.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/orders/proposal_link.rb:17)). Must fix before commit.
+
+- Medium: `would_have_submitted` audit does not include the exact payload; only the attempt row has it ([order_proposal.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:80), [order_proposal.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:87)). The plan requires the audit to carry the payload.
+
+- Medium: approver guard is incomplete. Approval/rejection are guarded, but proposal creation is not ([proposals_controller.rb](/Users/jathayde/Development/Personal/desk.athayde/app/controllers/proposals_controller.rb:17)); other existing mutating routes also lack it. At least proposal create should be guarded before commit.
+
+OK: expiry is wired through the tick ([tick_job.rb](/Users/jathayde/Development/Personal/desk.athayde/app/jobs/sync/tick_job.rb:12)); broker outcomes are recorded from synced order status only ([proposal_link.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/orders/proposal_link.rb:32)). Payload shape is plausible against schwab-py’s documented `TRIGGER`/`childOrderStrategies` model and price-outside-leg convention, but remains correctly marked unverified: https://schwab-py.readthedocs.io/en/latest/order-builder.html

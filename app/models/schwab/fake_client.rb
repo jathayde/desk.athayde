@@ -31,6 +31,17 @@ module Schwab
 
     def close_market_on(date) = @closed_dates << date.to_date
 
+    # A plausible daily history for one symbol, served sticky, so the collar has something to measure.
+    def script_daily_history(symbol: "XYZ", days: 60, close: 50, range: 1, ending: MarketDay.today)
+      zone = ::Time.find_zone!(NEW_YORK)
+      candles = (1..days).map do |i|
+        date = ending - (days - i)
+        c = close + Math.sin(i / 3.0) # a gentle wave, never flat
+        { "datetime" => zone.local(date.year, date.month, date.day, 6).to_i * 1000, "open" => c - 0.2, "high" => c + range, "low" => c - range, "close" => c, "volume" => 1_000_000 }
+      end
+      enqueue(:price_history, sticky: true) { { "candles" => candles, "symbol" => symbol, "empty" => false, "previousClose" => close } }
+    end
+
     # ---- OAuth: the fake authorize page lives in the app (step 4) and redirects straight back
     def authorize_url(state:) = "/schwab/fake_authorize?#{ { state: state }.to_query }"
     def exchange_code(code) = scripted(:exchange_code, code) { code == FAKE_CODE ? token_fixture : raise(ReauthRequired.new("invalid_grant", status: 400)) }

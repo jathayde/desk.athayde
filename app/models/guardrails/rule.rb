@@ -27,7 +27,7 @@ class Guardrails::Rule
   def caution(overridable: false, **detail) = [ :caution, detail, overridable ]
   def block(**detail) = [ :block, detail ]
   def unavailable(reason, **detail) = [ :unavailable, detail.merge(reason: reason) ]
-  def skipped = [ :skipped, { reason: "does not apply to a #{proposal.kind.humanize.downcase}" } ]
+  def skipped = [ :skipped, { reason: "does not apply to #{proposal.kind_exit? ? "an exit" : "a #{proposal.kind.humanize.downcase}"}" } ]
 
   private
     def build(outcome, detail, overridable = false, trip = nil)

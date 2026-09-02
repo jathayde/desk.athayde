@@ -5,7 +5,7 @@ RSpec.describe Schwab::FakeClient do
 
   it "exposes exactly the real client's public interface, parameters included" do
     real = Schwab::Client.public_instance_methods(false)
-    expect(described_class.public_instance_methods(false) - %i[ reset! enqueue close_market_on calls ]).to match_array(real)
+    expect(described_class.public_instance_methods(false) - %i[ reset! enqueue close_market_on script_daily_history calls ]).to match_array(real)
     real.each do |name|
       expect(described_class.instance_method(name).parameters).to eq(Schwab::Client.instance_method(name).parameters), "parameters differ on ##{name}"
     end

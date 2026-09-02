@@ -1,0 +1,12 @@
+# Review Request
+
+## Question
+Review Phase 2 step 3 of Investment Copilot (uncommitted on top of commit 8c9d936; `git status --porcelain` lists the files): proposals end to end in shadow mode. The one create path (tool and form), the approve gesture as the submission (transaction one under the row lock with re-evaluation, acknowledgements, and the override reason; the shadow branch), the Schwab order payload builder (unverified shapes marked), the conservative matcher that links a shadowed approval to the order the operator placed by hand, the orders-sync linkage and broker outcomes, the propose_order write tool, the queue and detail screens, expiry via the tick, and the Playwright approve. Under 700 words.
+
+## Files
+@app/models/proposals.rb @app/models/proposals/create.rb @app/models/submission.rb @app/models/submission/submit.rb @app/models/submission/matcher.rb @app/models/orders/proposal_link.rb @app/models/schwab/order_payload.rb @app/models/schwab/order.rb @app/models/order_proposal.rb @app/models/agent/tools/propose_order.rb @app/controllers/proposals_controller.rb @app/controllers/proposals/approvals_controller.rb @app/controllers/proposals/rejections_controller.rb @app/views/proposals/index.html.erb @app/views/proposals/show.html.erb @app/views/proposals/_evaluation.html.erb @app/views/proposals/new.html.erb @app/helpers/application_helper.rb @app/jobs/sync/orders_job.rb @app/jobs/sync/tick_job.rb @config/routes.rb @lib/playwright/scenario.rb @e2e/review.spec.js
+Specs: @spec/models/proposals/create_spec.rb @spec/models/submission/submit_spec.rb @spec/models/orders/proposal_link_spec.rb @spec/requests/proposals_spec.rb @spec/support/proposals.rb
+Design: @docs/phase-2-plan.md §0.1, §0.2, §0.4 to §0.7, §0.13, §5; @docs/phase-2-state-table.md; PRD §5.1 and §5.4.2 in @docs/artifacts/investment-copilot-prd.md.
+
+## Instructions
+Independent and critical. Can a duplicate be produced through the form, the tool, or two tabs? Does transaction one refuse everything the plan says it refuses, and does a refusal leave the row exactly as it was (the halt engaged outside the rolled-back transaction)? Is the shadow branch honest (state, attempt, audit) and can the matcher link the wrong order or link twice? Does the orders sync record outcomes only from the broker? Is the payload plausible against schwab-py's order builder? Are the screens mobile-first and free of model-generated text hazards? Does the approver guard hold on every state-changing route? Say what must change before commit versus at step 4.

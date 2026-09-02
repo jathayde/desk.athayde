@@ -17,7 +17,7 @@
     <p>Not connected. <%= link_to "Connect Schwab", schwab_authorize_path, class: "button" %></p>
   <% end %>
   <div class="kv"><dt>Sync</dt><dd><% if status.settings.sync_paused_reason %>paused: <%= status.settings.sync_paused_reason %><% if status.sync_paused_since %> since <%= l(status.sync_paused_since, format: :weekday_time) %><% end %><% else %>running<% end %></dd></div>
-  <div class="kv"><dt>Shadow mode</dt><dd><%= status.settings.shadow_mode ? "on" : "off" %></dd></div>
+  <div class="kv"><dt>Shadow mode</dt><dd><%= status.settings.shadow_mode ? "on" : "off" %> · <%= status.shadowed_approvals %> shadowed approvals, <%= status.shadow_reconciled %> matched at Schwab, <%= status.awaiting_hand_placement %> to place by hand</dd></div>
   <div class="kv"><dt>API spend this month</dt><dd><%= money(status.api_spend_this_month, precision: 2) %><% if status.unpriced_runs? %> <small>plus unpriced runs</small><% end %></dd></div>
   <div class="kv"><dt>Memory repo</dt>
     <dd><% if status.memory_repo.present? %><%= pluralize(status.memory_repo.paths.size, "file") %>, changed <%= as_of(status.memory_repo.last_modified_at) %><% else %>missing<% end %><% if status.memory_run %> · pull <%= status.memory_run.status %> <%= as_of(status.memory_run.finished_at || status.memory_run.started_at) %><% if status.memory_run.error %> <small><%= status.memory_run.error.truncate(80) %></small><% end %><% end %></dd></div>

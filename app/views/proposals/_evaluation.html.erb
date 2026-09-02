@@ -1,0 +1,30 @@
+<% if sizing.present? %>
+  <h2 class="sec">Sizing</h2>
+  <dl class="kv-list">
+    <% if sizing["quantity"] %>
+      <div class="kv"><dt>Quantity</dt><dd><%= sizing["quantity"] %> shares · <%= money(sizing["risk_budget"]) %> at risk (<%= sizing["risk_percent"] %>% of <%= money(sizing["equity"]) %>) · <%= money(sizing["per_share_risk"]) %> per share</dd></div>
+    <% else %>
+      <div class="kv"><dt>Not sized</dt><dd class="warn"><%= sizing["reason"] %></dd></div>
+    <% end %>
+  </dl>
+<% end %>
+<% if collar.present? %>
+  <h2 class="sec">Stop collar</h2>
+  <dl class="kv-list">
+    <% if collar["quality"] == "ok" %>
+      <div class="kv"><dt>Collar</dt><dd><%= money(collar["wide"]) %> to <%= money(collar["tight"]) %><%= " (the percent floor is the collar, up to the entry)" if collar["floor_dominates"] %> · floor <%= money(collar["floor"]) %></dd></div>
+      <div class="kv"><dt>Methods</dt><dd><%= collar["methods"].map { |name, price| "#{name} #{money(price)}" }.join(" · ") %></dd></div>
+    <% else %>
+      <div class="kv"><dt>Collar</dt><dd class="warn"><%= collar["refusal"] %></dd></div>
+    <% end %>
+  </dl>
+<% end %>
+<h2 class="sec">Guardrails</h2>
+<dl class="kv-list">
+  <% judged, skipped = results.partition { |_, r| r["outcome"] != "skipped" } %>
+  <% judged.each do |rule, result| %>
+    <div class="kv <%= result["outcome"] %>"><dt><%= rule.humanize %></dt>
+      <dd class="<%= { "block" => "warn", "caution" => "warn" }[result["outcome"]] %>"><%= outcome_label(result["outcome"]) %><% if result["detail"].present? %> <small><%= result["detail"].map { |k, v| "#{k} #{v.is_a?(Hash) || v.is_a?(Array) ? v.to_json : v}" }.join(" · ").truncate(160) %></small><% end %></dd></div>
+  <% end %>
+  <% if skipped.any? %><div class="kv muted"><dt>Does not apply</dt><dd><%= skipped.map { |rule, _| rule.humanize.downcase }.to_sentence %></dd></div><% end %>
+</dl>

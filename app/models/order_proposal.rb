@@ -33,9 +33,12 @@ class OrderProposal < ApplicationRecord
   scope :unresolved, -> { where(status: UNRESOLVED) }
   scope :queue, -> { where(status: %w[ proposed validated submission_unknown ]).order(created_at: :desc) }
   scope :expiring, -> { where(status: %w[ proposed validated ]).where(expires_at: ..Time.current) }
+  # A shadow approval the operator still has to place by hand: the phase's central concept, named once.
+  scope :awaiting_hand_placement, -> { submitted.where(shadow: true, broker_order_id: nil) }
   scope :stale_submitting, ->(older_than) { submitting.where(updated_at: ..older_than.ago) }
 
   validates :quantity, numericality: { greater_than: 0 }, allow_nil: true
+  validates :quantity, presence: true, unless: :kind_entry? # an entry may be unsized (and blocked); a sell of nothing is not a proposal
 
   def self.instrument_locked?(instrument) = unresolved.where(instrument: instrument).exists?
 
@@ -44,6 +47,11 @@ class OrderProposal < ApplicationRecord
   # Everything the approver must acknowledge: warnings and the rules that could not be checked.
   def warnings = guardrail_results.select { |_, r| r["outcome"].in?(%w[ caution unavailable ]) }.keys
   def live_attempt = submission_attempts.live.first
+  def awaiting_hand_placement? = submitted? && shadow? && broker_order_id.nil?
+  def needs_override? = guardrail_results.any? { |_, r| r["outcome"] == "caution" && r["overridable"] }
+
+  # The approve gesture: transaction one, then the shadow or real branch (Submission::Submit).
+  def approve_and_submit!(user:, acknowledged: [], override_reason: nil) = Submission::Submit.call(self, user: user, acknowledged: acknowledged, override_reason: override_reason)
 
   # ---- transitions, each a row of the table, each one audit row, each under the row lock ----------
 
@@ -82,7 +90,7 @@ class OrderProposal < ApplicationRecord
 
   # Transaction two: what Schwab, or shadow mode, answered. The state moves first; the attempt follows.
   def record_shadow!(attempt)
-    outcome!(attempt, from: %w[ submitting ], to: :submitted, event: "would_have_submitted", attributes: { submitted_at: Time.current }) do
+    outcome!(attempt, from: %w[ submitting ], to: :submitted, event: "would_have_submitted", attributes: { submitted_at: Time.current }, data: { payload: attempt.payload }) do
       attempt.update!(outcome: :would_have_submitted)
     end
   end

@@ -1,9 +1,12 @@
-# Drafting and creating proposals, shared by the tool, the form, and the hypothetical evaluation.
+# Drafting proposals, shared by the tool, the form, and the hypothetical evaluation.
 module Proposals
+  class Error < StandardError; end
+  class UnknownSymbol < Error; end
+
   # An unsaved proposal with its instrument resolved and, for an entry, its sizing and collar frozen from a
   # year of candles and a fresh quote: the shape both the hypothetical tool and Proposals::Create start from.
   def self.draft(account:, kind:, side:, symbol:, limit_price:, stop_price: nil, setup: nil, thesis: nil, origin:, user: nil, quantity: nil)
-    instrument = Instrument.find_by(symbol: symbol.to_s.strip.upcase) or raise Agent::Tool::InvalidArguments, "unknown symbol #{symbol}"
+    instrument = Instrument.find_by(symbol: symbol.to_s.strip.upcase) or raise UnknownSymbol, "unknown symbol #{symbol}"
     proposal = OrderProposal.new(account: account, instrument: instrument, kind: kind, side: side, order_type: Schwab::Order::LIMIT, limit_price: limit_price, stop_price: stop_price,
                                  planned_stop: stop_price, setup: setup, thesis: thesis, origin: origin, user: user, quantity: quantity,
                                  expires_at: MarketDay.today.in_time_zone(MarketDay::ZONE).end_of_day)

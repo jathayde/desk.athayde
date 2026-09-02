@@ -34,7 +34,11 @@ RSpec.describe Guardrails::Evaluator do
     expect(report.warnings).to match_array(%w[ max_sector_exposure earnings_blackout ])
     expect(outcomes(report)).to include("halt" => "pass", "settled_cash" => "pass", "stop_collar" => "pass", "notional_cap" => "pass", "wash_sale" => "pass", "max_risk_per_trade" => "pass")
     expect(report.to_h.dig("settled_cash", "detail", "projected_settled_cash")).to eq("3000.0")
-    expect(outcomes(described_class.new(exit_of).call)).to include("settled_cash" => "skipped", "notional_cap" => "skipped", "stop_collar" => "skipped", "max_risk_per_trade" => "skipped")
+    expect(outcomes(described_class.new(exit_of).call)).to include("settled_cash" => "skipped", "notional_cap" => "skipped", "stop_collar" => "skipped", "max_risk_per_trade" => "skipped", "position_coverage" => "block")
+    create(:position, account: account, instrument: xyz, quantity: 40, last_price: 50, market_value: 2000)
+    account.reload
+    expect(outcomes(described_class.new(exit_of(quantity: 40)).call)["position_coverage"]).to eq("pass")
+    expect(outcomes(described_class.new(exit_of(quantity: 41)).call)["position_coverage"]).to eq("block")
   end
 
   it "blocks settled cash when the balance is missing or stale, and when pending buys and the broker's other buys already claim it" do

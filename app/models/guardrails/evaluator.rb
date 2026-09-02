@@ -2,7 +2,7 @@
 # (a missing row is unavailable, or a block for the rules the plan calls hard). Pure: it reads the database
 # and answers; the proposal's evaluate! and the approve path write.
 class Guardrails::Evaluator
-  BUILT_IN = %w[ halt pending_reconciliation settled_cash ].freeze
+  BUILT_IN = %w[ halt pending_reconciliation settled_cash position_coverage ].freeze
 
   def initialize(proposal, context: Guardrails::Context.new(proposal.account))
     @proposal, @context = proposal, context

@@ -22,6 +22,7 @@ module Sync
 
         rows = orders.filter_map { |order| upsert(account, order, run) }
         link_lineage(account, orders)
+        Orders::ProposalLink.call(account)
         # A truncated page or an order the run could not map or resolve cannot say what is working; a stop Schwab
         # no longer returns is known, and its position must lose it.
         complete = !truncated && run.unmapped_values.except("stops_gone").none?

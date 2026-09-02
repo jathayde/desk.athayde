@@ -23,6 +23,11 @@ class Guardrails::Context
     account.order_proposals.where(kind: :entry, status: %w[ validated submitting submission_unknown submitted ]).where.not(instrument_id: positions.map(&:instrument_id)).distinct.count(:instrument_id)
   end
 
+  # What unfilled entries on this instrument have already committed, so a second entry sees the first.
+  def pending_cost_for(instrument, except: nil)
+    account.order_proposals.where(instrument: instrument, kind: :entry, status: %w[ validated submitting submission_unknown submitted ]).where.not(id: except&.id).sum { |p| p.quantity.to_d * p.limit_price.to_d }
+  end
+
   # Cash the broker reports as settled, minus every buy that already claims it (docs/phase-2-plan.md §0.9).
   # The app's own resting orders are counted once, as proposals; whether the broker's figure already nets
   # working buys is unverified (verify-on-approval item 58), so its other working buys are subtracted too.
