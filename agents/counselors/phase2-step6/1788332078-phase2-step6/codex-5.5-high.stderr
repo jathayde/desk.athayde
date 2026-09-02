@@ -1,0 +1,629 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a060e5-f8fe-7842-bd39-91ef5b6ec73e
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/phase2-step6/1788332078-phase2-step6/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the referenced prompt first, then I’ll execute only the instructions that fit within the current read-only workspace permissions.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/phase2-step6/1788332078-phase2-step6/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+Re-review Phase 2 step 6 of AthaydeDesk (Rails 8.1) after fixes. Read only: app/models/risk_rule.rb (supersede!, applies_to?), app/models/rule_preview.rb, app/models/system_settings.rb (halted?, toggle_shadow_mode!, confirmation_word), app/controllers/risk_rules_controller.rb, app/controllers/system_controller.rb (shadow_mode), app/views/risk_rules/index.html.erb, app/views/risk_rules/preview.html.erb, config/routes.rb, spec/requests/risk_rules_spec.rb, spec/requests/system_spec.rb (the shadow example).
+Previously found and now fixed: halt lock and version race (now under lock! in supersede!), mode not audited, preview not scoped to the rule's proposals, shadow toggle not atomic, mode param unvalidated, preview button 404 (now GET). Confirm each fix is real and report any remaining concrete defects with file:line and a proposed fix. Do not restyle.
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+I’m going into review mode for the named files only. I’ll verify the listed fixes directly against the current code paths and then report only concrete remaining defects.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba app/controllers/risk_rules_controller.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/models/rule_preview.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/models/risk_rule.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/models/system_settings.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# What the proposals waiting today would say under a candidate version of a rule, next to what they said when
+     2	# judged. Reads; writes nothing. Only the proposals this rule governs are shown: the setup's own row wins over
+     3	# the global one, exactly as the evaluator resolves them.
+     4	class RulePreview
+     5	  Row = Data.define(:proposal, :before, :after)
+     6	  attr_reader :rule, :candidate
+     7	
+     8	  def initialize(rule, params:, mode: nil)
+     9	    @rule = rule
+    10	    @candidate = RiskRule.new(rule_type: rule.rule_type, setup: rule.setup, params: params, mode: mode.presence || rule.mode, version: rule.version + 1)
+    11	  end
+    12	
+    13	  def rows
+    14	    @rows ||= proposals.map do |proposal|
+    15	      Row.new(proposal: proposal, before: proposal.guardrail_results.dig(rule.rule_type, "outcome"),
+    16	              after: Guardrails::Rule.for(rule.rule_type).new(rule: candidate, proposal: proposal, context: contexts[proposal.account]).call)
+    17	    end
+    18	  end
+    19	
+    20	  private
+    21	    def proposals = OrderProposal.validated.includes(:instrument, :setup, :account).order(:id).select { |proposal| rule.applies_to?(proposal) }
+    22	    def contexts = @contexts ||= Hash.new { |cache, account| cache[account] = Guardrails::Context.new(account) }
+    23	end
+
+ succeeded in 0ms:
+     1	# The rule editor (Flow 6): one row per active rule, edited by superseding, with an effect preview over the
+     2	# proposals waiting today. Locked while any halt is engaged, except through the override: a typed reason, so
+     3	# a misconfigured rule that caused a false halt can be fixed without waiting for the reset.
+     4	class RiskRulesController < ApplicationController
+     5	  before_action :require_approver
+     6	
+     7	  def index
+     8	    @rules = RiskRule.active.includes(:setup).order(:rule_type, :setup_id)
+     9	    @settings = SystemSettings.instance
+    10	  end
+    11	
+    12	  def update
+    13	    rule = RiskRule.active.find(params[:id])
+    14	    successor = rule.supersede!(params: submitted_params(rule), mode: submitted_mode(rule), user: Current.user,
+    15	                                note: submitted[:note].presence, override_reason: submitted[:override_reason])
+    16	    redirect_to risk_rules_path, notice: "#{successor.rule_type.humanize} is now version #{successor.version}."
+    17	  rescue RiskRule::Locked => e
+    18	    redirect_to risk_rules_path, alert: "Rules are locked while #{e.message}."
+    19	  rescue ActiveRecord::RecordInvalid => e
+    20	    redirect_to risk_rules_path, alert: e.record.errors.full_messages.to_sentence
+    21	  end
+    22	
+    23	  # Nothing is written.
+    24	  def preview
+    25	    rule = RiskRule.active.find(params[:id])
+    26	    @preview = RulePreview.new(rule, params: submitted_params(rule), mode: submitted_mode(rule))
+    27	  end
+    28	
+    29	  private
+    30	    def submitted = params.fetch("rule_#{params[:id]}", {})
+    31	    def submitted_params(rule) = rule.param_keys.to_h { |key| [ key, submitted.dig(:params, key).to_s.strip ] }.compact_blank
+    32	    def submitted_mode(rule) = rule.mode_choosable? ? submitted[:mode].to_s.presence_in(RiskRule.modes.keys) : nil
+    33	end
+
+ succeeded in 0ms:
+     1	# A guardrail as data (docs/phase-2-plan.md §0.8): one active row per type and setup, edited by superseding,
+     2	# never in place, so every proposal's results point at the exact version that judged it.
+     3	class RiskRule < ApplicationRecord
+     4	  TYPES = %w[ max_risk_per_trade max_positions max_position_exposure max_sector_exposure daily_loss_halt max_drawdown_halt
+     5	              earnings_blackout wash_sale notional_cap stop_collar ].freeze
+     6	  REQUIRED_PARAMS = { "max_risk_per_trade" => %w[ percent ], "max_positions" => %w[ count ], "max_position_exposure" => %w[ percent ],
+     7	                      "daily_loss_halt" => %w[ percent ], "max_drawdown_halt" => %w[ percent ], "notional_cap" => %w[ per_order per_day ] }.freeze
+     8	
+     9	  # Raised when a halt is engaged and no override reason was given: the editor is locked, by design, so a
+    10	  # rule cannot be loosened in the heat of the moment without saying why.
+    11	  class Locked < StandardError; end
+    12	
+    13	  belongs_to :setup, optional: true
+    14	  belongs_to :superseded_by, class_name: "RiskRule", optional: true
+    15	  belongs_to :changed_by, class_name: "User", optional: true
+    16	
+    17	  enum :mode, { block: "block", warn: "warn" }, prefix: true
+    18	
+    19	  validates :rule_type, inclusion: { in: TYPES }
+    20	  validate :required_params_present
+    21	
+    22	  scope :active, -> { where(active: true) }
+    23	
+    24	  def self.active_for(rule_type, setup: nil) = active.find_by(rule_type: rule_type, setup: setup) || (setup && active.find_by(rule_type: rule_type, setup: nil))
+    25	
+    26	  # The next version of this rule, superseding this one, in one transaction and one audit row. Under this row's
+    27	  # lock and the settings lock, so two edits cannot both mint version n+1 and a halt landing mid-edit still locks.
+    28	  def supersede!(params:, user:, mode: nil, note: nil, override_reason: nil)
+    29	    override = override_reason.to_s.strip
+    30	    transaction do
+    31	      lock!
+    32	      raise ActiveRecord::StaleObjectError.new(self, "supersede") unless active?
+    33	      raise Locked, "a halt is engaged: say why you are editing anyway" if SystemSettings.instance.lock!.halted? && override.blank?
+    34	      update!(active: false) # first, so the one-active index admits the successor
+    35	      successor = self.class.create!(rule_type: rule_type, setup: setup, params: params, mode: mode.presence || self.mode, version: version + 1, changed_by: user,
+    36	                                     note: [ note.presence, ("override during halt: #{override}" if override.present?) ].compact.join(" · ").presence)
+    37	      update!(superseded_by: successor)
+    38	      AuditEvent.log("rule_changed", actor: :human, user: user, subject: successor, reason: successor.note,
+    39	                     data: { rule_type: rule_type, setup: setup&.name, before: { params: self.params, mode: self.mode }, after: { params: successor.params, mode: successor.mode },
+    40	                             version: successor.version, during_halt: override.present?, override_reason: override.presence })
+    41	      successor
+    42	    end
+    43	  end
+    44	
+    45	  def param(name) = params.fetch(name.to_s) { raise KeyError, "#{rule_type} rule has no #{name}" }
+    46	  def param_keys = (params.keys + Array(REQUIRED_PARAMS[rule_type])).uniq
+    47	  def mode_choosable? = rule_type == "wash_sale"
+    48	
+    49	  # Whether this is the row the evaluator would pick for the proposal: the setup's own row wins, the global row
+    50	  # is the fallback for setups without one.
+    51	  def applies_to?(proposal) = self.class.active_for(rule_type, setup: proposal.setup) == self
+    52	
+    53	  private
+    54	    def required_params_present
+    55	      missing = REQUIRED_PARAMS.fetch(rule_type.to_s, []).reject { |key| params.to_h[key].present? }
+    56	      errors.add(:params, "is missing #{missing.to_sentence}") if missing.any?
+    57	    end
+    58	end
+
+ succeeded in 0ms:
+     1	# One row, enforced by a check constraint on id = 1. Holds the global flags the PRD calls out:
+     2	# shadow mode (on by default), the manual halt, and why sync is paused.
+     3	class SystemSettings < ApplicationRecord
+     4	  # Two halts (docs/phase-2-plan.md §0.3): the kill switch stops everything; a rule halt (daily loss, drawdown)
+     5	  # blocks new entries only, so exits and tighten-only stop adjustments stay available. Shadow mode is not a
+     6	  # gate: it is the branch between "would have submitted" and a real call.
+     7	  LIVE_CONFIRMATION, SHADOW_CONFIRMATION = "go live", "shadow"
+     8	
+     9	  def halted? = manual_halt? || rule_halted?
+    10	  def entries_allowed? = !halted?
+    11	  def exits_allowed? = !manual_halt?
+    12	  def rule_halted? = rule_halt_tripped_at.present? && (rule_halt_resets_at.nil? || rule_halt_resets_at > Time.current)
+    13	
+    14	  # Under the row lock, since two evaluators can trip at once. A second rule tripping during a halt extends
+    15	  # it to the later reset and records the rule; a lapsed halt is cleared with its own audit row by the tick.
+    16	  def trip_rule_halt!(rule:, reason:, resets_at:)
+    17	    with_lock do
+    18	      if rule_halted?
+    19	        # nil means until cleared by hand, later than any time; only a strictly later reset changes anything,
+    20	        # so a rule re-evaluated during its own halt writes nothing.
+    21	        indefinite_already = rule_halt_resets_at.nil?
+    22	        extends_the_halt = !indefinite_already && (resets_at.nil? || resets_at > rule_halt_resets_at)
+    23	        if extends_the_halt
+    24	          update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_resets_at: resets_at)
+    25	          AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at, extended: true })
+    26	        end
+    27	      else
+    28	        update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_tripped_at: Time.current, rule_halt_resets_at: resets_at)
+    29	        AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at })
+    30	      end
+    31	    end
+    32	    self
+    33	  end
+    34	
+    35	  def clear_rule_halt!(user: nil, reason: nil)
+    36	    with_lock do
+    37	      next unless rule_halt_tripped_at
+    38	      AuditEvent.log("rule_halt_cleared", actor: user ? :human : :system, user: user, reason: reason, data: { rule: rule_halt_rule })
+    39	      update!(rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
+    40	    end
+    41	    self
+    42	  end
+    43	
+    44	  # Shadow mode off means the next approve reaches Schwab; on is the same gesture in reverse. Audited both ways
+    45	  # with the shadow evidence that justified it, under the row lock so two toggles cannot cross.
+    46	  def toggle_shadow_mode!(user:, reason:)
+    47	    with_lock do
+    48	      status = SystemStatus.new
+    49	      update!(shadow_mode: !shadow_mode?, shadow_mode_changed_at: Time.current)
+    50	      AuditEvent.log("shadow_mode_toggled", actor: :human, user: user, reason: reason,
+    51	                     data: { shadow_mode: shadow_mode, shadowed_approvals: status.shadowed_approvals, shadow_reconciled: status.shadow_reconciled })
+    52	    end
+    53	    self
+    54	  end
+    55	
+    56	  def confirmation_word = shadow_mode? ? LIVE_CONFIRMATION : SHADOW_CONFIRMATION
+    57	
+    58	  def sweep_rule_halt!
+    59	    clear_rule_halt!(reason: "reset time passed") if rule_halt_tripped_at && !rule_halted?
+    60	  end
+    61	
+    62	  def self.instance = find_or_create_by!(id: 1)
+    63	
+    64	  # The two halves of the token pause, under the same row lock so a re-auth landing mid-tick cannot be
+    65	  # marked paused: pause while the token is unusable (one audit per episode) and resume on a new token.
+    66	  def self.pause_for_token!
+    67	    transaction do
+    68	      settings = instance.lock!
+    69	      next nil if SchwabToken.usable?
+    70	      unless settings.sync_paused_reason
+    71	        settings.update!(sync_paused_reason: "Schwab token unusable; re-authenticate")
+    72	        AuditEvent.log("sync_paused_token_expired", actor: :system)
+    73	      end
+    74	      settings.sync_paused_reason
+    75	    end
+    76	  end
+    77	
+    78	  def self.resume_sync!
+    79	    settings = instance.lock!
+    80	    AuditEvent.log("sync_resumed", actor: :system, reason: settings.sync_paused_reason) if settings.sync_paused_reason
+    81	    settings.update!(sync_paused_reason: nil)
+    82	  end
+    83	end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The core model/controller fixes are present so far: `supersede!` takes the row lock before stale/halt checks, mode changes are included in the audit payload, preview uses `applies_to?`, and shadow toggling uses `with_lock`. I’m checking the views, routes, and request specs now for wiring and coverage gaps.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba app/controllers/system_controller.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/views/risk_rules/index.html.erb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	class SystemController < ApplicationController
+     2	  RESUME_CONFIRMATION = "resume".freeze
+     3	
+     4	  before_action :require_approver, only: :shadow_mode
+     5	
+     6	  def show
+     7	    @status = SystemStatus.new
+     8	  end
+     9	
+    10	  # Halt: a reason is required. Resume: the operator types the word.
+    11	  def halt
+    12	    reason = params[:reason].to_s.strip
+    13	    return redirect_to system_path, alert: "A reason is required to halt." if reason.blank?
+    14	    SystemSettings.instance.update!(manual_halt: true, manual_halt_reason: reason, manual_halt_at: Time.current)
+    15	    AuditEvent.log("manual_halt_set", actor: :human, user: Current.user, reason: reason)
+    16	    redirect_to system_path, notice: "Halted."
+    17	  end
+    18	
+    19	  def shadow_mode
+    20	    settings = SystemSettings.instance
+    21	    return redirect_to system_path, alert: "Type #{settings.confirmation_word} to confirm." unless params[:confirmation].to_s.strip.casecmp?(settings.confirmation_word)
+    22	    return redirect_to system_path, alert: "A reason is required." if params[:reason].to_s.strip.blank?
+    23	    settings.toggle_shadow_mode!(user: Current.user, reason: params[:reason].strip)
+    24	    redirect_to system_path, notice: settings.shadow_mode? ? "Shadow mode is on." : "Shadow mode is off: the next approve places a real order."
+    25	  end
+    26	
+    27	  def resume
+    28	    settings = SystemSettings.instance
+    29	    return redirect_to system_path, alert: "Nothing is halted." unless settings.manual_halt?
+    30	    return redirect_to system_path, alert: "Type #{RESUME_CONFIRMATION} to confirm." unless params[:confirmation].to_s.strip.casecmp?(RESUME_CONFIRMATION)
+    31	    AuditEvent.log("manual_halt_cleared", actor: :human, user: Current.user, reason: settings.manual_halt_reason)
+    32	    settings.update!(manual_halt: false, manual_halt_reason: nil, manual_halt_at: nil)
+    33	    redirect_to system_path, notice: "Resumed."
+    34	  end
+    35	end
+
+ succeeded in 0ms:
+     1	<% content_for :title, "Rules" %>
+     2	<h1>Rules</h1>
+     3	<p class="muted">Every edit is a new version; the old one is kept with the proposals it judged. <% if @settings.halted? %><span class="warn">A halt is engaged: rules are locked unless you type why you are editing anyway.</span><% end %></p>
+     4	<% @rules.each do |rule| %>
+     5	  <section class="rule">
+     6	    <h2 class="sec"><%= rule.rule_type.humanize %><% if rule.setup %> · <%= rule.setup.name %><% end %> <small>v<%= rule.version %><% if rule.note.present? %> · <%= rule.note %><% end %></small></h2>
+     7	    <% if rule.param_keys.empty? %>
+     8	      <p class="muted">No parameters; this rule answers "not checked" until Phase 2.5.</p>
+     9	    <% else %>
+    10	      <%= form_with scope: "rule_#{rule.id}", url: risk_rule_path(rule), method: :patch, class: "account-form" do |f| %>
+    11	        <div class="fields">
+    12	          <% rule.param_keys.each do |key| %>
+    13	            <%= f.label "params_#{key}", key.humanize %>
+    14	            <%= f.text_field "params[#{key}]", value: rule.params[key], id: "rule_#{rule.id}_params_#{key}", inputmode: "decimal" %>
+    15	          <% end %>
+    16	          <% if rule.mode_choosable? %>
+    17	            <%= f.label :mode, "Mode" %>
+    18	            <%= f.select :mode, options_for_select(RiskRule.modes.keys, rule.mode) %>
+    19	          <% end %>
+    20	          <%= f.label :note, "Why" %>
+    21	          <%= f.text_field :note %>
+    22	          <% if @settings.halted? %>
+    23	            <%= f.label :override_reason, "Editing during a halt: why" %>
+    24	            <%= f.text_field :override_reason %>
+    25	          <% end %>
+    26	          <%= f.submit "Save as v#{rule.version + 1}" %>
+    27	          <%= f.submit "Preview effect", formaction: preview_risk_rule_path(rule), formmethod: "get", class: "secondary" %>
+    28	        </div>
+    29	      <% end %>
+    30	    <% end %>
+    31	  </section>
+    32	<% end %>
+    33	<% if @rules.empty? %><p class="empty">No rules yet. The seeds create the starting set.</p><% end %>
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/views/risk_rules/preview.html.erb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba config/routes.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	<% content_for :title, "Preview #{@preview.rule.rule_type.humanize}" %>
+     2	<h1>Preview: <%= @preview.rule.rule_type.humanize %> v<%= @preview.candidate.version %></h1>
+     3	<p class="muted"><%= detail_summary(@preview.candidate.params) %><% if @preview.rule.mode_choosable? %> · mode <%= @preview.candidate.mode %><% end %>. What the proposals waiting today would say. Nothing is written.</p>
+     4	<dl class="kv-list">
+     5	  <% @preview.rows.each do |row| %>
+     6	    <div class="kv"><dt><%= link_to "#{row.proposal.side.upcase} #{quantity(row.proposal.quantity)} #{row.proposal.instrument.symbol}", proposal_path(row.proposal) %></dt>
+     7	      <dd><%= row.before ? outcome_label(row.before) : "not judged" %> → <b class="<%= outcome_class(row.after.outcome) %>"><%= outcome_label(row.after.outcome) %></b><% if row.after.detail.present? %> <small><%= detail_summary(row.after.detail, limit: 120) %></small><% end %></dd></div>
+     8	  <% end %>
+     9	  <% if @preview.rows.empty? %><div class="kv"><dt>Proposals</dt><dd>none waiting under this rule; the preview has nothing to judge</dd></div><% end %>
+    10	</dl>
+    11	<p><%= link_to "Back to rules", risk_rules_path %></p>
+
+ succeeded in 0ms:
+     1	Rails.application.routes.draw do
+     2	  root "dashboard#show"
+     3	
+     4	  match "/mcp", to: "mcp#handle", via: %i[ post get delete ]
+     5	
+     6	  resource :system, only: :show, controller: "system" do
+     7	    post :halt
+     8	    post :resume
+     9	    post :shadow_mode
+    10	  end
+    11	  resources :risk_rules, only: %i[ index update ] do
+    12	    get :preview, on: :member
+    13	  end
+    14	  resources :proposals, only: %i[ index show new create ] do
+    15	    scope module: :proposals do
+    16	      resource :approval, only: :create
+    17	      resource :rejection, only: :create
+    18	    end
+    19	  end
+    20	  resources :watchlist_items, path: "watchlist", only: %i[ index create ] do
+    21	    resource :drop, only: :create, module: :watchlist_items
+    22	  end
+    23	  resources :accounts, only: :update
+    24	  resources :instruments, only: :update
+    25	  resources :trades, only: %i[ index show update ] do
+    26	    scope module: :trades do
+    27	      resource :review, only: %i[ show update ]
+    28	      resource :exclusion, only: :create
+    29	      resource :deferral, only: :create
+    30	    end
+    31	  end
+    32	
+    33	  resource :session, only: %i[ new create destroy ]
+    34	  resource :magic_link, only: %i[ show create ]
+    35	
+    36	  get "schwab/authorize", to: "schwab#authorize"
+    37	  get "schwab/callback", to: "schwab#callback"
+    38	  get "schwab/connected", to: "schwab#connected"
+    39	  get "schwab/fake_authorize", to: "schwab#fake_authorize"
+    40	
+    41	  get "playwright/scenarios/:name", to: "playwright/scenarios#show", as: :playwright_scenario if Rails.env.test?
+    42	
+    43	  get "up" => "rails/health#show", as: :rails_health_check
+    44	  get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
+    45	end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The route and form now align on `GET /risk_rules/:id/preview`, and the shadow action validates the current confirmation phrase before toggling. I’m reading the specs to see whether the fixes are exercised and whether any remaining behavior mismatch shows up there.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba spec/requests/system_spec.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe "System page" do
+     4	  let(:user) { create(:user, name: "John") }
+     5	  before { sign_in user }
+     6	
+     7	  it "shows token status, feeds with last success, failures, honest not-yet rows, and accounts needing setup" do
+     8	    create(:schwab_token)
+     9	    account = create(:account, account_type: nil, trading_enabled: false)
+    10	    create(:sync_run, feed: "positions", account: account, status: "succeeded", started_at: 2.hours.ago, finished_at: 2.hours.ago)
+    11	    create(:sync_run, feed: "positions", account: account, status: "failed", error: "boom", started_at: 1.minute.ago)
+    12	    get system_path
+    13	    expect(response.body).to include("Healthy").and include("of 7 days").and include("none yet").and include("Needs setup").and include("boom").and include("last success")
+    14	  end
+    15	
+    16	  it "halts with a reason and resumes with a typed confirmation, auditing both, and refuses to resume when not halted" do
+    17	    post resume_system_path, params: { confirmation: "resume" }
+    18	    expect(AuditEvent.where(kind: "manual_halt_cleared")).not_to exist
+    19	    post halt_system_path, params: { reason: "" }
+    20	    expect(SystemSettings.instance.manual_halt).to be(false)
+    21	    post halt_system_path, params: { reason: "market closed early" }
+    22	    expect(SystemSettings.instance).to have_attributes(manual_halt: true, manual_halt_reason: "market closed early")
+    23	    expect(AuditEvent.where(kind: "manual_halt_set").last.user).to eq(user)
+    24	    post resume_system_path, params: { confirmation: "nope" }
+    25	    expect(SystemSettings.instance.manual_halt).to be(true)
+    26	    post resume_system_path, params: { confirmation: "Resume" }
+    27	    expect(SystemSettings.instance.manual_halt).to be(false)
+    28	    expect(AuditEvent.where(kind: "manual_halt_cleared")).to exist
+    29	  end
+    30	
+    31	  it "turns shadow mode off only for an approver with the typed words and a reason, audited with the shadow evidence, and back on the same way" do
+    32	    post shadow_mode_system_path, params: { confirmation: "go live", reason: "x" }
+    33	    expect(response).to redirect_to(root_path)
+    34	    user.update!(approver: true)
+    35	    post shadow_mode_system_path, params: { confirmation: "go live", reason: "" }
+    36	    expect(flash[:alert]).to include("reason")
+    37	    post shadow_mode_system_path, params: { confirmation: "live", reason: "12 shadow approvals matched" }
+    38	    expect(flash[:alert]).to include("Type go live")
+    39	    expect(SystemSettings.instance).to be_shadow_mode
+    40	    post shadow_mode_system_path, params: { confirmation: "GO LIVE", reason: "12 shadow approvals matched" }
+    41	    expect(SystemSettings.instance.reload).to have_attributes(shadow_mode: false, shadow_mode_changed_at: be_present)
+    42	    expect(AuditEvent.where(kind: "shadow_mode_toggled").sole).to have_attributes(user: user, reason: "12 shadow approvals matched", data: hash_including("shadow_mode" => false, "shadowed_approvals" => 0, "shadow_reconciled" => 0))
+    43	    get system_path
+    44	    expect(response.body).to include("Type shadow to confirm")
+    45	    post shadow_mode_system_path, params: { confirmation: "shadow", reason: "one more week" }
+    46	    expect(SystemSettings.instance.reload).to be_shadow_mode
+    47	  end
+    48	
+    49	  it "configures an account, audits it, and kicks off its first sync when enabled" do
+    50	    account = create(:account, account_type: nil, trading_enabled: false)
+    51	    expect {
+    52	      patch account_path(account), params: { account_type: "taxable", trading_enabled: "1", nickname: "Brokerage" }
+    53	    }.to have_enqueued_job(Sync::PositionsJob).with(account).and have_enqueued_job(Sync::OrdersJob).and have_enqueued_job(Sync::ActivitiesJob)
+    54	    expect(account.reload).to have_attributes(account_type: "taxable", trading_enabled: true, nickname: "Brokerage")
+    55	    expect(AuditEvent.where(kind: "account_configured")).to exist
+    56	  end
+    57	
+    58	  it "refuses to enable trading on an IRA" do
+    59	    account = create(:account, account_type: nil, trading_enabled: false)
+    60	    patch account_path(account), params: { account_type: "ira", trading_enabled: "1" }
+    61	    expect(flash[:alert]).to include("only for the taxable account")
+    62	    expect(account.reload.trading_enabled).to be(false)
+    63	  end
+    64	
+    65	  it "warns on Sunday morning only when the token dies before tonight's email" do
+    66	    travel_to Time.zone.parse("2026-09-06 09:00 EDT") do
+    67	      create(:schwab_token, issued_at: Time.zone.parse("2026-08-30 17:00 EDT"))
+    68	      get system_path
+    69	      expect(response.body).to include("dies before Sunday")
+    70	      SchwabToken.delete_all
+    71	      create(:schwab_token, issued_at: Time.zone.parse("2026-08-30 19:00 EDT"))
+    72	      get system_path
+    73	      expect(response.body).not_to include("dies before Sunday")
+    74	    end
+    75	  end
+    76	
+    77	  it "shows the month's API spend, the memory repo, and recent briefs" do
+    78	    sign_in(user)
+    79	    AgentRun.create!(kind: :morning_brief, market_date: Date.new(2026, 9, 1), status: :succeeded, started_at: Time.current, finished_at: Time.current, estimated_cost: BigDecimal("0.0456"), model: Agent::MODEL, degraded: true)
+    80	    AgentRun.create!(kind: :eod, market_date: Date.new(2026, 9, 1), status: :failed, started_at: Time.current, finished_at: Time.current, error: "deadline passed", model: Agent::MODEL)
+    81	    AgentRun.create!(kind: :eod, market_date: Date.new(2026, 9, 7), status: :skipped, started_at: Time.current, finished_at: Time.current, error: "market closed")
+    82	    get system_path
+    83	    expect(response.body).to include("$0.05", "plus unpriced runs", "morning brief, Tue Sep 1", "degraded", "not emailed", "deadline passed", "missing", "end of day, Mon Sep 7")
+    84	    expect(response.body.scan("not emailed").size).to eq(2)
+    85	  end
+    86	
+    87	  it "marks a held instrument delisted and relists it from the system page, auditing both, and refuses anything else" do
+    88	    sign_in(user)
+    89	    account = create(:account)
+    90	    position = create(:position, account: account, instrument: create(:instrument, symbol: "GONE"))
+    91	    get system_path
+    92	    expect(response.body).to include("GONE", "Mark delisted")
+    93	    patch instrument_path(position.instrument), params: { delisted: "1" }
+    94	    expect(position.instrument.reload).to be_delisted
+    95	    get system_path
+    96	    expect(response.body).to include("Relist", "<small>delisted</small>")
+    97	    patch instrument_path(position.instrument), params: { delisted: "0" }
+    98	    expect(position.instrument.reload).not_to be_delisted
+    99	    expect(AuditEvent.where(kind: %w[ instrument_delisted instrument_relisted ]).count).to eq(2)
+   100	    patch instrument_path(position.instrument), params: { delisted: "maybe" }
+   101	    expect(response).to have_http_status(:bad_request)
+   102	    patch instrument_path(create(:instrument)), params: { delisted: "1" }
+   103	    expect(response).to have_http_status(:not_found)
+   104	  end
+   105	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba spec/requests/risk_rules_spec.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe "Rules" do
+     4	  let!(:account) { create(:account, schwab_hash: Schwab::FakeClient::ACCOUNT_HASH) }
+     5	  let!(:token) { create(:schwab_token) }
+     6	  let!(:xyz) { create(:instrument, symbol: "XYZ", cusip: "037833100") }
+     7	  let(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
+     8	  let(:whitney) { create(:user, email_address: "whitney@athayde.com") }
+     9	
+    10	  before { ready_desk(account, settled: 6000) }
+    11	
+    12	  it "lists the active rules, supersedes on save with a note and mode, and rolls back a bad edit whole" do
+    13	    sign_in john
+    14	    get risk_rules_path
+    15	    expect(response.body).to include("Max risk per trade", "Notional cap", "Save as v2", "rule_#{RiskRule.active_for("notional_cap").id}_params_per_order", "not checked")
+    16	    cap = RiskRule.active_for("notional_cap")
+    17	    patch risk_rule_path(cap), params: { "rule_#{cap.id}" => { params: { per_order: "1000", per_day: "5000" }, note: "smaller account", mode: "warn" } }
+    18	    expect(flash[:notice]).to include("version 2")
+    19	    expect(cap.reload).not_to be_active
+    20	    expect(RiskRule.active_for("notional_cap")).to have_attributes(version: 2, params: { "per_order" => "1000", "per_day" => "5000" }, note: "smaller account", changed_by: john, mode: "block") # mode is only choosable on wash sale
+    21	    expect(AuditEvent.where(kind: "rule_changed").sole.data).to include("before" => { "params" => { "per_order" => "2500", "per_day" => "5000" }, "mode" => "block" })
+    22	    wash = RiskRule.active_for("wash_sale")
+    23	    patch risk_rule_path(wash), params: { "rule_#{wash.id}" => { params: { days: "30" }, mode: "block" } }
+    24	    expect(RiskRule.active_for("wash_sale")).to have_attributes(version: 2, mode: "block")
+    25	    positions = RiskRule.active_for("max_positions")
+    26	    patch risk_rule_path(positions), params: { "rule_#{positions.id}" => { params: { count: "" } } }
+    27	    expect(flash[:alert]).to include("missing count")
+    28	    expect(RiskRule.active_for("max_positions")).to have_attributes(id: positions.id, version: 1, active: true)
+    29	  end
+    30	
+    31	  it "previews the effect over the waiting proposals the rule governs, without writing" do
+    32	    proposal = Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, thesis: "t", origin: :agent)
+    33	    breakout = create(:setup, name: "Breakout")
+    34	    def_ = create(:instrument, symbol: "DEF", cusip: "594918104")
+    35	    Schwab::FakeClient.instance.script_daily_history(symbol: "DEF", close: 50)
+    36	    scoped = Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "DEF", limit_price: 50, stop_price: 47, thesis: "t", origin: :agent, setup: breakout)
+    37	    RiskRule.create!(rule_type: "notional_cap", setup: breakout, params: { "per_order" => "9000", "per_day" => "9000" })
+    38	    sign_in john
+    39	    cap = RiskRule.active_for("notional_cap")
+    40	    get preview_risk_rule_path(cap, "rule_#{cap.id}" => { params: { per_order: "1000", per_day: "5000" } })
+    41	    expect(response.body).to include("Preview: Notional cap v2", "XYZ", "pass → <b class=\"warn\">blocks</b>")
+    42	    expect(response.body).not_to include("DEF") # the breakout setup has its own row
+    43	    expect(cap.reload).to be_active
+    44	    expect(AuditEvent.where(kind: "rule_changed")).not_to exist
+    45	    expect(proposal.reload).to be_validated
+    46	    expect(scoped.reload).to be_validated
+    47	  end
+    48	
+    49	  it "locks the editor during a halt unless the approver types why, audited as an override, and keeps the second user out" do
+    50	    sign_in john
+    51	    SystemSettings.instance.trip_rule_halt!(rule: "daily_loss_halt", reason: "down", resets_at: 1.hour.from_now)
+    52	    rule = RiskRule.active_for("daily_loss_halt")
+    53	    patch risk_rule_path(rule), params: { "rule_#{rule.id}" => { params: { percent: "5" } } }
+    54	    expect(flash[:alert]).to include("locked while a halt")
+    55	    expect(rule.reload).to be_active
+    56	    patch risk_rule_path(rule), params: { "rule_#{rule.id}" => { params: { percent: "5" }, override_reason: "false halt from a bad percent" } }
+    57	    expect(RiskRule.active_for("daily_loss_halt")).to have_attributes(version: 2, note: "override during halt: false halt from a bad percent")
+    58	    expect(AuditEvent.where(kind: "rule_changed").sole.data).to include("during_halt" => true, "override_reason" => "false halt from a bad percent")
+    59	    delete session_path
+    60	    sign_in whitney
+    61	    get risk_rules_path
+    62	    expect(response).to redirect_to(root_path)
+    63	  end
+    64	end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+Found one remaining defect.
+
+**Finding**
+[app/controllers/system_controller.rb:20](/Users/jathayde/Development/Personal/desk.athayde/app/controllers/system_controller.rb:20) validates the shadow-mode confirmation before entering the locked toggle in [app/models/system_settings.rb:46](/Users/jathayde/Development/Personal/desk.athayde/app/models/system_settings.rb:46). Two concurrent `go live` posts can both pass the pre-lock check while `shadow_mode` is true; the first turns live on, the second then acquires the lock and toggles it back to shadow using the now-stale confirmation.
+
+Proposed fix: move the confirmation check into the same `with_lock` block that flips `shadow_mode`, or add a `toggle_shadow_mode!(user:, reason:, confirmation:)` method that reloads/locks first, checks `confirmation_word`, validates reason, then updates.
+
+Confirmed fixes:
+- `RiskRule#supersede!` now locks before stale/halt checks and versions under one transaction.
+- `rule_changed` audit now includes before/after `mode`.
+- Preview rows are scoped through `rule.applies_to?`.
+- Submitted mode is constrained with `presence_in(RiskRule.modes.keys)`.
+- Preview route/form now use `GET`.
+
+I did not run specs; the prompt requested read-only review.
+hook: Stop
+hook: Stop Completed
+tokens used
+17,621

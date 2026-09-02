@@ -4,7 +4,10 @@ class SystemSettings < ApplicationRecord
   # Two halts (docs/phase-2-plan.md §0.3): the kill switch stops everything; a rule halt (daily loss, drawdown)
   # blocks new entries only, so exits and tighten-only stop adjustments stay available. Shadow mode is not a
   # gate: it is the branch between "would have submitted" and a real call.
-  def entries_allowed? = !manual_halt? && !rule_halted?
+  LIVE_CONFIRMATION, SHADOW_CONFIRMATION = "go live", "shadow"
+
+  def halted? = manual_halt? || rule_halted?
+  def entries_allowed? = !halted?
   def exits_allowed? = !manual_halt?
   def rule_halted? = rule_halt_tripped_at.present? && (rule_halt_resets_at.nil? || rule_halt_resets_at > Time.current)
 
@@ -37,6 +40,24 @@ class SystemSettings < ApplicationRecord
     end
     self
   end
+
+  class Unconfirmed < StandardError; end
+
+  # Shadow mode off means the next approve reaches Schwab; on is the same gesture in reverse. Audited both ways
+  # with the shadow evidence that justified it. The typed word is checked under the row lock, so two "go live"
+  # posts crossing cannot have the second one flip the desk straight back to shadow.
+  def toggle_shadow_mode!(user:, reason:, confirmation:)
+    with_lock do
+      raise Unconfirmed, "Type #{confirmation_word} to confirm." unless confirmation.to_s.strip.casecmp?(confirmation_word)
+      status = SystemStatus.new
+      update!(shadow_mode: !shadow_mode?, shadow_mode_changed_at: Time.current)
+      AuditEvent.log("shadow_mode_toggled", actor: :human, user: user, reason: reason,
+                     data: { shadow_mode: shadow_mode, shadowed_approvals: status.shadowed_approvals, shadow_reconciled: status.shadow_reconciled })
+    end
+    self
+  end
+
+  def confirmation_word = shadow_mode? ? LIVE_CONFIRMATION : SHADOW_CONFIRMATION
 
   def sweep_rule_halt!
     clear_rule_halt!(reason: "reset time passed") if rule_halt_tripped_at && !rule_halted?

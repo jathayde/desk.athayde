@@ -28,6 +28,24 @@ RSpec.describe "System page" do
     expect(AuditEvent.where(kind: "manual_halt_cleared")).to exist
   end
 
+  it "turns shadow mode off only for an approver with the typed words and a reason, audited with the shadow evidence, and back on the same way" do
+    post shadow_mode_system_path, params: { shadow: { confirmation: "go live", reason: "x" } }
+    expect(response).to redirect_to(root_path)
+    user.update!(approver: true)
+    post shadow_mode_system_path, params: { shadow: { confirmation: "go live", reason: "" } }
+    expect(flash[:alert]).to include("reason")
+    post shadow_mode_system_path, params: { shadow: { confirmation: "live", reason: "12 shadow approvals matched" } }
+    expect(flash[:alert]).to include("Type go live")
+    expect(SystemSettings.instance).to be_shadow_mode
+    post shadow_mode_system_path, params: { shadow: { confirmation: "GO LIVE", reason: "12 shadow approvals matched" } }
+    expect(SystemSettings.instance.reload).to have_attributes(shadow_mode: false, shadow_mode_changed_at: be_present)
+    expect(AuditEvent.where(kind: "shadow_mode_toggled").sole).to have_attributes(user: user, reason: "12 shadow approvals matched", data: hash_including("shadow_mode" => false, "shadowed_approvals" => 0, "shadow_reconciled" => 0))
+    get system_path
+    expect(response.body).to include("Type shadow to confirm")
+    post shadow_mode_system_path, params: { shadow: { confirmation: "shadow", reason: "one more week" } }
+    expect(SystemSettings.instance.reload).to be_shadow_mode
+  end
+
   it "configures an account, audits it, and kicks off its first sync when enabled" do
     account = create(:account, account_type: nil, trading_enabled: false)
     expect {

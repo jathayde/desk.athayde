@@ -24,7 +24,7 @@
   <% judged, skipped = results.partition { |_, r| r["outcome"] != "skipped" } %>
   <% judged.each do |rule, result| %>
     <div class="kv <%= result["outcome"] %>"><dt><%= rule.humanize %></dt>
-      <dd class="<%= { "block" => "warn", "caution" => "warn" }[result["outcome"]] %>"><%= outcome_label(result["outcome"]) %><% if result["detail"].present? %> <small><%= result["detail"].map { |k, v| "#{k} #{v.is_a?(Hash) || v.is_a?(Array) ? v.to_json : v}" }.join(" · ").truncate(160) %></small><% end %></dd></div>
+      <dd class="<%= outcome_class(result["outcome"]) %>"><%= outcome_label(result["outcome"]) %><% if result["detail"].present? %> <small><%= detail_summary(result["detail"]) %></small><% end %></dd></div>
   <% end %>
   <% if skipped.any? %><div class="kv muted"><dt>Does not apply</dt><dd><%= skipped.map { |rule, _| rule.humanize.downcase }.to_sentence %></dd></div><% end %>
 </dl>

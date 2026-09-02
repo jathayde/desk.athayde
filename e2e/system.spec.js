@@ -29,3 +29,19 @@ test("halt needs a reason; resume needs the typed word", async ({ page }) => {
   await page.getByRole("button", { name: "Resume" }).click();
   await expect(page.getByText("Resumed.")).toBeVisible();
 });
+
+test("shadow mode comes off only with the typed words and a reason, and goes back on the same way", async ({ page }) => {
+  await page.goto("/playwright/scenarios/proposal?then=%2Fsystem");
+  await page.getByLabel("Turn shadow mode off (the next approve places a real order): why").fill("matched for a week");
+  await page.getByLabel("Type go live to confirm").fill("live");
+  await page.getByRole("button", { name: "Go live" }).click();
+  await expect(page.getByText("Type go live to confirm.")).toBeVisible();
+  await page.getByLabel("Turn shadow mode off (the next approve places a real order): why").fill("matched for a week");
+  await page.getByLabel("Type go live to confirm").fill("go live");
+  await page.getByRole("button", { name: "Go live" }).click();
+  await expect(page.getByText("Shadow mode is off: the next approve places a real order.")).toBeVisible();
+  await page.getByLabel("Turn shadow mode back on: why").fill("not yet");
+  await page.getByLabel("Type shadow to confirm").fill("shadow");
+  await page.getByRole("button", { name: "Back to shadow" }).click();
+  await expect(page.getByText("Shadow mode is on.")).toBeVisible();
+});

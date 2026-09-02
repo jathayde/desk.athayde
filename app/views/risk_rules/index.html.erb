@@ -1,0 +1,33 @@
+<% content_for :title, "Rules" %>
+<h1>Rules</h1>
+<p class="muted">Every edit is a new version; the old one is kept with the proposals it judged. <% if @settings.halted? %><span class="warn">A halt is engaged: rules are locked unless you type why you are editing anyway.</span><% end %></p>
+<% @rules.each do |rule| %>
+  <section class="rule">
+    <h2 class="sec"><%= rule.rule_type.humanize %><% if rule.setup %> · <%= rule.setup.name %><% end %> <small>v<%= rule.version %><% if rule.note.present? %> · <%= rule.note %><% end %></small></h2>
+    <% if rule.param_keys.empty? %>
+      <p class="muted">No parameters; this rule answers "not checked" until Phase 2.5.</p>
+    <% else %>
+      <%= form_with scope: "rule_#{rule.id}", url: risk_rule_path(rule), method: :patch, class: "account-form" do |f| %>
+        <div class="fields">
+          <% rule.param_keys.each do |key| %>
+            <%= f.label "params_#{key}", key.humanize %>
+            <%= f.text_field "params_#{key}", name: f.field_name(:params, key), value: rule.params[key], inputmode: "decimal" %>
+          <% end %>
+          <% if rule.mode_choosable? %>
+            <%= f.label :mode, "Mode" %>
+            <%= f.select :mode, options_for_select(RiskRule.modes.keys, rule.mode) %>
+          <% end %>
+          <%= f.label :note, "Why" %>
+          <%= f.text_field :note %>
+          <% if @settings.halted? %>
+            <%= f.label :override_reason, "Editing during a halt: why" %>
+            <%= f.text_field :override_reason %>
+          <% end %>
+          <%= f.submit "Save as v#{rule.version + 1}" %>
+          <%= f.submit "Preview effect", formaction: preview_risk_rule_path(rule), formmethod: "get", class: "secondary" %>
+        </div>
+      <% end %>
+    <% end %>
+  </section>
+<% end %>
+<% if @rules.empty? %><p class="empty">No rules yet. The seeds create the starting set.</p><% end %>

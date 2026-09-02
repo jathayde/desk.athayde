@@ -17,7 +17,19 @@
     <p>Not connected. <%= link_to "Connect Schwab", schwab_authorize_path, class: "button" %></p>
   <% end %>
   <div class="kv"><dt>Sync</dt><dd><% if status.settings.sync_paused_reason %>paused: <%= status.settings.sync_paused_reason %><% if status.sync_paused_since %> since <%= l(status.sync_paused_since, format: :weekday_time) %><% end %><% else %>running<% end %></dd></div>
-  <div class="kv"><dt>Shadow mode</dt><dd><%= status.settings.shadow_mode ? "on" : "off" %> · <%= status.shadowed_approvals %> shadowed approvals, <%= status.shadow_reconciled %> matched at Schwab, <%= status.awaiting_hand_placement %> to place by hand</dd></div>
+  <div class="kv"><dt>Shadow mode</dt><dd><%= status.settings.shadow_mode ? "on" : "off" %> · <%= status.shadowed_approvals %> shadowed approvals, <%= status.shadow_reconciled %> matched at Schwab, <%= status.awaiting_hand_placement %> to place by hand<% if status.settings.shadow_mode_changed_at %> · changed <%= as_of(status.settings.shadow_mode_changed_at) %><% end %></dd></div>
+  <% if Current.user&.approver? %>
+    <%= form_with scope: :shadow, url: shadow_mode_system_path, method: :post, class: "account-form" do |f| %>
+      <div class="fields">
+        <%= f.label :reason, status.settings.shadow_mode ? "Turn shadow mode off (the next approve places a real order): why" : "Turn shadow mode back on: why" %>
+        <%= f.text_field :reason, required: true %>
+        <%= f.label :confirmation, "Type #{status.settings.confirmation_word} to confirm" %>
+        <%= f.text_field :confirmation, autocomplete: "off" %>
+        <%= f.submit status.settings.shadow_mode ? "Go live" : "Back to shadow", class: status.settings.shadow_mode ? "danger" : nil %>
+      </div>
+    <% end %>
+    <p class="muted"><%= link_to "Rules", risk_rules_path %> · every edit is a new version.</p>
+  <% end %>
   <div class="kv"><dt>API spend this month</dt><dd><%= money(status.api_spend_this_month, precision: 2) %><% if status.unpriced_runs? %> <small>plus unpriced runs</small><% end %></dd></div>
   <div class="kv"><dt>Memory repo</dt>
     <dd><% if status.memory_repo.present? %><%= pluralize(status.memory_repo.paths.size, "file") %>, changed <%= as_of(status.memory_repo.last_modified_at) %><% else %>missing<% end %><% if status.memory_run %> · pull <%= status.memory_run.status %> <%= as_of(status.memory_run.finished_at || status.memory_run.started_at) %><% if status.memory_run.error %> <small><%= status.memory_run.error.truncate(80) %></small><% end %><% end %></dd></div>

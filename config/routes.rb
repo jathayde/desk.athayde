@@ -6,6 +6,10 @@ Rails.application.routes.draw do
   resource :system, only: :show, controller: "system" do
     post :halt
     post :resume
+    post :shadow_mode
+  end
+  resources :risk_rules, only: %i[ index update ] do
+    get :preview, on: :member
   end
   resources :proposals, only: %i[ index show new create ] do
     scope module: :proposals do

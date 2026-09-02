@@ -8,6 +8,6 @@ class Playwright::ScenariosController < ApplicationController
   def show
     Playwright::Scenario.load!(params[:name])
     start_new_session_for(User.find_by!(email_address: "john@athayde.com"))
-    redirect_to params[:then].presence_in(%w[ /trades /system /proposals ]) || root_path
+    redirect_to params[:then].presence_in(%w[ /trades /system /proposals /risk_rules ]) || root_path
   end
 end

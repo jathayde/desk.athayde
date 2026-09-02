@@ -1,6 +1,8 @@
 class SystemController < ApplicationController
   RESUME_CONFIRMATION = "resume".freeze
 
+  before_action :require_approver, only: :shadow_mode
+
   def show
     @status = SystemStatus.new
   end
@@ -12,6 +14,16 @@ class SystemController < ApplicationController
     SystemSettings.instance.update!(manual_halt: true, manual_halt_reason: reason, manual_halt_at: Time.current)
     AuditEvent.log("manual_halt_set", actor: :human, user: Current.user, reason: reason)
     redirect_to system_path, notice: "Halted."
+  end
+
+  def shadow_mode
+    settings = SystemSettings.instance
+    shadow = params.fetch(:shadow, {})
+    return redirect_to system_path, alert: "A reason is required." if shadow[:reason].to_s.strip.blank?
+    settings.toggle_shadow_mode!(user: Current.user, reason: shadow[:reason].strip, confirmation: shadow[:confirmation])
+    redirect_to system_path, notice: settings.shadow_mode? ? "Shadow mode is on." : "Shadow mode is off: the next approve places a real order."
+  rescue SystemSettings::Unconfirmed => e
+    redirect_to system_path, alert: e.message
   end
 
   def resume

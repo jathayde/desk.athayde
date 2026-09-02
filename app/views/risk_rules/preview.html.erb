@@ -1,0 +1,11 @@
+<% content_for :title, "Preview #{@preview.rule.rule_type.humanize}" %>
+<h1>Preview: <%= @preview.rule.rule_type.humanize %> v<%= @preview.candidate.version %></h1>
+<p class="muted"><%= detail_summary(@preview.candidate.params) %><% if @preview.rule.mode_choosable? %> · mode <%= @preview.candidate.mode %><% end %>. What the proposals waiting today would say. Nothing is written.</p>
+<dl class="kv-list">
+  <% @preview.rows.each do |row| %>
+    <div class="kv"><dt><%= link_to "#{row.proposal.side.upcase} #{quantity(row.proposal.quantity)} #{row.proposal.instrument.symbol}", proposal_path(row.proposal) %></dt>
+      <dd><%= row.before ? outcome_label(row.before) : "not judged" %> → <b class="<%= outcome_class(row.after.outcome) %>"><%= outcome_label(row.after.outcome) %></b><% if row.after.detail.present? %> <small><%= detail_summary(row.after.detail, limit: 120) %></small><% end %></dd></div>
+  <% end %>
+  <% if @preview.rows.empty? %><div class="kv"><dt>Proposals</dt><dd>none waiting under this rule; the preview has nothing to judge</dd></div><% end %>
+</dl>
+<p><%= link_to "Back to rules", risk_rules_path %></p>

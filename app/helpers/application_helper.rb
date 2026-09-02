@@ -47,7 +47,9 @@ module ApplicationHelper
     return "submission unknown, ambiguous" if proposal.ambiguous_orders.any?
     PROPOSAL_STATUS_LABELS.fetch(proposal.status)
   end
-  def outcome_label(outcome) = OUTCOME_LABELS.fetch(outcome)
+  def outcome_label(outcome) = OUTCOME_LABELS.fetch(outcome.to_s)
+  def outcome_class(outcome) = { "block" => "warn", "caution" => "warn" }[outcome.to_s]
+  def detail_summary(detail, limit: 160) = detail.map { |key, value| "#{key} #{value.is_a?(Hash) || value.is_a?(Array) ? value.to_json : value}" }.join(" · ").truncate(limit)
   def review_reason_label(trade) = REVIEW_REASON_LABELS.fetch(trade.review_reason.to_s, "Needs a look")
   def excluded_summary(by_reason) = by_reason.map { |reason, n| "#{n} #{protection_label(reason)}" }.to_sentence
 
