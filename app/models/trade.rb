@@ -16,16 +16,36 @@ class Trade < ApplicationRecord
 
   normalizes :post_mortem, with: ->(text) { text.presence }
 
-  scope :needing_review, -> { where(needs_review: true) }
+  scope :journaled, -> { joins(:account).merge(Account.trading) }
+  scope :needing_review, -> { journaled.where(needs_review: true) }
+  # Most serious reason first, never-skipped before skipped, oldest first.
+  scope :review_queue, -> { needing_review.in_order_of(:review_reason, REVIEW_REASONS).order(Arel.sql("review_deferred_at ASC NULLS FIRST"), :created_at) }
   scope :missing_post_mortem, -> { closed.where(post_mortem: nil, needs_review: false, excluded_from_stats: false) }
   # bootstrapped means "has a plug leg now": a trade whose entry the journal never saw stays out of the stats.
   scope :eligible_for_stats, -> { closed.where(needs_review: false, excluded_from_stats: false, bootstrapped: false).where("initial_risk > 0") }
 
-  def realized_r_available? = initial_risk.present? && initial_risk.positive?
+  validate :stop_below_entry, on: :review
+  validates :setup, presence: { message: "is required: pick one or name a new one" }, on: :review
 
+  # The journal browser's views of the journaled trades, by name.
+  def self.listing(name)
+    case name.to_s
+    when "closed" then journaled.closed.order(closed_at: :desc, id: :desc)
+    when "needs_review" then review_queue
+    when "missing_post_mortem" then journaled.missing_post_mortem.order(closed_at: :desc, id: :desc)
+    else journaled.open.order(opened_at: :desc, id: :desc)
+    end
+  end
+
+  def realized_r_available? = initial_risk.present? && initial_risk.positive?
+  def reviewed? = journal_completed_at.present? || excluded_from_stats?
+
+  # A finished review is never undone by the journal; only a more serious reason can reopen it, and a lesser
+  # reason never outranks the one already set.
   def flag!(reason)
     reason = reason.to_s
     raise ArgumentError, "unknown review reason #{reason}" unless REVIEW_REASONS.include?(reason)
+    return if reviewed? && REVIEW_REASONS.index(reason) >= REVIEW_REASONS.index("bootstrapped")
     return if needs_review? && review_reason.present? && REVIEW_REASONS.index(review_reason) <= REVIEW_REASONS.index(reason)
     update!(needs_review: true, review_reason: reason)
   end
@@ -52,7 +72,7 @@ class Trade < ApplicationRecord
       plug&.destroy!
       update!(bootstrapped: false) if bootstrapped?
       clear_flag!(:bootstrapped)
-      flag!(:missing_setup) if setup.nil? && order_proposal.nil?
+      flag!(:missing_setup) if setup.nil? && order_proposal.nil? && !reviewed?
     end
     recompute!
   end
@@ -91,17 +111,26 @@ class Trade < ApplicationRecord
   end
 
   # The review form: the stop and setup are known now. A closed legacy holding takes setup and thesis only;
-  # a stop typed in after the fact would give it an R it never had.
-  def review!(setup:, planned_stop:, thesis:, user:)
+  # a stop typed in after the fact would give it an R it never had. Returns false with errors when the
+  # rules are not met, so every caller (form or tool) gets the same answer.
+  def review(setup:, planned_stop:, thesis:, user:)
     previous_setup = self.setup
-    attributes = { setup: setup, thesis: thesis, needs_review: false, review_reason: nil, journal_completed_at: Time.current }
-    attributes[:planned_stop] = planned_stop unless closed? && bootstrapped?
-    update!(attributes)
+    assign_attributes(setup: setup, thesis: thesis, needs_review: false, review_reason: nil, review_deferred_at: nil, journal_completed_at: Time.current)
+    self.planned_stop = planned_stop unless closed? && bootstrapped?
+    return false unless save(context: :review)
     recompute!
-    AuditEvent.log("trade_reviewed", actor: :human, user: user, subject: self, data: { setup: setup&.name, planned_stop: attributes[:planned_stop]&.to_s })
+    AuditEvent.log("trade_reviewed", actor: :human, user: user, subject: self, data: { setup: setup&.name, planned_stop: self.planned_stop&.to_s })
     recompute_setup_stats(previous_setup, setup)
+    true
+  end
+
+  def review!(**)
+    review(**) or raise ActiveRecord::RecordInvalid, self
     self
   end
+
+  # Skip: later, not never.
+  def defer_review! = update!(review_deferred_at: Time.current)
 
   def exclude!(user:)
     update!(excluded_from_stats: true, needs_review: false, review_reason: nil)
@@ -179,5 +208,10 @@ class Trade < ApplicationRecord
 
     def recompute_setup_stats(*setups)
       setups.compact.uniq.each { |s| Journal::RecomputeSetupStatsJob.perform_later(s) }
+    end
+
+    def stop_below_entry
+      return if planned_stop.blank? || avg_entry.blank? || planned_stop < avg_entry
+      errors.add(:planned_stop, "at or above the average entry gives no risk to measure; leave it blank or set it below #{avg_entry.round(2)}")
     end
 end

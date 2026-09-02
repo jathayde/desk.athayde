@@ -1,0 +1,24 @@
+<% case dashboard.banner
+   when :halted %>
+  <div class="banner halted">
+    <b>Halted</b><% if dashboard.halted_by %> by <%= dashboard.halted_by.user&.name %>, <%= l(dashboard.halted_by.created_at, format: :weekday_time) %><% end %>: <%= dashboard.halt_reason %>.
+    Clear it on the <%= link_to "System page", system_path %>.
+  </div>
+<% when :revoked %>
+  <div class="banner expired"><b>Schwab rejected the connection.</b> <%= dashboard.token.last_refresh_error %> Sync is paused. <%= link_to "Re-authenticate with Schwab", schwab_authorize_path, class: "button" %></div>
+<% when :expired %>
+  <div class="banner expired"><b>Token expired.</b> Sync paused<% if dashboard.sync_paused_since %> since <%= l(dashboard.sync_paused_since, format: :weekday_time) %><% end %>. Every number below carries its age. <%= link_to "Re-authenticate with Schwab", schwab_authorize_path, class: "button" %></div>
+<% when :expiring %>
+  <div class="banner expiring"><b>Token expires <%= l(dashboard.token.refresh_expires_at, format: :weekday_time) %>.</b> <%= link_to "Re-authenticate now", schwab_authorize_path %><% if dashboard.token.covered_by_sunday_email? %>, or wait for Sunday's email<% end %>.</div>
+<% end %>
+<% dashboard.secondary_statuses.each do |status| %>
+  <p class="status-line">
+    <% case status
+       when :revoked, :expired, :missing %>Schwab connection is down; <%= link_to "re-authenticate", schwab_authorize_path %>.
+    <% when :expiring %>Token expires <%= l(dashboard.token.refresh_expires_at, format: :weekday_time) %>; <%= link_to "re-authenticate", schwab_authorize_path %>.
+    <% when :sync_paused %>Sync paused: <%= dashboard.sync_paused_reason %>.
+    <% when :sync_failed %>Last <%= dashboard.sync_failure.feed %> sync failed: <%= dashboard.sync_failure.error.to_s.truncate(100) %>.
+    <% when :calendar_fallback %>Market calendar unavailable from Schwab today; assuming a normal session.
+    <% end %>
+  </p>
+<% end %>

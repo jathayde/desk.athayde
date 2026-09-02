@@ -1,0 +1,46 @@
+<section class="hero">
+  <div class="stat">
+    <span class="lbl">Equity</span>
+    <span class="num"><%= money(dashboard.equity) %></span>
+    <span class="sub">
+      <% if dashboard.day_change %><%= signed_money(dashboard.day_change) %> (<%= signed_percent(dashboard.day_change_ratio) %>) <%= dashboard.day_change_label %><% else %><%= dashboard.day_change_label %><% end %>
+      · <%= as_of(dashboard.balance.as_of, stale: dashboard.balance_stale?) %>
+    </span>
+  </div>
+  <div class="stat">
+    <span class="lbl">Open risk</span>
+    <span class="num"><%= percent(dashboard.open_risk_ratio) %></span>
+    <span class="sub"><%= money(dashboard.open_risk) %> on protected positions<% if dashboard.excluded_by_reason.any? %>; excludes <%= excluded_summary(dashboard.excluded_by_reason) %><% end %></span>
+  </div>
+</section>
+
+<dl class="kv-list">
+  <div class="kv"><dt>Settled / unsettled cash</dt><dd><%= money(dashboard.balance.settled_cash) %> / <%= money(dashboard.balance.unsettled_cash) %></dd></div>
+  <% if dashboard.review_count.positive? %>
+    <div class="kv callout"><dt><%= pluralize(dashboard.review_count, "trade") %> <%= dashboard.review_count == 1 ? "needs" : "need" %> review</dt><dd><%= link_to "Review now", trades_path(filter: "needs_review") %></dd></div>
+  <% end %>
+  <div class="kv muted"><dt>Proposals</dt><dd>Phase 2</dd></div>
+</dl>
+
+<section>
+  <h2 class="sec">Positions</h2>
+  <% if dashboard.rows.empty? %>
+    <p class="empty">No open positions. All cash.</p>
+  <% else %>
+    <ul class="positions">
+      <% dashboard.rows.each do |row| %>
+        <% position = row.position %>
+        <li class="pos <%= row.protection == :protected ? "protected" : "at-risk" %>">
+          <div class="top">
+            <span><%= row.trade ? link_to(position.instrument.symbol, trade_path(row.trade)) : position.instrument.symbol %> · <%= quantity(position.quantity) %></span>
+            <span class="primary"><% if position.distance_to_stop %><%= percent(position.distance_to_stop) %> to stop<% else %><%= protection_label(row.protection) %><% end %></span>
+          </div>
+          <div class="sub">
+            <span>in @ <%= money(position.average_price) %><% if row.protection != :protected && position.distance_to_stop %> · <em class="warn"><%= protection_label(row.protection) %></em><% end %></span>
+            <span><%= signed_money(position.unrealized_pnl) %> · <%= as_of(row.as_of, stale: row.stale) %></span>
+          </div>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+</section>

@@ -1,5 +1,17 @@
 <% content_for :title, "Dashboard" %>
-<section class="empty-state">
-  <h1>Nothing synced yet</h1>
-  <p>Connect Schwab to start syncing positions, balances, orders, and transactions.</p>
-</section>
+<% dashboard = @dashboard %>
+
+<%= render "dashboard/banner", dashboard: dashboard %>
+
+<% case dashboard.state
+   when :not_connected %>
+  <%= render "empty_state", heading: "Connect Schwab", body: "Nothing is synced until Schwab is connected. The connection lasts seven days; the Sunday email will remind you to renew it.", cta: "Connect Schwab", path: schwab_authorize_path %>
+<% when :waiting_for_accounts %>
+  <%= render "empty_state", heading: "Discovering accounts", body: "Schwab is connected. Accounts arrive on the first sync, within a few minutes.", cta: "Sync status", path: system_path %>
+<% when :needs_setup %>
+  <%= render "empty_state", heading: "Set up the trading account", body: "Accounts have synced but none is enabled for trading yet. Classify the taxable account and enable it on the System page; nothing journals until then.", cta: "Go to System", path: system_path %>
+<% when :waiting_first_sync %>
+  <%= render "empty_state", heading: "Waiting for the first sync", body: "#{dashboard.account.label} is enabled. Positions and balances arrive on the next tick, within a few minutes.", cta: "Sync status", path: system_path %>
+<% else %>
+  <%= render "dashboard/glance", dashboard: dashboard %>
+<% end %>

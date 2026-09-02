@@ -12,6 +12,7 @@ RSpec.describe Schwab::AccountSummary do
     expect(second.instrument.symbol).to eq("DEF")
     expect(sweep.instrument.cusip).to be_nil
     expect(sweep.quantity).to eq(BigDecimal("2110.5"))
+    expect(sweep).to be_cash_equivalent
   end
 
   it "maps balances and derives settled cash conservatively" do

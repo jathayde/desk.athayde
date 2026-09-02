@@ -1,0 +1,36 @@
+<% content_for :title, "#{@trade.instrument.symbol} trade" %>
+<h1>Trade #<%= @trade.id %> · <%= @trade.instrument.symbol %> <small><%= @trade.status %><% if @trade.closed? && @trade.realized_r %> · <%= r_multiple(@trade) %><% end %></small></h1>
+<% if @trade.needs_review? %><p class="callout"><%= review_reason_label(@trade) %>. <%= link_to "Review this trade", trade_review_path(@trade) %></p><% end %>
+
+<dl class="kv-list">
+  <div class="kv"><dt>Setup</dt><dd><%= @trade.setup&.name || "none" %></dd></div>
+  <div class="kv"><dt>Planned / actual stop</dt><dd><%= money(@trade.current_planned_stop) %> / <% if @trade.closed? %><%= @trade.stopped_out? ? money(@trade.avg_exit) : "not hit" %><% else %><%= money(@position&.stop_price) %><% end %></dd></div>
+  <div class="kv"><dt>Entry → exit</dt><dd><%= money(@trade.avg_entry) %> → <%= @trade.avg_exit ? money(@trade.avg_exit) : "open" %></dd></div>
+  <div class="kv"><dt>Realized P&amp;L</dt><dd><%= signed_money(@trade.realized_pnl) %></dd></div>
+  <div class="kv"><dt>Initial risk</dt><dd><%= money(@trade.initial_risk) %></dd></div>
+</dl>
+<% if @trade.thesis.present? %><p class="thesis"><%= @trade.thesis %></p><% end %>
+
+<section>
+  <h2 class="sec">Legs</h2>
+  <ul class="legs">
+    <% @trade.ordered_legs.each do |leg| %>
+      <li class="kv"><span><%= leg.kind %><%= " (plug)" if leg.plug? %> <%= quantity(leg.quantity) %><% if leg.ratio %> ×<%= quantity(leg.ratio) %><% end %></span><b><%= leg.price ? money(leg.price) : signed_money(leg.cash_amount) %> · <%= leg.executed_at ? l(leg.executed_at, format: :weekday_time) : "unknown" %></b></li>
+    <% end %>
+  </ul>
+</section>
+
+<% if @trade.closed? %>
+  <section class="post-mortem">
+    <h2 class="sec">Post-mortem</h2>
+    <% if @trade.post_mortem %><p class="thesis"><%= @trade.post_mortem %> · <%= @trade.followed_setup ? "followed setup" : "improvised" %></p><% end %>
+    <%= form_with url: trade_path(@trade), method: :patch do |f| %>
+      <%= f.text_field :post_mortem, value: @trade.post_mortem, placeholder: "What actually happened…", required: true %>
+      <div class="choice">
+        <label><%= f.radio_button :followed_setup, 1, checked: @trade.followed_setup == true %> Followed setup</label>
+        <label><%= f.radio_button :followed_setup, 0, checked: @trade.followed_setup == false %> Improvised</label>
+      </div>
+      <%= f.submit "Save" %>
+    <% end %>
+  </section>
+<% end %>

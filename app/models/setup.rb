@@ -6,6 +6,12 @@ class Setup < ApplicationRecord
 
   scope :active, -> { where(active: true) }
 
+  def self.named(name)
+    name = name.to_s.strip
+    return nil if name.blank?
+    where("lower(name) = ?", name.downcase).first || create!(name: name)
+  end
+
   # Rolling stats over closed, reviewed, included trades with a positive initial risk. A win is R above zero.
   def recompute_stats!
     realized = trades.eligible_for_stats.pluck(:realized_r).compact

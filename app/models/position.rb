@@ -19,8 +19,19 @@ class Position < ApplicationRecord
   end
 
   # Why this position is or is not protected. Only :protected counts; every other state is unknown or
-  # insufficient risk, and the dashboard says which.
+  # insufficient risk, and the dashboard says which. Memoized: it costs a query and views ask repeatedly.
   def protection
+    @protection = nil if @protection_for != working_stop_order_id
+    @protection_for = working_stop_order_id
+    @protection ||= compute_protection
+  end
+
+  def reload(...)
+    @protection = nil
+    super
+  end
+
+  def compute_protection
     return :unprotected unless working_stop_order&.working?
     return :awaiting if !working_stop_order.live?
     return :trailing_unknown if stop_price.blank?
@@ -32,11 +43,14 @@ class Position < ApplicationRecord
   def protected? = protection == :protected
   def unprotected? = !protected?
 
-  # Signed fraction of price between here and the stop; negative once price has gapped through it.
+  # Signed fraction of price between here and the stop; negative once price has gapped through it. Shown
+  # whenever a stop price exists, since a partially covered stop is still the number to act on.
   def distance_to_stop
-    return unless protected? && last_price.present? && last_price.nonzero?
+    return unless working_stop_order&.working? && stop_price.present? && last_price.present? && last_price.nonzero?
     (last_price - stop_price) / last_price
   end
+
+  def unrealized_pnl = market_value && cost_basis ? market_value - cost_basis : nil
 
   # Dollars still at risk if the stop fills. Unknown (nil) without a usable stop, never zero for that reason,
   # and never negative: a position already through its stop has nothing left to protect.

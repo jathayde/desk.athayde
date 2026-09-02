@@ -21,7 +21,7 @@ RSpec.describe "Sync feeds" do
 
     it "upserts positions and instruments, records a balance, and derives last price" do
       described_class.perform_now(account)
-      expect(account.positions.count).to eq(3)
+      expect(account.positions.count).to eq(2) # the money-market sweep is cash, not a holding
       xyz = account.positions.joins(:instrument).find_by(instruments: { symbol: "XYZ" })
       expect(xyz).to have_attributes(quantity: 40, average_price: BigDecimal("51.18"), last_price: BigDecimal("53"))
       expect(xyz.instrument.cusip).to eq("037833100")
@@ -50,9 +50,9 @@ RSpec.describe "Sync feeds" do
     end
 
     it "ignores zero-quantity positions and records cost basis" do
-      fake.enqueue(:account) { raw = fake.account(hash); raw["securitiesAccount"]["positions"][2]["longQuantity"] = 0; raw }
+      fake.enqueue(:account) { raw = fake.account(hash); raw["securitiesAccount"]["positions"][1]["longQuantity"] = 0; raw }
       described_class.perform_now(account)
-      expect(account.positions.count).to eq(2)
+      expect(account.positions.count).to eq(1)
       expect(account.positions.joins(:instrument).find_by!(instruments: { symbol: "XYZ" }).cost_basis).to eq(BigDecimal("2047.2"))
     end
 

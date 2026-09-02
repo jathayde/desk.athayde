@@ -1,0 +1,19 @@
+<% content_for :title, "Journal" %>
+<h1>Journal</h1>
+<nav class="filters">
+  <% TradesController::FILTERS.each do |key, (label, _)| %>
+    <%= link_to (key == "needs_review" ? "#{label} (#{@review_count})" : label), trades_path(filter: key), class: [ "chip", ("active" if @filter == key) ] %>
+  <% end %>
+</nav>
+<% if @trades.empty? %>
+  <p class="empty"><%= TradesController::FILTERS.fetch(@filter).last %></p>
+<% else %>
+  <ul class="trades">
+    <% @trades.each do |trade| %>
+      <li class="kv">
+        <span><%= link_to trade.instrument.symbol, (trade.needs_review? ? trade_review_path(trade) : trade_path(trade)) %> · <%= quantity(trade.peak_quantity) %><% if trade.setup %> · <%= trade.setup.name %><% end %></span>
+        <b><% if trade.closed? %><%= r_multiple(trade) %><% else %>open<% end %><% if trade.needs_review? %> · <em class="warn"><%= review_reason_label(trade) %></em><% end %></b>
+      </li>
+    <% end %>
+  </ul>
+<% end %>

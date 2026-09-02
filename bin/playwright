@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Boots a test-environment server on the fake Schwab adapter, runs the Playwright suite, and shuts it down.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export RAILS_ENV=test SCHWAB_ADAPTER=fake PORT=3100 TEST_DATABASE=athayde_desk_playwright
+bin/rails db:prepare >/dev/null
+bin/rails server -p "$PORT" -d -P tmp/pids/playwright.pid >/dev/null
+trap 'kill "$(cat tmp/pids/playwright.pid)" 2>/dev/null || true' EXIT
+for _ in $(seq 1 60); do curl -fs "http://127.0.0.1:$PORT/up" >/dev/null 2>&1 && break; sleep 0.5; done
+npx playwright test "$@"

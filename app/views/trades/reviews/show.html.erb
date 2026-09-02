@@ -1,0 +1,29 @@
+<% content_for :title, "Review #{@trade.instrument.symbol}" %>
+<h1>Is this part of a setup? <small><%= pluralize(@queue.count, "more") %> to review</small></h1>
+<p class="callout"><%= review_reason_label(@trade) %>. <%= @trade.instrument.symbol %> · <%= quantity(@trade.quantity) %> held · avg entry <%= money(@trade.avg_entry) %><% if @position %> · <%= @position.protection == :protected ? "stop #{money(@position.stop_price)}" : protection_label(@position.protection) %><% end %>. Saving records the setup and clears this from the queue.</p>
+
+<%= form_with url: trade_review_path(@trade), method: :patch do |f| %>
+  <%= f.label :setup_id, "Setup" %>
+  <%= f.select :setup_id, options_from_collection_for_select(@setups, :id, :name, @trade.setup_id), include_blank: "Pick a setup" %>
+  <%= f.text_field :new_setup, placeholder: "or create a new setup by name" %>
+  <% if @trade.closed? && @trade.bootstrapped? %>
+    <p class="muted">Closed legacy holding: setup and thesis only, R stays blank.</p>
+  <% else %>
+    <%= f.label :planned_stop, "Planned stop" %>
+    <%= f.text_field :planned_stop, value: @trade.planned_stop, inputmode: "decimal" %>
+    <% if @trade.bootstrapped? %>
+      <p class="muted">Legacy holding: the stop is recorded, R stays blank until the entry is known.</p>
+    <% else %>
+      <p class="muted">Without a stop, R stays blank. A stop at or above the average entry gives no risk to measure.</p>
+    <% end %>
+  <% end %>
+  <%= f.label :thesis, "Thesis" %>
+  <%= f.text_area :thesis, value: @trade.thesis, rows: 3 %>
+  <%= f.submit "Save" %>
+<% end %>
+<div class="choice">
+  <%= button_to "Skip for now", trade_deferral_path(@trade), method: :post, class: "button secondary" %>
+</div>
+<hr>
+<p class="muted">Not a setup trade? It stays in the journal but out of the stats. Cannot be undone in Phase 1.</p>
+<%= button_to "Not a setup trade", trade_exclusion_path(@trade), method: :post, class: "button secondary" %>

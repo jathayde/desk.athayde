@@ -2,6 +2,7 @@
 # land as a status; anything else is recorded as failed and re-raised so the queue sees it too.
 class SyncRun < ApplicationRecord
   STALE_AFTER = 10.minutes # a running row older than this is a crashed or restarted worker, not a run
+  ACCOUNT_FEEDS = %i[ positions orders activities ].freeze
 
   belongs_to :account, optional: true
 

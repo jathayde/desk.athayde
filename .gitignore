@@ -40,3 +40,6 @@
 # Ignore key files for decrypting credentials and more.
 /config/credentials/*.key
 
+node_modules/
+/test-results/
+/playwright-report/

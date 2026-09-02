@@ -1,0 +1,82 @@
+<% content_for :title, "System" %>
+<% status = @status %>
+<h1>System</h1>
+
+<dl class="kv-list">
+  <h2 class="sec">Schwab connection</h2>
+  <% if status.token %>
+    <div class="kv"><dt>Status</dt><dd class="status-<%= status.token_status %>"><%= status.token_status.to_s.humanize %></dd></div>
+    <div class="kv"><dt>Token age</dt><dd><%= distance_of_time_in_words(status.token.issued_at, Time.current) %> of 7 days</dd></div>
+    <div class="kv"><dt>Expires</dt><dd><%= l(status.token.refresh_expires_at, format: :connection) %></dd></div>
+    <div class="kv"><dt>Next Sunday email</dt><dd><%= l(status.next_sunday_email, format: :connection) %></dd></div>
+    <% if status.token_dies_before_sunday? %>
+      <p class="warn">The token dies before Sunday's email. <%= link_to "Re-authenticate now", schwab_authorize_path %>.</p>
+    <% end %>
+    <% if status.token.last_refresh_error %><div class="kv"><dt>Last refresh error</dt><dd><%= status.token.last_refresh_error %></dd></div><% end %>
+  <% else %>
+    <p>Not connected. <%= link_to "Connect Schwab", schwab_authorize_path, class: "button" %></p>
+  <% end %>
+  <div class="kv"><dt>Sync</dt><dd><% if status.settings.sync_paused_reason %>paused: <%= status.settings.sync_paused_reason %><% if status.sync_paused_since %> since <%= l(status.sync_paused_since, format: :weekday_time) %><% end %><% else %>running<% end %></dd></div>
+  <div class="kv"><dt>Shadow mode</dt><dd><%= status.settings.shadow_mode ? "on" : "off" %></dd></div>
+  <div class="kv"><dt>API spend this month</dt><dd>no runs yet</dd></div>
+  <div class="kv"><dt>Memory repo</dt><dd>never</dd></div>
+</dl>
+
+<section>
+  <h2 class="sec">Accounts</h2>
+  <% status.accounts.each do |row| %>
+    <% account = row.account %>
+    <%= form_with url: account_path(account), method: :patch, class: "account-form" do |f| %>
+      <div class="kv"><span><%= account.label %> <small>…<%= account.schwab_hash.last(4) %></small></span>
+        <b><%= money(row.equity) %> · <%= row.symbols.join(", ").presence || "no positions" %></b></div>
+      <div class="fields">
+        <%= f.text_field :nickname, value: account.nickname, placeholder: "Nickname" %>
+        <%= f.select :account_type, options_for_select([ [ "Unclassified", "" ], [ "Taxable", "taxable" ], [ "IRA", "ira" ] ], account.account_type) %>
+        <label><%= f.check_box :trading_enabled, checked: account.trading_enabled? %> Journal this account (taxable only)</label>
+        <%= f.submit "Save" %>
+      </div>
+      <% if account.needs_setup? %><p class="warn">Needs setup: classify this account before anything journals.</p><% end %>
+    <% end %>
+  <% end %>
+</section>
+
+<section>
+  <h2 class="sec">Feeds</h2>
+  <dl class="kv-list">
+    <% status.feed_rows.each do |row| %>
+      <div class="kv"><dt><%= row.account.label %> · <%= row.feed %></dt>
+        <dd><% if row.latest %><%= row.latest.status %> <%= as_of(row.latest.finished_at || row.latest.started_at) %><% if row.latest.status != "succeeded" %> · last success <%= as_of(row.last_success) %><% end %><% if row.latest.error %> <small><%= row.latest.error.truncate(80) %></small><% end %><% else %>never<% end %></dd></div>
+    <% end %>
+  </dl>
+  <% status.gaps.each do |run| %>
+    <p class="warn"><%= run.account&.label %> <%= run.feed %>: Schwab cannot return history before <%= l(run.gap_from, format: :connection) %>.</p>
+  <% end %>
+</section>
+
+<dl class="kv-list">
+  <h2 class="sec">Failures, 7 days</h2>
+  <div class="kv"><dt>Failed sync runs</dt><dd><%= status.failed_run_count %></dd></div>
+  <div class="kv"><dt>Failed jobs</dt><dd><%= status.failed_job_count %></dd></div>
+  <% status.failed_runs_sample.each do |run| %>
+    <p class="muted"><%= l(run.started_at, format: :weekday_time) %> <%= run.feed %>: <%= run.error.to_s.truncate(120) %></p>
+  <% end %>
+</dl>
+
+<section class="halt">
+  <h2 class="sec">Halt</h2>
+  <% if status.settings.manual_halt? %>
+    <p class="warn">Halted<% if status.halted_by %> by <%= status.halted_by.user&.name %>, <%= l(status.halted_by.created_at, format: :weekday_time) %><% end %>: <%= status.settings.manual_halt_reason %></p>
+    <%= form_with url: resume_system_path, method: :post do |f| %>
+      <%= f.label :confirmation, "Type resume to clear the halt" %>
+      <%= f.text_field :confirmation, autocomplete: "off" %>
+      <%= f.submit "Resume" %>
+    <% end %>
+  <% else %>
+    <p>Halting stops proposal creation and submission once Phase 2 ships; in Phase 1 it marks the dashboard.</p>
+    <%= form_with url: halt_system_path, method: :post do |f| %>
+      <%= f.label :reason, "Reason" %>
+      <%= f.text_field :reason, required: true %>
+      <%= f.submit "Halt", class: "danger" %>
+    <% end %>
+  <% end %>
+</section>

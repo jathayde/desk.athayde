@@ -3,8 +3,6 @@ module Schwab
   # token will not outlive the coming Sunday email, and once per token when it enters the 24-hour window
   # without the Sunday email covering it.
   class TokenHealthJob < ApplicationJob
-    SUNDAY_EMAIL_HOUR = 18
-
     def perform
       token = SchwabToken.current
       reason = nag_reason(token)
@@ -15,34 +13,23 @@ module Schwab
 
     private
       def nag_reason(token)
-        return :missing if token.nil?
-        return :revoked if token.revoked?
-        return :expired if token.refresh_expired?
-        return :missed_sunday if missed_sunday?(token)
-        return :expiring if token.refresh_expiring_soon? && !covered_by_sunday_email?(token) && !already_warned?(token)
-        nil
+        case SchwabToken.status(token)
+        when :missing, :revoked, :expired then SchwabToken.status(token)
+        else
+          return :missed_sunday if missed_sunday?(token)
+          :expiring if token.refresh_expiring_soon? && !covered_by_sunday_email?(token) && !already_warned?(token)
+        end
       end
 
       # A 168-hour token issued before the most recent Sunday email cannot reach the next one.
       def missed_sunday?(token)
         now = Time.current
         return false unless now.monday? || now.tuesday?
-        token.issued_at < sunday_email(now.beginning_of_week(:sunday))
+        token.issued_at < SchwabToken.most_recent_sunday_email(now)
       end
 
       # The weekly ritual already covers a token that lives past the coming Sunday email.
-      def covered_by_sunday_email?(token)
-        token.refresh_expires_at >= coming_sunday_email
-      end
-
-      def coming_sunday_email
-        now = Time.current
-        today = sunday_email(now.beginning_of_day)
-        return today if now.sunday? && now < today
-        sunday_email(now.next_occurring(:sunday).beginning_of_day)
-      end
-
-      def sunday_email(sunday) = sunday.change(hour: SUNDAY_EMAIL_HOUR)
+      def covered_by_sunday_email?(token) = token.covered_by_sunday_email?
 
       def already_warned?(token)
         AuditEvent.where(kind: "token_nag_sent", subject: token, reason: "expiring").exists?

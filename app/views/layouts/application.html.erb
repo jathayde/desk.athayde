@@ -12,7 +12,7 @@
 
     <%= tag.link rel: "manifest", href: pwa_manifest_path(format: :json) %>
     <link rel="icon" href="<%= asset_path "brand/crest.svg" %>" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="<%= asset_path "brand/crest.svg" %>">
+    <link rel="apple-touch-icon" href="<%= asset_path "brand/crest-180.png" %>">
 
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
@@ -22,10 +22,15 @@
     <header class="shell-header">
       <%= link_to root_path, class: "brand", "aria-label": "Athayde Desk home" do %>
         <%= image_tag "brand/crest.svg", alt: "", class: "brand-crest" %>
-        <span class="brand-name">Athayde Desk</span>
+        <span class="brand-name">Desk</span>
       <% end %>
       <% if authenticated? %>
-        <%= button_to "Sign out", session_path, method: :delete, class: "link-button" %>
+        <nav class="shell-nav">
+          <%= nav_link "Dashboard", root_path %>
+          <%= nav_link "Journal", trades_path %>
+          <%= nav_link "System", system_path %>
+          <%= button_to "Sign out", session_path, method: :delete, class: "link-button" %>
+        </nav>
       <% end %>
     </header>
 

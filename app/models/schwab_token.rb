@@ -6,6 +6,7 @@ class SchwabToken < ApplicationRecord
   REFRESH_DEBOUNCE = 1.minute
   REFRESH_AHEAD = 5.minutes
   EXPIRING_SOON = 24.hours
+  SUNDAY_EMAIL_HOUR = 18
   PAUSE_REASON = "Schwab refresh token rejected; re-authenticate"
 
   encrypts :access_token, :refresh_token
@@ -13,6 +14,24 @@ class SchwabToken < ApplicationRecord
   def self.current = order(issued_at: :desc, id: :desc).first
 
   def self.usable? = current&.usable? || false
+
+  # The coming Sunday ritual email: today's if it is Sunday before the hour, else next Sunday's.
+  def self.next_sunday_email(now = Time.current)
+    today = now.beginning_of_day.change(hour: SUNDAY_EMAIL_HOUR)
+    return today if now.sunday? && now < today
+    now.next_occurring(:sunday).beginning_of_day.change(hour: SUNDAY_EMAIL_HOUR)
+  end
+
+  def self.most_recent_sunday_email(now = Time.current) = now.beginning_of_week(:sunday).change(hour: SUNDAY_EMAIL_HOUR)
+
+  # The one taxonomy every screen and email uses.
+  def self.status(token = current)
+    return :missing if token.nil?
+    return :revoked if token.revoked?
+    return :expired if token.refresh_expired?
+    return :expiring if token.refresh_expiring_soon?
+    :healthy
+  end
 
   # A successful code exchange. The new row and the cleared pause commit together (the settings row lock
   # serializes this against a stale refresh trying to pause), then sync catches up.
@@ -35,6 +54,7 @@ class SchwabToken < ApplicationRecord
   def access_expired? = access_expires_at <= Time.current
   def refresh_expiring_soon? = refresh_expires_at <= EXPIRING_SOON.from_now
   def usable? = !revoked? && !refresh_expired?
+  def covered_by_sunday_email? = refresh_expires_at >= self.class.next_sunday_email
 
   # Refreshes the access token under the row lock. Reloads first, so a stale row does nothing and two
   # workers holding the same 401 refresh once. Must run outside any caller transaction: the failure record

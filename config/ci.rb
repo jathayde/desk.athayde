@@ -6,4 +6,5 @@ CI.run do
   step "Security: Brakeman code analysis", "bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error" if success?
   step "Security: Importmap vulnerability audit", "bin/importmap audit" if success?
   step "Security: Gem audit", "bin/bundler-audit check --update" if success?
+  step "UI: Playwright", "bin/playwright" if success?
 end

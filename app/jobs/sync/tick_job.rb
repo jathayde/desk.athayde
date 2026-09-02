@@ -12,10 +12,8 @@ module Sync
 
       in_session = MarketDay.session_open?
       Account.find_each do |account|
-        intraday = in_session && account.trading_enabled?
-        INTRADAY.each do |feed, interval|
-          every = intraday ? interval : OFF_HOURS
-          next unless SyncRun.due?(feed, account, every: every)
+        INTRADAY.each_key do |feed|
+          next unless SyncRun.due?(feed, account, every: account.sync_interval(feed, in_session: in_session))
           job_for(feed).perform_later(account)
         end
         Snapshots::DailyJob.perform_later(account, today) if snapshot_due?(account, today)

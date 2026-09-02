@@ -1391,7 +1391,8 @@ CREATE TABLE public.trades (
     stopped_out boolean DEFAULT false NOT NULL,
     initial_quantity numeric(18,6),
     total_risk numeric(18,4),
-    quantity numeric(18,6) DEFAULT 0.0 NOT NULL
+    quantity numeric(18,6) DEFAULT 0.0 NOT NULL,
+    review_deferred_at timestamp(6) with time zone
 );
 
 
@@ -3075,6 +3076,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260901260001'),
 ('20260901250001'),
 ('20260901240003'),
 ('20260901240002'),

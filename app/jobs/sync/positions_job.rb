@@ -10,7 +10,7 @@ module Sync
         raise Schwab::MappingError, "no positions but positive long market value" if summary.positions.empty? && summary.balances.long_market_value&.positive?
 
         now = Time.current
-        held = summary.positions.reject { |p| p.quantity.zero? }
+        held = summary.positions.reject { |p| p.quantity.zero? || p.cash_equivalent? } # the sweep fund is cash, not a holding
         kept = held.filter_map do |position|
           instrument = Instrument.resolve(position.instrument)
           unless instrument

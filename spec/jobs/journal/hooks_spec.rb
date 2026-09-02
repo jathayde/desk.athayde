@@ -7,7 +7,7 @@ RSpec.describe "Journal and snapshot hooks from sync" do
   it "bootstraps trades after a complete positions sync and links fills after activities" do
     expect { Sync::PositionsJob.perform_now(account) }.to have_enqueued_job(Journal::BootstrapJob).with(account)
     Journal::BootstrapJob.perform_now(account)
-    expect(account.trades.open.count).to eq(3)
+    expect(account.trades.open.count).to eq(2)
     expect(account.trades.all?(&:bootstrapped?)).to be(true)
     expect { Sync::ActivitiesJob.perform_now(account) }.to have_enqueued_job(Journal::LinkFillsJob).with(account).and have_enqueued_job(Snapshots::RebuildJob)
     Journal::LinkFillsJob.perform_now(account)
