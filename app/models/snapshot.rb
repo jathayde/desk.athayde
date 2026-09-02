@@ -29,21 +29,26 @@ class Snapshot < ApplicationRecord
     snapshot
   end
 
-  # Latest balance at or after the regular close on the day, else the day's latest, else nothing.
+  # The latest balance at or after the regular close on the day, else nothing: an 11:00 equity stamped as a
+  # close would move the high-water mark, so a day with no post-close balance stays unwritten.
   def self.balance_for(account, day)
-    window = day.date.in_time_zone(MarketDay::ZONE).all_day
-    on_day = account.balances.where(as_of: window)
-    on_day.where(as_of: day.regular_closes_at..).order(as_of: :desc).first || on_day.order(as_of: :desc).first
+    account.balances.where(as_of: day.regular_closes_at..day.date.in_time_zone(MarketDay::ZONE).end_of_day).order(as_of: :desc).first
   end
 
   # Deposits positive, withdrawals negative, over every day since the prior snapshot so a flow on a missing
   # day is still neutralized. Share transfers count at their cash value when they carry one; a split has an
-  # adjustment ratio and is not a flow; anything else unpriced is quarantined, never silently zero.
+  # adjustment ratio and is not a flow; anything else unpriced is quarantined on the run, and with no run to
+  # quarantine into the answer is nil, never silently zero.
   def self.net_flows(account, after:, through:, run: nil)
     range = after ? (after + 1)..through : through..through
+    unpriced = false
     cash = account.activities.flows.where(trade_date: range).sum do |activity|
-      activity.flow_amount || (run&.quarantine(:unpriced_flows, activity.broker_activity_id); 0)
+      next activity.flow_amount if activity.flow_amount
+      unpriced = true
+      run&.quarantine(:unpriced_flows, activity.broker_activity_id)
+      0
     end
+    return nil if unpriced && run.nil?
     transfers = account.activities.transfer.where(trade_date: range).where.not(instrument_id: nil).includes(:trade_leg)
     shares = transfers.sum do |activity|
       next 0 if activity.trade_leg&.ratio

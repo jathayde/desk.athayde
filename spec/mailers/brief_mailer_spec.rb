@@ -42,6 +42,7 @@ RSpec.describe BriefMailer do
 
   it "adds the day's fills, journal rows, missing post-mortems, and the snapshot to the end-of-day email from the database" do
     account = create(:account, trading_enabled: true, account_type: "taxable")
+    create(:sync_run, feed: "activities", account: account)
     instrument = create(:instrument, symbol: "XYZ")
     at = Time.zone.parse("2026-09-01 10:15 EDT")
     fill(account, instrument, "BUY", 10, 50, at: at)
@@ -53,6 +54,13 @@ RSpec.describe BriefMailer do
     expect(text).not_to include("SELL 10 XYZ")
     12.times { |n| create(:trade, account: account, instrument: instrument, status: :closed, closed_at: at - n.days, post_mortem: nil, needs_review: false) }
     expect(described_class.brief(run(kind: :eod)).text_part.body.to_s).to include("and 3 more: http://", "filter=missing_post_mortem")
+  end
+
+  it "says the fills are unknown, not none, while the activities feed is stale" do
+    create(:account, trading_enabled: true, account_type: "taxable")
+    text = described_class.brief(run(kind: :eod)).text_part.body.to_s
+    expect(text).to include("Fills today:\n  unknown: the activities feed is stale (last sync never)", "Journal rows touched today:\n  unknown")
+    expect(text).not_to include("Fills today:\n  none")
   end
 
   it "says when today's snapshot is not yet written instead of showing an older one" do

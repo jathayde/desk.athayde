@@ -69,7 +69,8 @@ class Trade < ApplicationRecord
     plug = trade_legs.find_by(activity_id: nil, kind: :entry)
     if plug_quantity.positive?
       changed = plug.nil? || plug.quantity != plug_quantity
-      attributes = { quantity: plug_quantity, price: average_price, cash_amount: average_price ? -(plug_quantity * average_price) : nil, note: "plug" }
+      price = average_price && average_price * linked.ratio # the broker's post-split average, in the plug's pre-split units
+      attributes = { quantity: plug_quantity, price: price, cash_amount: price ? -(plug_quantity * price) : nil, note: "plug" }
       plug ? plug.update!(attributes) : trade_legs.create!(attributes.merge(kind: :entry))
       update!(bootstrapped: true) unless bootstrapped?
       flag!(:bootstrapped) if changed

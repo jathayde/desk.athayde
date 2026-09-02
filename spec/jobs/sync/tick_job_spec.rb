@@ -52,13 +52,14 @@ RSpec.describe Sync::TickJob do
 end
 
 RSpec.describe Sync::CatchUpJob do
-  it "syncs accounts inline, then enqueues every feed for every account so the concurrency limits still apply" do
+  it "syncs accounts and activities inline, then enqueues positions and orders so the concurrency limits still apply" do
     create(:schwab_token)
     account = create(:account, schwab_hash: Schwab::FakeClient::ACCOUNT_HASH, trading_enabled: true)
     %w[ positions orders activities ].each { |f| create(:sync_run, feed: f, account: account) }
     expect { described_class.perform_now }.to have_enqueued_job(Sync::PositionsJob).with(account)
       .and have_enqueued_job(Sync::OrdersJob).with(account, working_pass: true)
-      .and have_enqueued_job(Sync::ActivitiesJob).with(account)
+    expect(Sync::ActivitiesJob).not_to have_been_enqueued # run first, inline, so positions cannot plug the pause's fills
     expect(SyncRun.where(feed: "accounts", status: "succeeded")).to exist
+    expect(SyncRun.feed_activities.where(account: account).count).to eq(2)
   end
 end

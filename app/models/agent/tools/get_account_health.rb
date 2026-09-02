@@ -22,7 +22,7 @@ class Agent::Tools::GetAccountHealth < Agent::Tool
   private
     def feeds
       return {} unless account
-      SyncRun::ACCOUNT_FEEDS.to_h { |feed| [ feed, { last_success_at: account.last_sync(feed), last_failure: account.last_sync_failure(feed)&.error } ] }
+      SyncRun::ACCOUNT_FEEDS.to_h { |feed| [ feed, { last_success_at: account.last_sync(feed), unresolved_failure: dashboard.unresolved_failure(feed)&.error } ] }
     end
 
     def last_failure

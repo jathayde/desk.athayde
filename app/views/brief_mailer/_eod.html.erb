@@ -1,12 +1,12 @@
 <p><b>Fills today</b></p>
 <ul>
-  <% brief.fills_today.each do |fill| %><li><%= fill.side %> <%= quantity(fill.quantity) %> <%= fill.instrument.symbol %> @ <%= money(fill.price) %> (<%= brief.stamp(fill.executed_at) %>)</li><% end %>
-  <% if brief.fills_today.none? %><li>none</li><% end %>
+  <% (brief.fills_today || []).each do |fill| %><li><%= fill.side %> <%= quantity(fill.quantity) %> <%= fill.instrument.symbol %> @ <%= money(fill.price) %> (<%= brief.stamp(fill.executed_at) %>)</li><% end %>
+  <% if brief.fills_today.nil? %><li>unknown: the activities feed is stale (last sync <%= brief.stamp(brief.account&.last_sync(:activities)) %>)</li><% elsif brief.fills_today.none? %><li>none</li><% end %>
 </ul>
 <p><b>Journal rows touched today</b></p>
 <ul>
-  <% brief.trades_touched_today.each do |trade| %><li><%= link_to "#{trade.instrument.symbol} #{trade.status}", trade_url(trade) %><%= " · needs review" if trade.needs_review? %></li><% end %>
-  <% if brief.trades_touched_today.none? %><li>none</li><% end %>
+  <% (brief.trades_touched_today || []).each do |trade| %><li><%= link_to "#{trade.instrument.symbol} #{trade.status}", trade_url(trade) %><%= " · needs review" if trade.needs_review? %></li><% end %>
+  <% if brief.trades_touched_today.nil? %><li>unknown: the activities feed is stale</li><% elsif brief.trades_touched_today.none? %><li>none</li><% end %>
 </ul>
 <p><b>Missing post-mortems</b></p>
 <ul>
@@ -17,7 +17,7 @@
 <% if brief.snapshot %>
   <p>Snapshot <%= brief.snapshot.as_of %>: equity <%= money(brief.snapshot.equity) %>, drawdown <%= percent(brief.snapshot.drawdown) %>, open risk <%= brief.snapshot.open_risk_amount ? money(brief.snapshot.open_risk_amount) : "unknown" %>, unprotected <%= brief.snapshot.unprotected_count %></p>
 <% elsif brief.balance %>
-  <p>Today's snapshot is not yet written; equity <%= money(brief.balance.equity) %> as of <%= brief.stamp(brief.balance.as_of) %></p>
+  <p>Today's snapshot is not yet written; equity <%= money(brief.balance.equity) %> as of <%= brief.stamp(brief.balance.as_of) %><%= " (stale)" if brief.balance_stale? %></p>
 <% else %>
   <p>No balance has synced yet.</p>
 <% end %>

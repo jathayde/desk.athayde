@@ -1,16 +1,20 @@
 Fills today:
-<% if brief.fills_today.none? -%>
+<% if brief.fills_today.nil? -%>
+  unknown: the activities feed is stale (last sync <%= brief.stamp(brief.account&.last_sync(:activities)) %>)
+<% elsif brief.fills_today.none? -%>
   none
 <% end -%>
-<% brief.fills_today.each do |fill| -%>
+<% (brief.fills_today || []).each do |fill| -%>
   <%= fill.side %> <%= quantity(fill.quantity) %> <%= fill.instrument.symbol %> @ <%= money(fill.price) %> (<%= brief.stamp(fill.executed_at) %>)
 <% end -%>
 
 Journal rows touched today:
-<% if brief.trades_touched_today.none? -%>
+<% if brief.trades_touched_today.nil? -%>
+  unknown: the activities feed is stale
+<% elsif brief.trades_touched_today.none? -%>
   none
 <% end -%>
-<% brief.trades_touched_today.each do |trade| -%>
+<% (brief.trades_touched_today || []).each do |trade| -%>
   <%= trade.instrument.symbol %> <%= trade.status %><%= " · needs review" if trade.needs_review? %> <%= trade_url(trade) %>
 <% end -%>
 
@@ -28,7 +32,7 @@ Missing post-mortems:
 <% if brief.snapshot -%>
 Snapshot <%= brief.snapshot.as_of %>: equity <%= money(brief.snapshot.equity) %>, drawdown <%= percent(brief.snapshot.drawdown) %>, open risk <%= brief.snapshot.open_risk_amount ? money(brief.snapshot.open_risk_amount) : "unknown" %>, unprotected <%= brief.snapshot.unprotected_count %>
 <% elsif brief.balance -%>
-Today's snapshot is not yet written; equity <%= money(brief.balance.equity) %> as of <%= brief.stamp(brief.balance.as_of) %>
+Today's snapshot is not yet written; equity <%= money(brief.balance.equity) %> as of <%= brief.stamp(brief.balance.as_of) %><%= " (stale)" if brief.balance_stale? %>
 <% else -%>
 No balance has synced yet.
 <% end -%>

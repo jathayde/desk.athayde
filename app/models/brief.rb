@@ -35,9 +35,12 @@ class Brief
   def cut_off = run.stop_reason == "max_tokens" ? "The model's output was cut off; what follows is incomplete." : nil
   def body = output_markdown.to_s.strip
 
-  # End-of-day sections, from the database. Only fills the journal would accept count as fills.
-  def fills_today = @fills_today ||= account ? account.activities.fill.valid_for_journal.where(executed_at: day_range).chronological.includes(:instrument).to_a : []
-  def trades_touched_today = @trades_touched_today ||= account ? account.trades.where(updated_at: day_range).includes(:instrument, :setup).order(:id).to_a : []
+  # End-of-day sections, from the database. Only fills the journal would accept count as fills, and while the
+  # activities feed is stale the database cannot say what filled today: nil, rendered as unknown, not "none".
+  def activities_stale? = account.nil? || @dashboard.stale?(account.last_sync(:activities), :activities)
+  def fills_today = @fills_today ||= activities_stale? ? nil : account.activities.fill.valid_for_journal.where(executed_at: day_range).chronological.includes(:instrument).to_a
+  def trades_touched_today = @trades_touched_today ||= activities_stale? ? nil : account.trades.where(updated_at: day_range).includes(:instrument, :setup).order(:id).to_a
+  def balance_stale? = @dashboard.balance_stale?
   def missing_post_mortems = @missing_post_mortems ||= Trade.journaled.missing_post_mortem.includes(:instrument).order(closed_at: :desc).limit(LIST_LIMIT).to_a
   def missing_post_mortem_count = @missing_post_mortem_count ||= Trade.journaled.missing_post_mortem.count
   def more_post_mortems = [ missing_post_mortem_count - missing_post_mortems.size, 0 ].max

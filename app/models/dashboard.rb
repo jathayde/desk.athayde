@@ -55,6 +55,12 @@ class Dashboard
   end
 
   def ready? = state == :ready
+  # A feed's latest failure while nothing has succeeded on it since; nil once it recovered.
+  def unresolved_failure(feed)
+    run = account&.last_sync_failure(feed)
+    run if run && unresolved?(run)
+  end
+
   def balance = @balance ||= account&.current_balance
   def latest_snapshot = @latest_snapshot ||= account && account.snapshots.chronological.last
   def equity = balance&.equity
@@ -67,7 +73,8 @@ class Dashboard
 
   def day_change
     return nil unless equity && prior_snapshot
-    equity - Snapshot.net_flows(account, after: prior_snapshot.as_of, through: MarketDay.today) - prior_snapshot.equity
+    flows = Snapshot.net_flows(account, after: prior_snapshot.as_of, through: MarketDay.today) or return nil # an unpriced flow: unknown, not zero
+    equity - flows - prior_snapshot.equity
   end
 
   def day_change_ratio = day_change && prior_snapshot.equity.positive? ? day_change / prior_snapshot.equity : nil
