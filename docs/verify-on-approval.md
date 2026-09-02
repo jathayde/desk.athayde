@@ -70,3 +70,17 @@ Everything the app assumes about Schwab that has not been checked against the po
 46. Whether ACH_DISBURSEMENT amounts arrive negative (the snapshot classifies directional types by type, sign only for ELECTRONIC_FUND and JOURNAL).
 47. Whether the Hotwire Native user agent passes `allow_browser versions: :modern` when the iOS shell ships (Phase 2).
 48. `Agent::MODEL = "claude-sonnet-5"` and its rates in `Agent::Pricing` are unverified until the first real Messages API call; a wrong alias is a FAILED brief and a wrong rate is a quiet mispricing.
+
+## Phase 2 (order placement; settle before step 4 of docs/phase-2-plan.md)
+
+49. The bracket strategy: `orderStrategyType` `TRIGGER` with one `childOrderStrategies` `STOP` sell, its shape, and the child's status while the parent works (read from a bracket placed by hand and ingested by the sync).
+50. Whether the order POST answers 201 with the new order id in the `Location` header, and what a duplicate or rejected payload answers.
+51. `taxLotMethod` enum values on the order object.
+52. Order endpoint write rate limits, separate from the 120/min read figure.
+53. Whether fractional quantities are accepted on an equity order.
+54. The order search parameters (`fromEnteredTime`, `toEnteredTime`, `status`) and their time precision, for the reconcile matcher.
+55. Whether a `TRAILING_STOP` child is accepted inside a `TRIGGER` strategy.
+56. Replace-order semantics on a `TRIGGER` child (does replacing the stop keep the parent link).
+57. Whether `previewOrder` exists on the individual tier, so the payload builder can be checked without an order.
+58. Whether `cashAvailableForTrading` already nets working buy orders (item 10); the settled-cash rule double-subtracts until this is known.
+

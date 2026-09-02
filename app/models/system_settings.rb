@@ -1,8 +1,43 @@
 # One row, enforced by a check constraint on id = 1. Holds the global flags the PRD calls out:
 # shadow mode (on by default), the manual halt, and why sync is paused.
 class SystemSettings < ApplicationRecord
-  # The one gate Phase 2's submission path asks before touching Schwab.
-  def writes_allowed? = !shadow_mode? && !manual_halt?
+  # Two halts (docs/phase-2-plan.md §0.3): the kill switch stops everything; a rule halt (daily loss, drawdown)
+  # blocks new entries only, so exits and tighten-only stop adjustments stay available. Shadow mode is not a
+  # gate: it is the branch between "would have submitted" and a real call.
+  def entries_allowed? = !manual_halt? && !rule_halted?
+  def exits_allowed? = !manual_halt?
+  def rule_halted? = rule_halt_tripped_at.present? && (rule_halt_resets_at.nil? || rule_halt_resets_at > Time.current)
+
+  # Under the row lock, since two evaluators can trip at once. A second rule tripping during a halt extends
+  # it to the later reset and records the rule; a lapsed halt is cleared with its own audit row by the tick.
+  def trip_rule_halt!(rule:, reason:, resets_at:)
+    with_lock do
+      if rule_halted?
+        extends_the_halt = resets_at.nil? || rule_halt_resets_at.nil? || resets_at > rule_halt_resets_at
+        if extends_the_halt
+          update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_resets_at: [ rule_halt_resets_at, resets_at ].compact.max)
+          AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: rule_halt_resets_at, extended: true })
+        end
+      else
+        update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_tripped_at: Time.current, rule_halt_resets_at: resets_at)
+        AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at })
+      end
+    end
+    self
+  end
+
+  def clear_rule_halt!(user: nil, reason: nil)
+    with_lock do
+      next unless rule_halt_tripped_at
+      AuditEvent.log("rule_halt_cleared", actor: user ? :human : :system, user: user, reason: reason, data: { rule: rule_halt_rule })
+      update!(rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
+    end
+    self
+  end
+
+  def sweep_rule_halt!
+    clear_rule_halt!(reason: "reset time passed") if rule_halt_tripped_at && !rule_halted?
+  end
 
   def self.instance = find_or_create_by!(id: 1)
 

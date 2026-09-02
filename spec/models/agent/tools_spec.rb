@@ -85,3 +85,22 @@ RSpec.describe Agent::Tools do
     expect(Agent.serialize({ a: [ :sym, Date.new(2026, 9, 8) ] })).to eq("a" => [ "sym", "2026-09-08" ])
   end
 end
+
+RSpec.describe Agent::Tool, "audited tools" do
+  it "audits every call to an audited tool, requires it of any tool that writes, and keeps writes off the scheduled transport" do
+    writer = Class.new(Agent::Tool) do
+      tool description: "x", output: { ok: { type: "boolean" } }, read_only: false, scheduled: false
+      def call = { ok: true }
+    end
+    allow(writer).to receive(:name).and_return("Agent::Tools::WriteThing")
+    allow(Agent::Tools).to receive(:all).and_return([ writer ])
+    expect(writer).to be_audited
+    expect(Agent::Tools.for(:scheduled)).to be_empty
+    expect(Agent::Tools.call("write_thing", {}, transport: :mcp).ok?).to be(true)
+    expect(AuditEvent.find_by(kind: "agent_tool_used")).to have_attributes(actor: "agent", data: hash_including("tool" => "write_thing", "transport" => "mcp", "arguments" => {}, "ok" => true, "tool_call_id" => ToolCall.last.id))
+    expect(Agent::Tools.call("write_thing", { extra: 1 }, transport: :mcp).ok?).to be(false)
+    expect(AuditEvent.where(kind: "agent_tool_used").last).to have_attributes(reason: a_string_including("bad arguments"), data: hash_including("ok" => false))
+    expect(Agent::Tools.call("write_thing", {}, transport: :scheduled).error).to include("not available")
+    expect { Class.new(Agent::Tool) { tool description: "x", output: {}, read_only: false, scheduled: false, audited: false } }.to raise_error(ArgumentError, /audited/)
+  end
+end

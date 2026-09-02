@@ -1,0 +1,1859 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a06031-858c-7180-b520-79114c6dd80f
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788320252-scratchpad/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the referenced prompt first, then I’ll carry out whatever concrete instructions it contains within the current read-only workspace constraints.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/1788320252-scratchpad/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Review Request
+
+## Question
+Review Phase 2 step 1 of Investment Copilot (uncommitted on top of commit 48bfe89; `git status --porcelain` lists the files): the proposal state machine and its database invariants, the two halts, the approver, audited write tools, rule versioning, sizing, and the state table the transition specs are written from. Under 600 words.
+
+## Files
+@docs/phase-2-plan.md (§0, §1, §2, §11) @docs/phase-2-state-table.md @db/migrate/20260902120001_phase_two_prerequisites.rb @app/models/order_proposal.rb @app/models/submission_attempt.rb @app/models/risk_rule.rb @app/models/guardrails.rb @app/models/sizing.rb @app/models/system_settings.rb @app/models/watchlist_item.rb @app/models/agent/tool.rb @app/models/agent/tools.rb @app/models/audit_event.rb @app/controllers/application_controller.rb @db/seeds.rb
+Specs: @spec/models/order_proposal_spec.rb @spec/models/sizing_spec.rb @spec/models/risk_rule_spec.rb @spec/models/system_settings_halts_spec.rb @spec/models/agent/tools_spec.rb
+
+## Instructions
+Independent and critical. Does every row of the state table have a transition and a spec, and does every transition refuse the wrong source state? Can two attempts exist for one proposal under any interleaving (the partial unique index and `start_submission!`)? Is anything able to move a proposal back to an approvable state? Does the halt split match PRD §5.4 3 and Flow 8? Is the audit trail complete and honest about actors? Is `Sizing` right (floor, whole shares, refusal reasons, BigDecimal)? Is the registry's audit row for write tools sufficient, and can a write tool reach the scheduled transport? What must change before commit versus at step 3?
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+I’m going to inspect the touched files and specs in review mode, with the prompt’s questions as the checklist. I’ll keep the final answer focused on concrete defects and commit-blocking gaps.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' docs/phase-2-state-table.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Order proposal state table (Phase 2 step 0)
+
+The transition specs in `spec/models/order_proposal_spec.rb` are written from this table. A row is state × action → result. Every legal transition writes one audit event; every illegal one raises `OrderProposal::IllegalTransition` and writes nothing. Crash points are marked ✕ and say what the next actor sees.
+
+| From | Action (actor) | To | Audit | Notes |
+|---|---|---|---|---|
+| (none) | create (tool or form, via `Proposals::Create`) | `proposed` | `proposal_created` | sizing and collar frozen on the row at creation |
+| `proposed` | evaluate, no hard fail (system) | `validated` | `proposal_evaluated` | results snapshot rule ids, versions, params, numbers |
+| `proposed` | evaluate, any hard fail (system) | `rejected_by_rules` | `proposal_evaluated` | terminal; re-propose |
+| `proposed`, `validated` | end of the proposal's market day (tick) | `expired` | `proposal_expired` | terminal |
+| `validated` | reject (approver) | `rejected` | `proposal_rejected` | terminal; reason required |
+| `validated` | approve (approver): transaction 1 = lock, gates, re-evaluate over frozen sizing, acknowledge warnings, override reason | `submitting` + attempt row | `proposal_approved`, `proposal_submitting` | refused with "re-propose" when the re-evaluation would have changed the quantity or turned a pass into a fail; refused when the instrument has a `submitting` or `submission_unknown` proposal |
+| `submitting` | ✕ worker dies before the HTTP call | `submitting` | — | the sweep (tick) moves rows older than the timeouts to `submission_unknown`; the operator sees "unknown, check Schwab"; never back to `validated` |
+| `submitting` | shadow branch (system) | `submitted` (shadow), attempt `would_have_submitted` | `would_have_submitted` | the operator places it by hand; the matcher links the Schwab-direct order later (`submission_reconciled`) |
+| `submitting` | HTTP 2xx with an order id (system) | `submitted`, attempt `submitted` | `proposal_submitted` | `broker_order_id` on the row; the sync links the order by it |
+| `submitting` | HTTP 2xx without a parsable id, timeout, 5xx, dropped connection (system) | `submission_unknown`, attempt `unknown` | `submission_unknown` | reconcile job enqueued; the instrument is locked for every other proposal |
+| `submitting` | HTTP 4xx (system) | `submission_failed`, attempt `failed` | `submission_failed` | terminal; the error shown; re-propose |
+| `submitting` | ✕ worker dies after the call, before transaction 2 | `submitting` | — | swept to `submission_unknown`; the reconcile job may find the order |
+| `submission_unknown` | reconcile finds exactly one unlinked match (job) | `submitted`, attempt `submitted` | `submission_reconciled` | linked by `broker_order_id` |
+| `submission_unknown` | reconcile finds two or more (job) | `submission_unknown` | — | "ambiguous" on the queue; the operator resolves at Schwab |
+| `submission_unknown` | reconcile finds nothing twice, ten minutes apart, after a 60 s quiet period (job) | `submission_failed`, attempt `not_placed` | `submission_failed` | terminal; the instrument unlocks; re-propose |
+| `submitted` | sync sees the order filled | `filled` | `proposal_filled` | written only by the sync |
+| `submitted` | sync sees the order cancelled, rejected, or expired at the broker | `cancelled` | `proposal_cancelled` | written only by the sync; a filled parent with no live child is the unprotected alert |
+| any terminal (`rejected_by_rules`, `rejected`, `expired`, `submission_failed`, `filled`, `cancelled`) | anything | raises | — | |
+| `submitting`, `submission_unknown`, `submitted` | reject, approve, expire | raises | — | nothing leaves the submission path by hand |
+
+Invariants the database enforces: one attempt per proposal whose outcome is not `failed` or `not_placed` (partial unique index); a `submitted`, `filled`, or `cancelled` proposal has an attempt; `broker_order_id` is unique among proposals when present.
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,220p' db/migrate/20260902120001_phase_two_prerequisites.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Phase 2 step 1: the proposal state machine's columns and invariants, the halt split, the approver, audited
+# rules, the watchlist, and the nightly stop suggestion. See docs/phase-2-plan.md §1 and docs/phase-2-state-table.md.
+class PhaseTwoPrerequisites < ActiveRecord::Migration[8.1]
+  def change
+    change_table :order_proposals do |t|
+      t.jsonb :collar, null: false, default: {}
+      t.jsonb :sizing, null: false, default: {}
+      t.timestamptz :evaluated_at
+      t.timestamptz :decided_at
+      t.references :decided_by, foreign_key: { to_table: :users }
+      t.boolean :shadow, null: false, default: false
+      t.string :broker_order_id
+      t.references :parent_proposal, foreign_key: { to_table: :order_proposals }
+      t.string :child_action
+      t.remove :approved_at, type: :timestamptz
+      t.rename :reject_reason, :rejection_reason
+    end
+    add_index :order_proposals, :broker_order_id, unique: true, where: "broker_order_id IS NOT NULL"
+    add_index :order_proposals, [ :instrument_id, :status ]
+
+    change_table :submission_attempts do |t|
+      t.string :broker_order_id
+      t.timestamptz :reconciled_at
+    end
+    # One live attempt per proposal: a second insert while one stands is the duplicate-order bug, refused by the database.
+    add_index :submission_attempts, :order_proposal_id, unique: true, where: "outcome NOT IN ('failed', 'not_placed')", name: "index_submission_attempts_one_live_per_proposal"
+
+    change_table :risk_rules do |t|
+      t.string :mode, null: false, default: "block"
+      t.text :note
+      t.references :changed_by, foreign_key: { to_table: :users }
+    end
+    remove_index :risk_rules, name: "index_risk_rules_one_active_per_type_and_setup"
+    add_index :risk_rules, [ :rule_type, :setup_id ], unique: true, where: "active", nulls_not_distinct: true, name: "index_risk_rules_one_active_per_type_and_setup"
+
+    change_table :system_settings do |t|
+      t.string :rule_halt_rule
+      t.string :rule_halt_reason
+      t.timestamptz :rule_halt_tripped_at
+      t.timestamptz :rule_halt_resets_at
+      t.timestamptz :shadow_mode_changed_at
+    end
+
+    add_column :users, :approver, :boolean, null: false, default: false
+
+    change_table :positions do |t|
+      t.decimal :suggested_stop, precision: 18, scale: 4
+      t.string :suggested_stop_method
+    end
+
+    create_table :watchlist_items do |t|
+      t.references :instrument, foreign_key: true
+      t.string :symbol, null: false
+      t.text :trigger
+      t.text :thesis
+      t.string :origin, null: false
+      t.references :user, foreign_key: true
+      t.string :status, null: false, default: "watching"
+      t.timestamps
+    end
+    add_index :watchlist_items, [ :symbol, :status ]
+  end
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,260p' app/models/order_proposal.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# One proposed order and its whole life (docs/phase-2-state-table.md). Sizing and the collar are frozen at
+# creation; the approve gesture is the submission; nothing leaves the submission path by hand.
+class OrderProposal < ApplicationRecord
+  class IllegalTransition < StandardError; end
+
+  belongs_to :account
+  belongs_to :instrument
+  belongs_to :target_order, class_name: "Order", optional: true
+  belongs_to :user, optional: true
+  belongs_to :decided_by, class_name: "User", optional: true
+  belongs_to :setup, optional: true
+  belongs_to :parent_proposal, class_name: "OrderProposal", optional: true
+  has_many :orders, dependent: :restrict_with_exception
+  has_many :submission_attempts, dependent: :restrict_with_exception
+  has_one :trade, dependent: :restrict_with_exception
+
+  enum :kind, { entry: "entry", exit: "exit", stop_adjustment: "stop_adjustment" }, prefix: true
+  enum :origin, { agent: "agent", human: "human" }
+  enum :side, { buy: Schwab::Order::BUY, sell: Schwab::Order::SELL }
+  enum :child_action, { cancel_stop: "cancel_stop", replace_stop: "replace_stop" }, prefix: true
+  enum :status, {
+    proposed: "proposed", validated: "validated", rejected_by_rules: "rejected_by_rules", rejected: "rejected", expired: "expired",
+    submitting: "submitting", submitted: "submitted", submission_unknown: "submission_unknown", submission_failed: "submission_failed",
+    filled: "filled", cancelled: "cancelled"
+  }
+
+  TERMINAL = %w[ rejected_by_rules rejected expired submission_failed filled cancelled ].freeze
+  APPROVABLE = %w[ validated ].freeze
+  UNRESOLVED = %w[ submitting submission_unknown ].freeze # locks the instrument for every other proposal
+
+  scope :unresolved, -> { where(status: UNRESOLVED) }
+  scope :open_for_cash, -> { where(status: %w[ submitting submission_unknown submitted ]) }
+  scope :queue, -> { where(status: %w[ proposed validated submission_unknown ]).order(created_at: :desc) }
+  scope :expiring, -> { where(status: %w[ proposed validated ]).where(expires_at: ..Time.current) }
+
+  validates :quantity, numericality: { greater_than: 0 }, allow_nil: true
+
+  def self.instrument_locked?(instrument) = unresolved.where(instrument: instrument).exists?
+
+  def terminal? = TERMINAL.include?(status)
+  def approvable? = APPROVABLE.include?(status)
+  def hard_failed? = guardrail_results.values.any? { |r| r["outcome"] == "fail" }
+  def warnings = guardrail_results.select { |_, r| r["outcome"] == "warn" }.keys
+  def live_attempt = submission_attempts.live.first
+
+  # ---- transitions, each from the table, each one audit row ---------------------------------
+
+  def evaluate!(report)
+    transition!(from: %w[ proposed ], to: report.blocked? ? :rejected_by_rules : :validated, event: "proposal_evaluated",
+                attributes: { guardrail_results: report.to_h, evaluated_at: Time.current }, data: { blocked: report.blocked?, warnings: report.warnings })
+  end
+
+  def reject!(user:, reason:)
+    raise ArgumentError, "a rejection needs a reason" if reason.blank?
+    transition!(from: APPROVABLE, to: :rejected, event: "proposal_rejected", user: user, reason: reason,
+                attributes: { decided_at: Time.current, decided_by: user, rejection_reason: reason })
+  end
+
+  def expire!
+    transition!(from: %w[ proposed validated ], to: :expired, event: "proposal_expired")
+  end
+
+  # Transaction one of the submission: the caller holds the row lock and has re-evaluated.
+  def start_submission!(user:, acknowledged:, override_reason:, payload:, shadow:)
+    transition!(from: APPROVABLE, to: :submitting, event: "proposal_approved", user: user, reason: override_reason,
+                attributes: { decided_at: Time.current, decided_by: user, acknowledged_warnings: acknowledged, override_reason: override_reason, shadow: shadow },
+                data: { acknowledged: acknowledged, shadow: shadow })
+    submission_attempts.create!(attempted_at: Time.current, payload: payload, outcome: :pending).tap do
+      AuditEvent.log("proposal_submitting", actor: :human, user: user, subject: self)
+    end
+  end
+
+  # Transaction two: what Schwab, or shadow mode, answered.
+  def record_shadow!(attempt)
+    attempt.update!(outcome: :would_have_submitted)
+    transition!(from: %w[ submitting ], to: :submitted, event: "would_have_submitted", attributes: { submitted_at: Time.current })
+  end
+
+  def record_submitted!(attempt, broker_order_id:)
+    attempt.update!(outcome: :submitted, broker_order_id: broker_order_id)
+    transition!(from: %w[ submitting submission_unknown ], to: :submitted, event: attempt.reconciled_at ? "submission_reconciled" : "proposal_submitted",
+                attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id })
+  end
+
+  def record_unknown!(attempt, error:)
+    attempt.update!(outcome: :unknown, response: { "error" => error })
+    transition!(from: %w[ submitting ], to: :submission_unknown, event: "submission_unknown", reason: error)
+  end
+
+  def record_failed!(attempt, error:, outcome: :failed)
+    attempt.update!(outcome: outcome, response: { "error" => error })
+    transition!(from: %w[ submitting submission_unknown ], to: :submission_failed, event: "submission_failed", reason: error)
+  end
+
+  # Written only by the orders sync.
+  def record_broker_outcome!(status)
+    transition!(from: %w[ submitted ], to: status, event: "proposal_#{status}")
+  end
+
+  private
+    def transition!(from:, to:, event:, attributes: {}, user: nil, reason: nil, data: {})
+      raise IllegalTransition, "#{kind} proposal #{id}: #{status} cannot #{event.delete_prefix('proposal_')}" unless from.include?(status)
+      update!(attributes.merge(status: to))
+      AuditEvent.log(event, actor: user ? :human : :system, user: user, subject: self, reason: reason&.truncate(200), data: data)
+      self
+    end
+end
+
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc 'git status --porcelain' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 115ms:
+git: error: couldn't create cache file '/tmp/xcrun_db-yUcBI3kN' (errno=Operation not permitted)
+ M app/controllers/application_controller.rb
+ M app/models/agent/tool.rb
+ M app/models/agent/tools.rb
+ M app/models/audit_event.rb
+ M app/models/order_proposal.rb
+ M app/models/risk_rule.rb
+ M app/models/submission_attempt.rb
+ M app/models/system_settings.rb
+ M db/seeds.rb
+ M db/structure.sql
+ M docs/phase-1-plan.md
+ M docs/phase-2-plan.md
+ M docs/verify-on-approval.md
+ M spec/models/agent/tools_spec.rb
+?? agents/counselors/1788320252-scratchpad/
+?? app/models/guardrails.rb
+?? app/models/sizing.rb
+?? app/models/watchlist_item.rb
+?? db/migrate/20260902120001_phase_two_prerequisites.rb
+?? docs/phase-2-state-table.md
+?? spec/models/order_proposal_spec.rb
+?? spec/models/risk_rule_spec.rb
+?? spec/models/sizing_spec.rb
+?? spec/models/system_settings_halts_spec.rb
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The state-machine implementation is compact, so I’m checking it against the table row-by-row and then looking at the specs to see what is actually enforced. The first area I’m paying attention to is atomicity around approval and submission attempts.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,280p' spec/models/order_proposal_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "rails_helper"
+
+# The transition table in docs/phase-2-state-table.md, row by row.
+RSpec.describe OrderProposal do
+  let(:account) { create(:account) }
+  let(:instrument) { create(:instrument, symbol: "XYZ") }
+  let(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
+  let(:proposal) { described_class.create!(account: account, instrument: instrument, kind: :entry, origin: :human, user: john, side: :buy, quantity: 10, limit_price: 50, stop_price: 48) }
+
+  def result(type, outcome) = Guardrails::Result.new(rule_type: type, outcome: outcome, detail: {}, version: 1, params: {})
+  def report(*results) = Guardrails::Report.new(results)
+  def audits = AuditEvent.where(subject: proposal).order(:id).pluck(:kind)
+
+  it "validates on an evaluation without a hard fail and rejects on one, snapshotting the results" do
+    proposal.evaluate!(report(result("settled_cash", :pass), result("wash_sale", :warn)))
+    expect(proposal).to be_validated
+    expect(proposal.warnings).to eq([ "wash_sale" ])
+    expect(proposal.guardrail_results.dig("settled_cash", "outcome")).to eq("pass")
+
+    other = described_class.create!(account: account, instrument: instrument, kind: :entry, origin: :agent, side: :buy)
+    other.evaluate!(report(result("settled_cash", :fail)))
+    expect(other).to be_rejected_by_rules
+    expect(other).to be_terminal
+    expect { other.evaluate!(report) }.to raise_error(OrderProposal::IllegalTransition)
+  end
+
+  it "rejects only with a reason, expires only while undecided, and refuses to expire a submission" do
+    proposal.evaluate!(report)
+    expect { proposal.reject!(user: john, reason: "") }.to raise_error(ArgumentError)
+    proposal.reject!(user: john, reason: "not today")
+    expect(proposal).to have_attributes(status: "rejected", rejection_reason: "not today", decided_by: john)
+    expect { proposal.expire! }.to raise_error(OrderProposal::IllegalTransition)
+
+    fresh = described_class.create!(account: account, instrument: instrument, kind: :entry, origin: :agent, side: :buy, expires_at: 1.minute.ago)
+    expect(described_class.expiring).to include(fresh)
+    fresh.expire!
+    expect(fresh).to be_expired
+  end
+
+  it "walks approve into submitting with one live attempt, then submitted with the broker id, and locks the instrument meanwhile" do
+    proposal.evaluate!(report(result("wash_sale", :warn)))
+    attempt = proposal.start_submission!(user: john, acknowledged: [ "wash_sale" ], override_reason: nil, payload: { "orderType" => "LIMIT" }, shadow: false)
+    expect(proposal).to be_submitting
+    expect(described_class.instrument_locked?(instrument)).to be(true)
+    expect { proposal.submission_attempts.create!(attempted_at: Time.current, outcome: :pending) }.to raise_error(ActiveRecord::RecordNotUnique)
+    expect { proposal.reject!(user: john, reason: "late") }.to raise_error(OrderProposal::IllegalTransition)
+
+    proposal.record_submitted!(attempt, broker_order_id: "100")
+    expect(proposal).to have_attributes(status: "submitted", broker_order_id: "100")
+    expect(attempt.reload).to have_attributes(outcome: "submitted", broker_order_id: "100")
+    expect(described_class.instrument_locked?(instrument)).to be(false)
+    proposal.record_broker_outcome!(:filled)
+    expect(audits).to eq(%w[ proposal_evaluated proposal_approved proposal_submitting proposal_submitted proposal_filled ])
+  end
+
+  it "records a shadow submission as submitted with a would_have_submitted attempt" do
+    proposal.evaluate!(report)
+    attempt = proposal.start_submission!(user: john, acknowledged: [], override_reason: nil, payload: {}, shadow: true)
+    proposal.record_shadow!(attempt)
+    expect(proposal).to have_attributes(status: "submitted", shadow: true)
+    expect(attempt.reload).to be_would_have_submitted
+    expect(audits.last).to eq("would_have_submitted")
+  end
+
+  it "goes unknown on an ambiguous outcome and can only be reconciled forward or failed, never back to validated" do
+    proposal.evaluate!(report)
+    attempt = proposal.start_submission!(user: john, acknowledged: [], override_reason: nil, payload: {}, shadow: false)
+    proposal.record_unknown!(attempt, error: "Net::ReadTimeout")
+    expect(proposal).to be_submission_unknown
+    expect(described_class.instrument_locked?(instrument)).to be(true)
+    expect { proposal.expire! }.to raise_error(OrderProposal::IllegalTransition)
+    proposal.record_failed!(attempt, error: "not found twice", outcome: :not_placed)
+    expect(proposal).to be_submission_failed
+    expect(attempt.reload).to be_not_placed
+    expect(described_class.instrument_locked?(instrument)).to be(false)
+    expect(audits.last(2)).to eq(%w[ submission_unknown submission_failed ])
+  end
+
+  it "fails a 4xx and lets a second proposal on the instrument be created afterwards" do
+    proposal.evaluate!(report)
+    attempt = proposal.start_submission!(user: john, acknowledged: [], override_reason: nil, payload: {}, shadow: false)
+    proposal.record_failed!(attempt, error: "400 bad quantity")
+    expect(proposal).to be_submission_failed
+    expect(proposal.live_attempt).to be_nil
+  end
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/submission_attempt.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# One attempt to place a proposal's order; at most one may be live per proposal (database index).
+class SubmissionAttempt < ApplicationRecord
+  belongs_to :order_proposal
+  belongs_to :reconciled_order, class_name: "Order", optional: true
+
+  enum :outcome, { pending: "pending", submitted: "submitted", would_have_submitted: "would_have_submitted", unknown: "unknown", not_placed: "not_placed", failed: "failed" }
+
+  scope :live, -> { where.not(outcome: %w[ failed not_placed ]) }
+end
+
+exec
+/bin/zsh -lc "sed -n '1,260p' spec/models/agent/tools_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe Agent::Tools do
+  it "exposes the seven Phase 1 read tools to both transports, all read-only" do
+    expect(described_class.for(:mcp).map(&:tool_name)).to match_array(%w[ get_portfolio get_account_health get_quotes get_price_history get_journal get_setup_stats get_risk_rules ])
+    expect(described_class.for(:scheduled)).to match_array(described_class.for(:mcp))
+    expect(described_class.all).to all(be_read_only)
+    expect(described_class.definitions(:scheduled).first).to include(:name, :description, :input_schema)
+  end
+
+  it "declares required inputs and closed output schemas" do
+    expect(Agent::Tools::GetQuotes.input_schema).to include(required: [ "symbols" ], additionalProperties: false)
+    expect(Agent::Tools::GetPortfolio.output_schema).to include(additionalProperties: false)
+    expect(Agent::Tools::GetPortfolio.output_schema[:required]).to include("state", "positions", "open_risk")
+  end
+
+  it "refuses to define an unattended tool that is not read-only" do
+    expect {
+      Class.new(Agent::Tool) { tool description: "x", output: {}, read_only: false, scheduled: true }
+    }.to raise_error(ArgumentError, /read-only/)
+  end
+
+  it "keeps a tool marked scheduled: false out of the scheduled transport" do
+    interactive_only = Class.new(Agent::Tool) { tool description: "x", output: {}, scheduled: false }
+    allow(described_class).to receive(:all).and_return([ interactive_only, Agent::Tools::GetRiskRules ])
+    expect(described_class.for(:scheduled)).to eq([ Agent::Tools::GetRiskRules ])
+    expect(described_class.for(:mcp)).to include(interactive_only)
+  end
+
+  it "dispatches with telemetry" do
+    result = described_class.call("get_risk_rules", {}, transport: :mcp)
+    expect(result.ok?).to be(true)
+    expect(result.value).to include("available" => false)
+    expect(result.text).to include('"available":false')
+    expect(ToolCall.last).to have_attributes(tool_name: "get_risk_rules", transport: "mcp", error: nil, arguments: {})
+    expect(ToolCall.last.duration_ms).to be >= 0
+  end
+
+  it "records a denied call, distinguishing an unknown tool from one the transport may not use" do
+    expect(described_class.call("nope", {}, transport: :mcp).error).to eq("unknown tool nope")
+    expect(ToolCall.last).to have_attributes(tool_name: "nope", error: "unknown tool nope")
+
+    interactive_only = Class.new(Agent::Tool) { tool description: "x", output: {}, scheduled: false }
+    allow(interactive_only).to receive(:name).and_return("Agent::Tools::OnlyMcp")
+    allow(described_class).to receive(:all).and_return([ interactive_only ])
+    expect(described_class.call("only_mcp", {}, transport: :scheduled).error).to eq("only_mcp is not available on the scheduled transport")
+    expect(ToolCall.last).to have_attributes(tool_name: "only_mcp", transport: "scheduled")
+  end
+
+  it "validates arguments against the schema on every transport and records the failure" do
+    bad = described_class.call("get_quotes", { symbols: [] }, transport: :scheduled)
+    expect(bad.ok?).to be(false)
+    expect(bad.error).to include("bad arguments")
+    expect(ToolCall.last).to have_attributes(error: bad.error, arguments: { "symbols" => [] })
+    expect(described_class.call("get_quotes", {}, transport: :scheduled).error).to include("symbols")
+    expect(described_class.call("get_journal", { limit: "ten" }, transport: :scheduled).error).to include("bad arguments")
+    expect(described_class.call("get_journal", { offset: -1 }, transport: :scheduled).error).to include("bad arguments")
+    expect(described_class.call("get_risk_rules", { extra: 1 }, transport: :scheduled).error).to include("bad arguments")
+  end
+
+  it "turns a Schwab rate limit into a result carrying retry_after" do
+    Schwab::FakeClient.instance.enqueue(:quotes) { raise Schwab::RateLimited.new("busy", retry_after: 30) }
+    limited = described_class.call("get_quotes", { symbols: [ "XYZ" ] }, transport: :mcp)
+    expect(limited.ok?).to be(false)
+    expect(limited.retry_after).to eq(30)
+    expect(limited.error).to include("30 seconds")
+  end
+
+  it "turns a missing token into a re-authentication message" do
+    allow(Schwab).to receive(:client).and_raise(Schwab::NoUsableToken, "no usable Schwab token")
+    expect(described_class.call("get_quotes", { symbols: [ "XYZ" ] }, transport: :mcp).error).to include("re-authentication")
+  end
+
+  it "reports an unexpected exception under the tool's name and never raises, even from the base class" do
+    allow_any_instance_of(Agent::Tools::GetRiskRules).to receive(:call).and_raise(NotImplementedError, "boom")
+    expect(Rails.error).to receive(:report).with(kind_of(NotImplementedError), hash_including(context: { tool: "get_risk_rules" }))
+    result = described_class.call("get_risk_rules", {}, transport: :mcp)
+    expect(result.error).to eq("get_risk_rules failed: NotImplementedError")
+    expect(ToolCall.last.error).to eq(result.error)
+  end
+
+  it "serializes money as decimal strings and times in New York" do
+    expect(Agent.serialize(BigDecimal("51.18"))).to eq("51.18")
+    expect(Agent.serialize(Time.utc(2026, 9, 8, 20))).to eq("2026-09-08T16:00:00-04:00")
+    expect(Agent.serialize({ a: [ :sym, Date.new(2026, 9, 8) ] })).to eq("a" => [ "sym", "2026-09-08" ])
+  end
+end
+
+RSpec.describe Agent::Tool, "audited tools" do
+  it "audits every call to an audited tool, requires it of any tool that writes, and keeps writes off the scheduled transport" do
+    writer = Class.new(Agent::Tool) do
+      tool description: "x", output: { ok: { type: "boolean" } }, read_only: false, scheduled: false
+      def call = { ok: true }
+    end
+    allow(writer).to receive(:name).and_return("Agent::Tools::WriteThing")
+    allow(Agent::Tools).to receive(:all).and_return([ writer ])
+    expect(writer).to be_audited
+    expect(Agent::Tools.for(:scheduled)).to be_empty
+    expect(Agent::Tools.call("write_thing", {}, transport: :mcp).ok?).to be(true)
+    expect(AuditEvent.find_by(kind: "agent_tool_used")).to have_attributes(actor: "agent", data: { "tool" => "write_thing", "transport" => "mcp", "arguments" => {} })
+    expect(Agent::Tools.call("write_thing", {}, transport: :scheduled).error).to include("not available")
+    expect { Class.new(Agent::Tool) { tool description: "x", output: {}, read_only: false, scheduled: false, audited: false } }.to raise_error(ArgumentError, /audited/)
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/audit_event.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Append-only. Every "logged" action in the PRD is a row here; the database triggers reject
+# UPDATE, DELETE, and TRUNCATE, and Active Record refuses updates before it gets that far.
+class AuditEvent < ApplicationRecord
+  KINDS = %w[
+    re_auth_succeeded re_auth_failed re_auth_missing_accounts token_refresh_failed sync_paused_token_expired sync_resumed
+    token_nag_sent shadow_mode_toggled manual_halt_set manual_halt_cleared
+    instrument_identity_fallback instrument_delisted instrument_relisted sync_gap_unrecoverable trade_reviewed account_configured
+    proposal_created proposal_evaluated proposal_approved proposal_rejected proposal_submitting proposal_submitted
+    would_have_submitted submission_unknown submission_reconciled submission_failed proposal_expired proposal_filled
+    proposal_cancelled rule_changed rule_halt_tripped rule_halt_cleared unprotected_alert_sent agent_tool_used
+  ].freeze
+
+  belongs_to :user, optional: true
+  belongs_to :subject, polymorphic: true, optional: true
+
+  enum :actor, { human: "human", system: "system", agent: "agent" }, prefix: true
+
+  validates :kind, inclusion: { in: KINDS }
+
+  def self.log(kind, actor:, data: {}, user: nil, subject: nil, reason: nil)
+    create!(kind: kind, actor: actor, user: user, subject: subject, reason: reason, data: data)
+  end
+
+  def readonly? = persisted?
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+A notable pattern so far: some invariants are described in docs but only partially represented in model/database constraints. I’m checking whether the missing parts are covered elsewhere before calling them findings.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' app/models/agent/tool.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# A read tool: a name derived from the class, a description, JSON schemas, permission metadata, and a call.
+# Transport-neutral: the MCP adapter and the scheduled runtime both go through Agent::Tools.call.
+class Agent::Tool
+  # Raised by a tool for arguments the schema cannot catch; reported to the agent as its own mistake.
+  class InvalidArguments < ArgumentError; end
+
+  class << self
+    attr_reader :description, :input_schema, :output_schema
+
+    # Every output key is required unless listed in output_optional; a half-declared schema is worse than none.
+    # audited: every call is an audit_events row as well as a tool_calls row; required for any tool that writes.
+    def tool(description:, output:, input: {}, required: [], output_optional: [], read_only: true, mcp: true, scheduled: true, audited: !read_only)
+      @description = description
+      @input_schema = { type: "object", properties: input, required: required.map(&:to_s), additionalProperties: false }
+      @output_schema = { type: "object", properties: output, required: (output.keys - output_optional).map(&:to_s), additionalProperties: false }
+      @read_only, @mcp_allowed, @scheduled_allowed, @audited = read_only, mcp, scheduled, audited
+      raise ArgumentError, "#{tool_name}: an unattended tool must be read-only" if scheduled && !read_only
+      raise ArgumentError, "#{tool_name}: a tool that writes must be audited" if !read_only && !audited
+    end
+
+    def tool_name = @tool_name ||= name.to_s.demodulize.underscore.presence || "anonymous"
+    def read_only? = @read_only
+    def audited? = @audited
+    def mcp_allowed? = @mcp_allowed
+    def scheduled_allowed? = @scheduled_allowed
+
+    def annotations = { read_only_hint: read_only?, destructive_hint: !read_only?, idempotent_hint: read_only?, open_world_hint: false }
+
+    # The shape the Anthropic Messages API and the MCP gem both consume.
+    def definition = { name: tool_name, description: description, input_schema: input_schema }
+
+    # One gate for both transports, so the scheduled runtime gets the same checks the MCP gem applies.
+    def validate!(arguments)
+      validator.validate_arguments(arguments)
+    rescue MCP::Tool::InputSchema::ValidationError => e
+      raise InvalidArguments, e.message
+    end
+
+    private
+      def validator = @validator ||= MCP::Tool::InputSchema.new(input_schema)
+  end
+
+  def call(**) = raise(NotImplementedError, "#{self.class.tool_name} does not implement #call")
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,360p' app/models/agent/tools.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# The registry and the one dispatch entry point every transport uses.
+module Agent::Tools
+  Result = Data.define(:value, :error, :retry_after) do
+    def self.success(value) = new(value: value, error: nil, retry_after: nil)
+    def self.failure(error, retry_after: nil) = new(value: nil, error: error, retry_after: retry_after)
+    def ok? = error.nil?
+    # The text a model reads: the JSON on success, the message on failure.
+    def text = ok? ? JSON.generate(value) : error
+  end
+
+  def self.all = [ GetPortfolio, GetAccountHealth, GetQuotes, GetPriceHistory, GetJournal, GetSetupStats, GetRiskRules ]
+
+  def self.for(transport)
+    case transport.to_sym
+    when :mcp then all.select(&:mcp_allowed?)
+    when :scheduled then all.select { |t| t.scheduled_allowed? && t.read_only? }
+    else raise ArgumentError, "unknown transport #{transport}"
+    end
+  end
+
+  def self.definitions(transport) = self.for(transport).map(&:definition)
+  def self.find(name, transport:) = self.for(transport).find { |t| t.tool_name == name.to_s }
+
+  # Permission check, argument validation, telemetry, timing, and error normalization in one place.
+  # Never raises to the caller: Schwab and tool failures become results the agent can read and act on.
+  # Every call writes a tool_calls row, including a call the transport is not allowed to make.
+  def self.call(name, arguments = {}, transport:, agent_run: nil)
+    arguments = arguments.to_h.deep_symbolize_keys
+    record = ToolCall.new(agent_run: agent_run, transport: transport, tool_name: name.to_s, arguments: Agent.serialize(arguments))
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    result = if (tool = find(name, transport: transport))
+      AuditEvent.log("agent_tool_used", actor: :agent, data: { tool: tool.tool_name, transport: transport.to_s, arguments: Agent.serialize(arguments) }) if tool.audited?
+      invoke(tool, arguments)
+    elsif all.any? { |t| t.tool_name == name.to_s }
+      Result.failure("#{name} is not available on the #{transport} transport")
+    else
+      Result.failure("unknown tool #{name}")
+    end
+    record.duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+    record.error = result.error
+    record.save!
+    result
+  end
+
+  def self.invoke(tool, arguments)
+    tool.validate!(arguments)
+    Result.success(Agent.serialize(tool.new.call(**arguments)))
+  rescue Schwab::RateLimited => e
+    Result.failure("Schwab rate limit: try again in #{e.retry_after || 60} seconds", retry_after: e.retry_after || 60)
+  rescue Schwab::NoUsableToken, Schwab::AuthError => e
+    Result.failure("Schwab connection needs re-authentication: #{e.message}")
+  rescue Schwab::Error => e
+    Result.failure("Schwab unavailable: #{e.message}")
+  rescue Agent::Tool::InvalidArguments => e
+    Result.failure("bad arguments: #{e.message}")
+  rescue StandardError, NotImplementedError => e # NotImplementedError is a ScriptError: the base class's own contract
+    Rails.error.report(e, handled: true, context: { tool: tool.tool_name })
+    Result.failure("#{tool.tool_name} failed: #{e.class.name}")
+  end
+  private_class_method :invoke
+end
+
+exec
+/bin/zsh -lc "sed -n '1,260p' app/models/system_settings.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# One row, enforced by a check constraint on id = 1. Holds the global flags the PRD calls out:
+# shadow mode (on by default), the manual halt, and why sync is paused.
+class SystemSettings < ApplicationRecord
+  # Two halts (docs/phase-2-plan.md §0.3): the kill switch stops everything; a rule halt (daily loss, drawdown)
+  # blocks new entries only, so exits and tighten-only stop adjustments stay available. Shadow mode is not a
+  # gate: it is the branch between "would have submitted" and a real call.
+  def entries_allowed? = !manual_halt? && !rule_halted?
+  def exits_allowed? = !manual_halt?
+  def rule_halted? = rule_halt_tripped_at.present? && (rule_halt_resets_at.nil? || rule_halt_resets_at > Time.current)
+
+  def trip_rule_halt!(rule:, reason:, resets_at:)
+    return self if rule_halted?
+    update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_tripped_at: Time.current, rule_halt_resets_at: resets_at)
+    AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at })
+    self
+  end
+
+  def clear_rule_halt!(user: nil, reason: nil)
+    return self unless rule_halt_tripped_at
+    AuditEvent.log("rule_halt_cleared", actor: user ? :human : :system, user: user, reason: reason, data: { rule: rule_halt_rule })
+    update!(rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
+  end
+
+  def self.instance = find_or_create_by!(id: 1)
+
+  # The two halves of the token pause, under the same row lock so a re-auth landing mid-tick cannot be
+  # marked paused: pause while the token is unusable (one audit per episode) and resume on a new token.
+  def self.pause_for_token!
+    transaction do
+      settings = instance.lock!
+      next nil if SchwabToken.usable?
+      unless settings.sync_paused_reason
+        settings.update!(sync_paused_reason: "Schwab token unusable; re-authenticate")
+        AuditEvent.log("sync_paused_token_expired", actor: :system)
+      end
+      settings.sync_paused_reason
+    end
+  end
+
+  def self.resume_sync!
+    settings = instance.lock!
+    AuditEvent.log("sync_resumed", actor: :system, reason: settings.sync_paused_reason) if settings.sync_paused_reason
+    settings.update!(sync_paused_reason: nil)
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,260p' app/models/risk_rule.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# A guardrail as data (docs/phase-2-plan.md §0.8): one active row per type and setup, edited by superseding,
+# never in place, so every proposal's results point at the exact version that judged it.
+class RiskRule < ApplicationRecord
+  TYPES = %w[ max_risk_per_trade max_positions max_position_exposure max_sector_exposure daily_loss_halt max_drawdown_halt
+              settled_cash earnings_blackout wash_sale notional_cap stop_collar ].freeze
+
+  belongs_to :setup, optional: true
+  belongs_to :superseded_by, class_name: "RiskRule", optional: true
+  belongs_to :changed_by, class_name: "User", optional: true
+
+  enum :mode, { block: "block", warn: "warn" }, prefix: true
+
+  validates :rule_type, inclusion: { in: TYPES }
+  validates :params, presence: true
+
+  scope :active, -> { where(active: true) }
+
+  def self.active_for(rule_type, setup: nil) = active.find_by(rule_type: rule_type, setup: setup) || (setup && active.find_by(rule_type: rule_type, setup: nil))
+
+  # The next version of this rule, superseding this one, in one transaction and one audit row.
+  def supersede!(params:, user:, mode: self.mode, note: nil)
+    transaction do
+      update!(active: false) # first, so the one-active index admits the successor
+      successor = self.class.create!(rule_type: rule_type, setup: setup, params: params, mode: mode, note: note, version: version + 1, changed_by: user)
+      update!(superseded_by: successor)
+      AuditEvent.log("rule_changed", actor: :human, user: user, subject: successor, reason: note, data: { rule_type: rule_type, setup: setup&.name, before: self.params, after: params, version: successor.version })
+      successor
+    end
+  end
+
+  def param(name) = params.fetch(name.to_s) { raise KeyError, "#{rule_type} rule has no #{name}" }
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,280p' app/models/sizing.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# How many shares an entry may carry (docs/phase-2-plan.md §0.4): the max-risk-per-trade rule's percent of
+# equity, divided by the per-share risk from the proposal's limit and stop, floored to whole shares. Frozen on
+# the proposal at creation; the numbers behind the quantity are kept so the detail page can show its work.
+Sizing = Data.define(:equity, :risk_percent, :risk_budget, :per_share_risk, :quantity, :reason) do
+  def self.for(limit_price:, stop_price:, equity:, rule:)
+    return refused("no fresh equity") unless equity&.positive?
+    return refused("no max_risk_per_trade rule") unless rule
+    return refused("stop must be below the entry") unless limit_price && stop_price && stop_price < limit_price
+    percent = BigDecimal(rule.param(:percent).to_s)
+    budget = (equity * percent / 100).round(2)
+    per_share = limit_price - stop_price
+    quantity = (budget / per_share).floor
+    return refused("risk budget of #{budget.to_s('F')} buys no whole share at #{per_share.to_s('F')} risk each", equity: equity, percent: percent, budget: budget, per_share: per_share) if quantity < 1
+    new(equity: equity, risk_percent: percent, risk_budget: budget, per_share_risk: per_share, quantity: quantity, reason: nil)
+  end
+
+  def self.refused(reason, equity: nil, percent: nil, budget: nil, per_share: nil)
+    new(equity: equity, risk_percent: percent, risk_budget: budget, per_share_risk: per_share, quantity: nil, reason: reason)
+  end
+
+  def sized? = quantity.present?
+  def to_h = super.transform_keys(&:to_s)
+end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,340p' app/models/guardrails.rb" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "sed -n '1,220p' app/controllers/application_controller.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# The guardrail engine (docs/phase-2-plan.md §3): rules as data, evaluated in Rails against every proposal,
+# never bypassed or edited through a tool.
+module Guardrails
+  Result = Data.define(:rule_type, :outcome, :detail, :version, :params) do
+    def pass? = outcome == :pass
+    def warn? = outcome == :warn
+    def fail? = outcome == :fail
+    def unavailable? = outcome == :unavailable
+  end
+
+  # What one evaluation said, in the shape the proposal stores and the detail page reads.
+  class Report
+    attr_reader :results
+
+    def initialize(results) = @results = results
+
+    def blocked? = results.any?(&:fail?)
+    def warnings = results.select { |r| r.warn? || r.unavailable? }.map(&:rule_type)
+    def needs_override? = results.any? { |r| r.rule_type == "stop_collar" && r.warn? }
+    def to_h = results.to_h { |r| [ r.rule_type, { "outcome" => r.outcome.to_s, "detail" => Agent.serialize(r.detail), "version" => r.version, "params" => r.params } ] }
+  end
+end
+
+ succeeded in 0ms:
+class ApplicationController < ActionController::Base
+  # Approving, rejecting, overriding, editing rules, and toggling shadow mode belong to one person
+  # (docs/phase-2-plan.md §0.13); the other user reads.
+  def require_approver
+    redirect_to root_path, alert: "Only the approver can do that." unless Current.user&.approver?
+  end
+  include Authentication
+  # Only allow modern browsers supporting webp images, web push, badges, import maps, CSS nesting, and CSS :has.
+  allow_browser versions: :modern
+
+  # Changes to the importmap will invalidate the etag for HTML responses
+  stale_when_importmap_changes
+end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,220p' app/models/watchlist_item.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+class WatchlistItem < ApplicationRecord
+  belongs_to :instrument, optional: true
+  belongs_to :user, optional: true
+
+  enum :origin, { agent: "agent", human: "human" }
+  enum :status, { watching: "watching", triggered: "triggered", dropped: "dropped" }
+
+  normalizes :symbol, with: ->(s) { s.strip.upcase }
+  validates :symbol, presence: true
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+I found the audited write-tool guard in the registry, and it does keep non-read tools out of scheduled transport at metadata level. I’m now checking the rule/versioning and halt tests, plus migration constraints, because those are the places where design intent can silently diverge from runtime behavior.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' spec/models/system_settings_halts_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe SystemSettings, "halts" do
+  let(:settings) { described_class.instance }
+
+  it "blocks entries but not exits on a rule halt, everything on the kill switch, and clears on reset or by hand" do
+    expect(settings).to be_entries_allowed.and be_exits_allowed
+    settings.trip_rule_halt!(rule: "daily_loss_halt", reason: "down 3.2% today", resets_at: 1.day.from_now)
+    settings.trip_rule_halt!(rule: "max_drawdown_halt", reason: "again", resets_at: 1.day.from_now) # idempotent: one audit
+    expect(settings).to be_rule_halted
+    expect(settings).not_to be_entries_allowed
+    expect(settings).to be_exits_allowed
+    expect(AuditEvent.where(kind: "rule_halt_tripped").count).to eq(1)
+
+    travel 2.days
+    expect(settings).not_to be_rule_halted
+    expect(settings).to be_entries_allowed
+    settings.clear_rule_halt!(user: create(:user, email_address: "john@athayde.com"), reason: "reviewed")
+    expect(settings.rule_halt_rule).to be_nil
+    expect(AuditEvent.find_by(kind: "rule_halt_cleared").actor).to eq("human")
+
+    settings.update!(manual_halt: true)
+    expect(settings).not_to be_entries_allowed
+    expect(settings).not_to be_exits_allowed
+  end
+end
+
+exec
+/bin/zsh -lc "sed -n '1,260p' spec/models/sizing_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe Sizing do
+  let(:rule) { RiskRule.create!(rule_type: "max_risk_per_trade", params: { "percent" => "1.0" }) }
+
+  it "floors the risk budget over the per-share risk to whole shares and shows its work" do
+    sizing = described_class.for(limit_price: BigDecimal("50"), stop_price: BigDecimal("48"), equity: BigDecimal("6500"), rule: rule)
+    expect(sizing).to have_attributes(quantity: 32, risk_budget: BigDecimal("65"), per_share_risk: BigDecimal("2"), reason: nil)
+    expect(sizing).to be_sized
+    expect(sizing.to_h.keys).to include("equity", "quantity")
+  end
+
+  it "refuses with the reason when there is no equity, no rule, a stop at or above the entry, or a budget below one share" do
+    expect(described_class.for(limit_price: 50, stop_price: 48, equity: nil, rule: rule).reason).to eq("no fresh equity")
+    expect(described_class.for(limit_price: 50, stop_price: 48, equity: 6500, rule: nil).reason).to eq("no max_risk_per_trade rule")
+    expect(described_class.for(limit_price: 50, stop_price: 50, equity: 6500, rule: rule).reason).to eq("stop must be below the entry")
+    tiny = described_class.for(limit_price: BigDecimal("500"), stop_price: BigDecimal("400"), equity: BigDecimal("6500"), rule: rule)
+    expect(tiny).not_to be_sized
+    expect(tiny.reason).to include("buys no whole share")
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "sed -n '1,260p' spec/models/risk_rule_spec.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+require "rails_helper"
+
+RSpec.describe RiskRule do
+  let(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
+
+  it "keeps one active global rule per type, even with a null setup, and supersedes instead of editing" do
+    rule = described_class.create!(rule_type: "notional_cap", params: { "per_order" => "1000" })
+    expect { described_class.create!(rule_type: "notional_cap", params: { "per_order" => "2000" }) }.to raise_error(ActiveRecord::RecordNotUnique)
+    successor = rule.supersede!(params: { "per_order" => "2000" }, user: john, note: "raised")
+    expect(rule.reload).to have_attributes(active: false, superseded_by: successor)
+    expect(successor).to have_attributes(version: 2, active: true, changed_by: john)
+    expect(AuditEvent.find_by(kind: "rule_changed").data).to include("before" => { "per_order" => "1000" }, "after" => { "per_order" => "2000" })
+    expect(described_class.active_for("notional_cap")).to eq(successor)
+  end
+
+  it "prefers a setup's rule over the global one and refuses an unknown type" do
+    setup = create(:setup, name: "Breakout")
+    global = described_class.create!(rule_type: "stop_collar", params: { "atr_k" => "2.5" })
+    specific = described_class.create!(rule_type: "stop_collar", params: { "atr_k" => "3" }, setup: setup)
+    expect(described_class.active_for("stop_collar", setup: setup)).to eq(specific)
+    expect(described_class.active_for("stop_collar", setup: create(:setup, name: "Other"))).to eq(global)
+    expect(described_class.new(rule_type: "vibes", params: {})).not_to be_valid
+  end
+end
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,260p' db/seeds.rb" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Access is by allowlist: only seeded users can request a sign-in link. This part runs everywhere, including
+# the production release phase (db:prepare seeds a fresh database).
+{ "john@athayde.com" => [ "John", true ], "whitney@athayde.com" => [ "Whitney", false ] }.each do |email_address, (name, approver)|
+  User.find_or_initialize_by(email_address:).update!(name:, approver:)
+end
+
+# A development desk through the fake broker and the fake model, so every screen and a brief render without
+# Schwab or Anthropic. Never in production, never against the real adapters, never twice.
+return unless Rails.env.development? && Schwab.fake? && Agent.fake?
+return puts("desk already seeded; bin/rails db:reset to start over") if Account.any?
+
+ActiveJob::Base.queue_adapter = :inline # the sync jobs hand off to the journal with perform_later
+Schwab::FakeClient.instance.reset!
+
+now = Time.current
+SchwabToken.create!(access_token: "fake-access", refresh_token: "fake-refresh", issued_at: now, access_expires_at: now + 29.minutes,
+                    refresh_expires_at: now + SchwabToken::REFRESH_LIFETIME, scope: "api")
+(MarketDay.today..MarketDay.today + 7).each { |date| MarketDay.for(date) }
+
+Sync::AccountsJob.perform_now
+account = Account.first.tap { |a| a.update!(account_type: :taxable, trading_enabled: true, nickname: "Taxable") }
+Sync::PositionsJob.perform_now(account)
+Sync::OrdersJob.perform_now(account)
+Sync::ActivitiesJob.perform_now(account)
+Journal::BootstrapJob.perform_now(account)
+Journal::LinkFillsJob.perform_now(account)
+
+# One setup, one reviewed trade, one left in the review queue, one closed trade with an R so the stats have a row.
+john = User.find_by!(email_address: "john@athayde.com")
+breakout = Setup.create!(name: "Breakout", definition: "Buy the break of a tight range on volume; stop under the range low.")
+reviewed, *queued = account.trades.needing_review.order(:id).to_a
+reviewed&.review!(setup: breakout, planned_stop: reviewed.avg_entry * BigDecimal("0.95"), thesis: "Seeded thesis: range break on volume.", user: john)
+queued.first&.defer_review! # one trade stays in the review queue, skipped once
+closed = account.trades.create!(instrument: Instrument.find_by!(symbol: "XYZ"), status: :closed, setup: breakout, avg_entry: 51.18, avg_exit: 55.31, peak_quantity: 40,
+                                realized_pnl: 165.2, initial_risk: 91.2, realized_r: 1.81, planned_stop: 48.9, opened_at: 9.days.ago, closed_at: 2.days.ago,
+                                thesis: "Seeded closed trade.", followed_setup: true)
+closed.trade_legs.create!(kind: :entry, quantity: 40, price: 51.18, cash_amount: -2047.2, executed_at: 9.days.ago)
+closed.trade_legs.create!(kind: :exit, quantity: 40, price: 55.31, cash_amount: 2212.4, executed_at: 2.days.ago)
+Journal::RecomputeSetupStatsJob.perform_now(breakout)
+
+# A short equity history so drawdown and day change have something to read, and one failed run for the system page.
+balance = account.current_balance
+[ 3, 2, 1 ].each_with_index do |days_ago, i|
+  account.snapshots.create!(as_of: MarketDay.today - days_ago, equity: balance.equity - 60 + i * 20, index_value: 1 + i * 0.002, high_water_index: 1.004,
+                            drawdown: [ 0.004 - i * 0.002, 0 ].max, open_risk_amount: 120, open_risk_ratio: 0.012, unprotected_count: 0)
+end
+SyncRun.create!(feed: :orders, account: account, status: :failed, started_at: 2.hours.ago, finished_at: 2.hours.ago, error: "seeded: Schwab 503 (see /system)")
+
+# One brief through the fake model for the most recent weekday; the email lands in tmp/mails.
+brief_day = MarketDay.today
+brief_day -= 1 until brief_day.on_weekday?
+Agent::MorningBriefJob.perform_now(brief_day)
+puts "seeded: #{Account.count} account, #{Position.count} positions, #{Trade.count} trades, #{Setup.count} setup, #{AgentRun.count} brief (email in tmp/mails)"
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,220p' docs/phase-2-plan.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+# Phase 2 plan: propose and approve (shadow mode on)
+
+Source of truth: `docs/artifacts/investment-copilot-prd.md` §5.1, §5.4, §5.4.1, §5.4.2, §5.5, §5.8, §5.8a, §6, §7, §8, §10; screens in `investment-copilot-ui-flows.md` Flows 2, 3, 6, 7, 8 and the wireframes. Phase 1 (`docs/phase-1-plan.md`) is deployed; its conventions hold (secrets in credentials, no plaintext account numbers, CUSIP identity, every "logged" action an `audit_events` row, no live Schwab calls in tests, unattended runs read-only, `bin/ci` green per step, DHH and counselors review per step). Equities only (PRD §8). Nothing auto-executes: the only path to Schwab's order endpoint is the operator's approve gesture in the Rails UI, and it stays shadowed until shadow mode is turned off deliberately. Revised after the counselors plan review (codex-5.5-high, claude-fable).
+
+## 0. Decisions and assumptions
+
+1. **Approve is the submission.** Flow 2's deliberate confirm is the moment the order goes to Schwab (or, in shadow mode, would have). There is no resting `approved` state that code can submit later: `OrderProposal#approve_and_submit!(user:, acknowledged:, override_reason:)` is one synchronous request; the operator waits for the outcome on the page. The word `approved` does not appear in the state list.
+2. **Shadow mode stays on for the whole phase.** `SystemSettings#shadow_mode` is true by default; turning it off is a typed-confirmation toggle on the system page, audited (`shadow_mode_toggled`). In shadow mode the approve path runs end to end and the submission step audits `would_have_submitted` with the exact payload instead of calling Schwab; the proposal leaves the approvable states exactly as a real submission would. **Shadow reconciliation is defined:** the operator places the shadowed order by hand at Schwab, the sync ingests it as `schwab_direct`, and the same matcher the reconcile job uses (§5) links the `would_have_submitted` attempt to that order and diffs the payload against the shape Schwab returned. The system page counts shadowed approvals and how many reconciled cleanly; that count, not a number in this plan, is what the operator reads before turning shadow off. This exercises the matcher and the bracket shape before either guards money.
+3. **Two halts, not one.** The kill switch (Phase 1's manual halt, Flow 8) stops everything: entries, exits, stop adjustments, tool proposals. A rule halt (daily loss, max drawdown; PRD §5.4 3) blocks new entries only; exits and tighten-only stop adjustments stay available. Rule halts are durable state on `system_settings` (`rule_halt_rule`, `rule_halt_reason`, `rule_halt_tripped_at`, `rule_halt_resets_at`), tripped by the evaluator or the nightly check with one `halt_tripped` audit and one email, cleared at the reset time or by the operator with a reason. `SystemSettings#writes_allowed?` is replaced by `entries_allowed?` (no kill switch, no rule halt) and `exits_allowed?` (no kill switch); shadow mode is not a gate but the branch between `would_have_submitted` and a real call.
+4. **Sizing is computed by Rails at proposal creation and frozen.** Quantity = floor(risk budget ÷ per-share risk), risk budget = the max-risk-per-trade rule's percent × equity from the latest fresh balance, per-share risk = entry − stop (both from the proposal; a zero or negative per-share risk, or a short-side entry, is a hard fail). Whole shares only. Entries are LIMIT orders only in Phase 2 (a MARKET entry has no price to size or collar against). Approval re-runs the rules over the frozen quantity; a context change that would have changed the quantity or turned a pass into a fail refuses with "re-propose", never a silent recompute. The agent proposes symbol, side, limit price, stop, thesis, setup; Rails fills the quantity and the collar.
+5. **Bracket = Schwab `TRIGGER` strategy**: a LIMIT entry whose `childOrderStrategies` carries one `STOP` sell for the same quantity (`# SCHWAB_SHAPE_UNVERIFIED`: strategy type name, child shape, child status while the parent works, whether a `TRAILING_STOP` child is accepted). **An exit reduces or cancels the bracket child in the same approve step**: a sell proposal on a position with a working stop carries the child cancel or replace, so no oversized stop is left at Schwab. `Schwab::OrderPayload` (bracket, sell, replace_stop, cancel) lives in the Schwab namespace like every other shape; the proposal never spells a Schwab field name. `Schwab::Client#place_order` returns the order id from the `Location` header, `#preview_order` if the endpoint exists, `#cancel_order`, `#replace_order`.
+6. **Idempotency is local (PRD §5.1) and survives a killed worker.** Two transactions, not one. First: lock the proposal row, verify the state and the gates, re-evaluate, move `validated → submitting`, insert the `submission_attempts` row with the payload, commit. Then the HTTP call with short explicit timeouts (5 s open, 20 s read, no retries). Second: record the outcome. Nothing re-enters an approvable state from `submitting` or `submission_unknown`. A `submitting` row older than the timeouts plus slack is swept to `submission_unknown` by the tick, never back. A 2xx without a parsable order id is `submission_unknown`. The broker order id goes on the proposal in the second transaction; the orders sync links the order and its child by that id, since Schwab carries no proposal id. Database invariants: at most one attempt per proposal whose outcome is not `failed` (partial unique index); `submitted` requires an attempt; `filled` and `cancelled` are written only by the sync.
+7. **Reconciliation is conservative and locks the instrument.** `Submission::ReconcileJob` waits a quiet period (60 s), searches the orders endpoint for a match (account, instrument by CUSIP, side, quantity, order type, limit or stop price, session and duration, entered within the attempt window), excludes orders already linked to any proposal, treats two matches as ambiguous for the operator, and confirms a "nothing found" twice, ten minutes apart, before the proposal becomes resubmittable (`submission_failed`, with the attempt marked `not_placed`). While any proposal on an instrument is `submitting` or `submission_unknown`, every other proposal on that instrument hard-fails as "pending reconciliation", including the manual form and the tool. `submission_unknown` is a banner on the dashboard and the queue and an email, until resolved.
+8. **Guardrails are data** in `risk_rules` (`rule_type`, `params`, `active`, `version`, `setup_id`, `superseded_by_id`, plus `mode` and `note`): edits create a new version and supersede the old, never update in place; one active row per `(rule_type, setup_id)` with `NULLS NOT DISTINCT`. `guardrail_results` snapshots each rule's id, version, and params with its outcome and numbers. Outcomes: `pass`, `warn` (needs acknowledgement), `fail` (hard block), `unavailable`. **Unavailable behaviour is defined per rule:** settled cash unavailable (stale balance, unverified mapping) is a hard fail; sector exposure (2b) and earnings and econ blackout (5) are unavailable in Phase 2 because there is no sector or calendar source (FMP is Phase 2.5) and are shown as a warning the operator must acknowledge on every entry, with the words "not checked". That is a deviation from PRD §5.4, which lists them as starting rules; it is recorded here for the user to confirm, and the rules become real when FMP lands.
+9. **Settled cash (rule 4)** subtracts from the broker's settled cash every unfilled app buy in `submitting`, `submission_unknown`, or `submitted`, and every live broker buy order the sync knows, whether or not `cashAvailableForTrading` already nets working buys (verify-on-approval item 10 is open; double-subtract until it is verified). A balance past the staleness threshold makes the rule unavailable, and unavailable here is a hard fail.
+10. **Stop collar (§5.4.1)** from Schwab daily history through `Agent::MarketData` (cached, budgeted): ATR(14) multiple, swing low over N bars minus a buffer, percent stop, chandelier (reference). Parameters per setup in `stop_collar` rules. Data quality: at least 30 daily candles, the latest within two trading days, a fresh quote, a positive per-share risk. Bad or missing collar data is a hard fail for entries (nothing to override); only a stop computed and outside the range is the overrideable `warn` with a logged reason. Rules 1 to 4 and 7 are hard fails.
+11. **Wash sale (§5.4 6), both directions, taxable losses only.** On a buy in the taxable account: warn or block (the rule's `mode`) when the same CUSIP realized a loss in the taxable account within the prior 30 days. On a sell that would realize a loss: warn when the same CUSIP was bought within the prior 30 days in the taxable account or the IRA (the loss would be disallowed). An IRA buy inside 30 days after a taxable loss cannot be blocked (no proposals there); it is named on the trade and in the brief. Instrument match only, and the detail page says so. **Tax lots (6a):** every sell carries `tax_lot_method` (FIFO default; enum `# SCHWAB_SHAPE_UNVERIFIED`) and shows the open lots with short or long-term status from the journal's legs.
+12. **Write tools exist only on the interactive transport** (`mcp: true, scheduled: false, read_only: false, audited: true`); the registry writes an `audit_events` row for every audited call: `propose_order`, `annotate_trade`, `add_watchlist_item`, plus the read tool `evaluate_hypothetical_order`. `submit_order`, `cancel_order`, `edit_risk_rules`, and token operations do not exist as tools.
+13. **One approver.** `users.approver` boolean (seeded true for John); only an approver's session can approve, reject, override, edit rules, or toggle shadow mode; the second user reads. A second inbox is otherwise an order path.
+14. **Notifications in Phase 2 are email** (new proposal, fill or cancel, halt tripped, unprotected position, submission unknown), one per event, audited, no dollar figures in subjects, deep links only; push replaces the time-sensitive set when the iOS shell exists.
+15. **iOS: Rails side in this repo, shell in its own repository, last step of the phase.** PRD §6 lists the Hotwire Native app with push and Face ID in Phase 2; this plan delivers the Rails half (path configuration, device registration, APNs delivery) and defers the Xcode project to a separate effort. That is a scope deviation for the user to confirm. APNs needs a gem outside Rails defaults (candidate `apnotic`), a decision for the user.
+16. **Every state change is an audit event** with the actor: `proposal_created`, `proposal_evaluated`, `proposal_approved` (acknowledged warnings, override reason), `proposal_rejected`, `proposal_submitting`, `proposal_submitted`, `would_have_submitted`, `submission_unknown`, `submission_reconciled`, `submission_failed`, `proposal_expired`, `proposal_cancelled`, `rule_changed` (before and after), `rule_halt_tripped`, `rule_halt_cleared`, `shadow_mode_toggled`, `unprotected_alert_sent`, `agent_tool_used`.
+
+## 1. Data model (§5.2; the user has approved Phase 2's tables in the PRD; new columns listed for the review)
+
+| Table | Change |
+|---|---|
+| `order_proposals` (exists) | `status` enum becomes: `proposed`, `validated`, `rejected_by_rules`, `rejected` (by the human), `expired`, `submitting`, `submitted`, `submission_unknown`, `submission_failed`, `filled`, `cancelled`; add `collar` jsonb, `sizing` jsonb, `override_reason`, `evaluated_at`, `decided_at`, `decided_by_id`, `rejection_reason`, `expires_at`, `shadow` boolean, `broker_order_id`, `parent_proposal_id` (a stop adjustment or exit points at the entry it acts on), `child_action` (`cancel_stop`, `replace_stop`, none) |
+| `submission_attempts` (exists) | `outcome` enum: `submitted`, `would_have_submitted`, `unknown`, `not_placed`, `failed`; partial unique index on `order_proposal_id` where outcome not in (`failed`, `not_placed`); `broker_order_id`, `reconciled_at` |
+| `risk_rules` (exists) | add `mode`, `note`, `changed_by_id`; unique index `(rule_type, setup_id)` where `active` with `NULLS NOT DISTINCT` |
+| `system_settings` | add `rule_halt_rule`, `rule_halt_reason`, `rule_halt_tripped_at`, `rule_halt_resets_at`, `shadow_mode_changed_at` |
+| `users` | add `approver` boolean |
+| `accounts` | the one-trading-account invariant stays a read rule (`Account.trading.order(:id).first`) until the UI is multi-account; a partial unique index would break every spec that builds two accounts, and Phase 2 never approves for a second account |
+| `watchlist_items` (new) | `instrument_id` (nullable until resolved), `symbol`, `trigger`, `thesis`, `origin`, `user_id`, `status` (watching, triggered, dropped) |
+| `push_devices` (new, §11) | `user_id`, `token` (encrypted), `platform`, `last_seen_at` |
+| `positions` | `suggested_stop` and `suggested_stop_method` (nightly trail) |
+| `orders` | `order_proposal_id` set by the second submission transaction and by reconciliation; `placed_via` `app` for orders the app placed |
+
+## 2. State table (step 0 of the build)
+
+A written table, state × action × result, including the crash points, from which the transition specs are generated: creation → `proposed` → evaluate → `validated` or `rejected_by_rules`; `validated` → approve (lock, re-evaluate, `submitting`, attempt row) → HTTP → `submitted` (order id) or `submission_unknown` (timeout, 5xx, dropped connection, 2xx without an id) or `submission_failed` (4xx, attempt `failed`, the operator sees the error and may re-propose); `submitting` older than the timeouts → `submission_unknown` (sweep); `submission_unknown` → reconcile → `submitted` (found, linked) or `submission_failed` (confirmed absent twice, attempt `not_placed`) or stays with "ambiguous" for the operator; `submitted` → sync → `filled` or `cancelled`; `proposed` and `validated` → expire at the end of their market day; `validated` → reject (human) → `rejected`. Illegal transitions raise; every legal one audits.
+
+## 3. Guardrail engine
+
+`Guardrails::Evaluator.new(proposal).call` returns `Guardrails::Report` (a `Result(rule, outcome, detail)` per active rule; `blocked?`, `warnings`, `needs_override?`, `unavailable`) and is the only writer of `guardrail_results`. Rules are `Guardrails::Rule` subclasses keyed by `rule_type` over `Guardrails::Context` (fresh balance or its staleness, open positions and their risk, today's realized P&L and drawdown, the projected cash of §0.9, the instrument lock of §0.7, the wash-sale history, the collar): `max_risk_per_trade`, `max_positions`, `max_position_exposure`, `max_sector_exposure` (unavailable → acknowledge), `daily_loss_halt` and `max_drawdown_halt` (which also trip the durable rule halt), `settled_cash`, `earnings_blackout` (unavailable → acknowledge), `wash_sale`, `notional_cap` (per order and per day, counting today's `submitting`, `submitted`, and `filled`), `stop_collar`, `pending_reconciliation`. Evaluation runs on create and again inside the approve lock; `evaluate_hypothetical_order` runs the same evaluator over an unsaved proposal and returns the report without writing anything.
+
+## 4. Stop collar, sizing, trails
+
+`StopCollar::Calculator.new(instrument, entry_price:, setup:)` pulls one year of daily candles and the current quote, checks quality, computes every enabled method from the setup's `stop_collar` rule, and returns `Collar(methods:, tight:, wide:, floor:, quality:)`; the percent stop is the floor. `Sizing.for(proposal, equity:)` freezes the quantity and the numbers behind it into `sizing`. `StopCollar::TrailJob` (17:00 New York) recomputes chandelier and ATR trails for open positions into `positions.suggested_stop` for the EOD brief's "tighten stop" line; adjusting the real stop is a `stop_adjustment` proposal, tighten-only unless a human types a reason.
+
+## 5. Proposals, approval, submission
+
+`OrderProposal` kinds: `entry` (LIMIT buy with a child stop), `exit` (sell, with the child action), `stop_adjustment` (replace the working stop). Origin `agent` or `human`. `Proposals::Create` is the one service the tool and the form use (resolve the instrument, size, collar, evaluate, audit). The queue is `/proposals`, the detail `/proposals/:id` (Flow 2: the evaluation table with outcomes and numbers, the collar with the stop marked, the sizing, the thesis and setup, the lots on a sell, the warnings to acknowledge, the override reason field, the approve and reject forms; web confirm is a typed word; iOS later: Face ID). The manual form is `/proposals/new` (Flow 3), collar and sizing recomputed through a Turbo frame. `Submission::Submit` is the two-transaction path of §0.6 with the shadow branch; `Submission::ReconcileJob` per §0.7; `Submission::Sweep` in the tick; `Orders::ProtectionWatch` in the orders sync (a parent filled with no live child, or a working stop gone at the broker → the unprotected alert once per position, audited).
+
+## 6. Wash sale and tax lots
+
+`WashSale.check(instrument, side:, accounts:)` per §0.11 over closed trades (taxable losses) and fills in both accounts. `TaxLots.for(trade)` lists open entry legs with acquisition dates and terms.
+
+## 7. Write tools and the registry
+
+`Agent::Tool` gains `audited:`; `Agent::Tools.call` writes `agent_tool_used` with the tool name and arguments (never the account hash) for an audited tool. `ProposeOrder` (through `Proposals::Create`; refused during a rule halt for entries and during the kill switch for everything), `AnnotateTrade` (appends to the post-mortem), `AddWatchlistItem`, `EvaluateHypotheticalOrder`. `Agent::Tools.for(:scheduled)` cannot see a write tool by construction.
+
+## 8. Rule editor, halts, watchlist
+
+`/risk_rules` (Flow 6): one row per active rule, a form that creates the next version, an effect preview over today's positions and pending proposals, locked while any halt is engaged with the override path (engage the kill switch, type a reason, edit). Rule halts show on the dashboard banner (entries blocked, exits open) distinct from the kill switch. `/watchlist` (Flow 7): items from the tool and the form, a link to propose from each, and the morning brief's "watching" section reads the table.
+
+## 9. Notifications and screens
+
+`AlertMailer`: `new_proposal`, `fill_or_cancel`, `halt_tripped`, `unprotected_position`, `submission_unknown`. Proposal queue and detail, manual form, rule editor, watchlist, the shadow-mode and halt controls and the shadow reconciliation count on the system page, the dashboard's pending-proposals line and the unprotected and submission-unknown banners, the EOD brief's fills recap linking fills to proposals, the trade detail's originating proposal. Playwright: a warn, a hard fail, an override, an approve in shadow, a submission unknown, a rule halt with an exit still allowed.
+
+## 10. iOS (Rails side)
+
+`GET /native/path_configuration.json`, `POST /native/devices`, `Push::Deliver` behind the alert events with email as the fallback; the approve endpoint accepts the web's typed confirmation or the shell's signed confirmation header (`# VERIFY: Hotwire Native bridge contract`).
+
+## 11. Build order (green `bin/ci`, DHH and counselors review, commit per step)
+
+0. The state table (§2) and the Phase 2 section of `docs/verify-on-approval.md`.
+1. Prerequisites and schema: the enum migration and columns of §1, the approver flag, the one-trading-account index, `risk_rules` uniqueness, the halt split on `SystemSettings` with `entries_allowed?` and `exits_allowed?`, `Agent::Tool` `audited` and the registry's audit row, `OrderProposal` states with transition specs generated from the table, `Sizing`.
+2. The full evaluator: every rule of §3 including wash sale, settled cash with the projection, notional caps, the durable rule halts, the collar calculator and its quality gates; `evaluate_hypothetical_order`; a seeded rule set.
+3. Proposals end to end in shadow: `Proposals::Create`, `propose_order`, the manual form, the queue and detail, `approve_and_submit!` with the two transactions, the payload builder, `would_have_submitted`, the shadow reconciliation matcher and count, expiry, rejection.
+4. The real client path behind the shadow branch: `place_order`, `preview_order`, `cancel_order`, `replace_order` with cassettes marked unverified, the reconcile job with the quiet period and double confirmation, the submitting sweep, the instrument lock, orders linkage, the child action on exits, the unprotected alert.
+5. `annotate_trade`, `add_watchlist_item`, the watchlist screen, tax lots on sells, the brief's watching section and tighten-stop line, the trail job.
+6. Rule editor with versions, preview, and the halt override; the shadow-mode toggle with typed confirmation.
+7. Alert mailer, digest additions, dashboard and journal proposal lines, Playwright scenarios, phase-level DHH and counselors review.
+8. iOS Rails side, after the APNs gem decision.
+9. Phase 2.5 (allocation) gets its own plan.
+
+## 12. Schwab shapes to settle before step 4 (Phase 2 section of `docs/verify-on-approval.md`)
+
+At zero risk, before step 4: place one bracket by hand on Schwab's site, let the sync ingest it, and read the strategy type, the child shape and status while the parent works, `taxLotMethod`, and the fields the order search can filter on and their time precision; probe `previewOrder`. Only the first live submission can settle the `Location` header, write rate limits, and replace semantics on a `TRIGGER` child: a one-share first-live runbook with the operator watching, after shadow reconciliation. The evaluator, collar, sizing, wash sale, queue, and mailer are safe to build and shadow before any of this.
+
+## 13. Not built in Phase 2
+
+Real submission with shadow mode off (the operator's toggle, after reconciled shadow approvals), options, FMP and the earnings and econ calendar (rules 2b and 5 stay acknowledge-only), the allocation module, Phase 3 auto-submit, the Xcode project.
+
+## 14. For the user to confirm (recorded, not blocking the build)
+
+Rules 2b and 5 as acknowledge-only warnings until FMP (a deviation from PRD §5.4); the Xcode shell as a separate effort (a deviation from PRD §6); the APNs gem; the second user as read-only.
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'rg -n "''^(##? )?(0|1|2|11)|§5'"\\.4|Flow 8|halt|approver|Sizing|state|submission|write tool|scheduled|rule\" docs/phase-2-plan.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+3:Source of truth: `docs/artifacts/investment-copilot-prd.md` §5.1, §5.4, §5.4.1, §5.4.2, §5.5, §5.8, §5.8a, §6, §7, §8, §10; screens in `investment-copilot-ui-flows.md` Flows 2, 3, 6, 7, 8 and the wireframes. Phase 1 (`docs/phase-1-plan.md`) is deployed; its conventions hold (secrets in credentials, no plaintext account numbers, CUSIP identity, every "logged" action an `audit_events` row, no live Schwab calls in tests, unattended runs read-only, `bin/ci` green per step, DHH and counselors review per step). Equities only (PRD §8). Nothing auto-executes: the only path to Schwab's order endpoint is the operator's approve gesture in the Rails UI, and it stays shadowed until shadow mode is turned off deliberately. Revised after the counselors plan review (codex-5.5-high, claude-fable).
+5:## 0. Decisions and assumptions
+7:1. **Approve is the submission.** Flow 2's deliberate confirm is the moment the order goes to Schwab (or, in shadow mode, would have). There is no resting `approved` state that code can submit later: `OrderProposal#approve_and_submit!(user:, acknowledged:, override_reason:)` is one synchronous request; the operator waits for the outcome on the page. The word `approved` does not appear in the state list.
+8:2. **Shadow mode stays on for the whole phase.** `SystemSettings#shadow_mode` is true by default; turning it off is a typed-confirmation toggle on the system page, audited (`shadow_mode_toggled`). In shadow mode the approve path runs end to end and the submission step audits `would_have_submitted` with the exact payload instead of calling Schwab; the proposal leaves the approvable states exactly as a real submission would. **Shadow reconciliation is defined:** the operator places the shadowed order by hand at Schwab, the sync ingests it as `schwab_direct`, and the same matcher the reconcile job uses (§5) links the `would_have_submitted` attempt to that order and diffs the payload against the shape Schwab returned. The system page counts shadowed approvals and how many reconciled cleanly; that count, not a number in this plan, is what the operator reads before turning shadow off. This exercises the matcher and the bracket shape before either guards money.
+9:3. **Two halts, not one.** The kill switch (Phase 1's manual halt, Flow 8) stops everything: entries, exits, stop adjustments, tool proposals. A rule halt (daily loss, max drawdown; PRD §5.4 3) blocks new entries only; exits and tighten-only stop adjustments stay available. Rule halts are durable state on `system_settings` (`rule_halt_rule`, `rule_halt_reason`, `rule_halt_tripped_at`, `rule_halt_resets_at`), tripped by the evaluator or the nightly check with one `halt_tripped` audit and one email, cleared at the reset time or by the operator with a reason. `SystemSettings#writes_allowed?` is replaced by `entries_allowed?` (no kill switch, no rule halt) and `exits_allowed?` (no kill switch); shadow mode is not a gate but the branch between `would_have_submitted` and a real call.
+10:4. **Sizing is computed by Rails at proposal creation and frozen.** Quantity = floor(risk budget ÷ per-share risk), risk budget = the max-risk-per-trade rule's percent × equity from the latest fresh balance, per-share risk = entry − stop (both from the proposal; a zero or negative per-share risk, or a short-side entry, is a hard fail). Whole shares only. Entries are LIMIT orders only in Phase 2 (a MARKET entry has no price to size or collar against). Approval re-runs the rules over the frozen quantity; a context change that would have changed the quantity or turned a pass into a fail refuses with "re-propose", never a silent recompute. The agent proposes symbol, side, limit price, stop, thesis, setup; Rails fills the quantity and the collar.
+12:6. **Idempotency is local (PRD §5.1) and survives a killed worker.** Two transactions, not one. First: lock the proposal row, verify the state and the gates, re-evaluate, move `validated → submitting`, insert the `submission_attempts` row with the payload, commit. Then the HTTP call with short explicit timeouts (5 s open, 20 s read, no retries). Second: record the outcome. Nothing re-enters an approvable state from `submitting` or `submission_unknown`. A `submitting` row older than the timeouts plus slack is swept to `submission_unknown` by the tick, never back. A 2xx without a parsable order id is `submission_unknown`. The broker order id goes on the proposal in the second transaction; the orders sync links the order and its child by that id, since Schwab carries no proposal id. Database invariants: at most one attempt per proposal whose outcome is not `failed` (partial unique index); `submitted` requires an attempt; `filled` and `cancelled` are written only by the sync.
+13:7. **Reconciliation is conservative and locks the instrument.** `Submission::ReconcileJob` waits a quiet period (60 s), searches the orders endpoint for a match (account, instrument by CUSIP, side, quantity, order type, limit or stop price, session and duration, entered within the attempt window), excludes orders already linked to any proposal, treats two matches as ambiguous for the operator, and confirms a "nothing found" twice, ten minutes apart, before the proposal becomes resubmittable (`submission_failed`, with the attempt marked `not_placed`). While any proposal on an instrument is `submitting` or `submission_unknown`, every other proposal on that instrument hard-fails as "pending reconciliation", including the manual form and the tool. `submission_unknown` is a banner on the dashboard and the queue and an email, until resolved.
+14:8. **Guardrails are data** in `risk_rules` (`rule_type`, `params`, `active`, `version`, `setup_id`, `superseded_by_id`, plus `mode` and `note`): edits create a new version and supersede the old, never update in place; one active row per `(rule_type, setup_id)` with `NULLS NOT DISTINCT`. `guardrail_results` snapshots each rule's id, version, and params with its outcome and numbers. Outcomes: `pass`, `warn` (needs acknowledgement), `fail` (hard block), `unavailable`. **Unavailable behaviour is defined per rule:** settled cash unavailable (stale balance, unverified mapping) is a hard fail; sector exposure (2b) and earnings and econ blackout (5) are unavailable in Phase 2 because there is no sector or calendar source (FMP is Phase 2.5) and are shown as a warning the operator must acknowledge on every entry, with the words "not checked". That is a deviation from PRD §5.4, which lists them as starting rules; it is recorded here for the user to confirm, and the rules become real when FMP lands.
+15:9. **Settled cash (rule 4)** subtracts from the broker's settled cash every unfilled app buy in `submitting`, `submission_unknown`, or `submitted`, and every live broker buy order the sync knows, whether or not `cashAvailableForTrading` already nets working buys (verify-on-approval item 10 is open; double-subtract until it is verified). A balance past the staleness threshold makes the rule unavailable, and unavailable here is a hard fail.
+16:10. **Stop collar (§5.4.1)** from Schwab daily history through `Agent::MarketData` (cached, budgeted): ATR(14) multiple, swing low over N bars minus a buffer, percent stop, chandelier (reference). Parameters per setup in `stop_collar` rules. Data quality: at least 30 daily candles, the latest within two trading days, a fresh quote, a positive per-share risk. Bad or missing collar data is a hard fail for entries (nothing to override); only a stop computed and outside the range is the overrideable `warn` with a logged reason. Rules 1 to 4 and 7 are hard fails.
+17:11. **Wash sale (§5.4 6), both directions, taxable losses only.** On a buy in the taxable account: warn or block (the rule's `mode`) when the same CUSIP realized a loss in the taxable account within the prior 30 days. On a sell that would realize a loss: warn when the same CUSIP was bought within the prior 30 days in the taxable account or the IRA (the loss would be disallowed). An IRA buy inside 30 days after a taxable loss cannot be blocked (no proposals there); it is named on the trade and in the brief. Instrument match only, and the detail page says so. **Tax lots (6a):** every sell carries `tax_lot_method` (FIFO default; enum `# SCHWAB_SHAPE_UNVERIFIED`) and shows the open lots with short or long-term status from the journal's legs.
+18:12. **Write tools exist only on the interactive transport** (`mcp: true, scheduled: false, read_only: false, audited: true`); the registry writes an `audit_events` row for every audited call: `propose_order`, `annotate_trade`, `add_watchlist_item`, plus the read tool `evaluate_hypothetical_order`. `submit_order`, `cancel_order`, `edit_risk_rules`, and token operations do not exist as tools.
+19:13. **One approver.** `users.approver` boolean (seeded true for John); only an approver's session can approve, reject, override, edit rules, or toggle shadow mode; the second user reads. A second inbox is otherwise an order path.
+20:14. **Notifications in Phase 2 are email** (new proposal, fill or cancel, halt tripped, unprotected position, submission unknown), one per event, audited, no dollar figures in subjects, deep links only; push replaces the time-sensitive set when the iOS shell exists.
+21:15. **iOS: Rails side in this repo, shell in its own repository, last step of the phase.** PRD §6 lists the Hotwire Native app with push and Face ID in Phase 2; this plan delivers the Rails half (path configuration, device registration, APNs delivery) and defers the Xcode project to a separate effort. That is a scope deviation for the user to confirm. APNs needs a gem outside Rails defaults (candidate `apnotic`), a decision for the user.
+22:16. **Every state change is an audit event** with the actor: `proposal_created`, `proposal_evaluated`, `proposal_approved` (acknowledged warnings, override reason), `proposal_rejected`, `proposal_submitting`, `proposal_submitted`, `would_have_submitted`, `submission_unknown`, `submission_reconciled`, `submission_failed`, `proposal_expired`, `proposal_cancelled`, `rule_changed` (before and after), `rule_halt_tripped`, `rule_halt_cleared`, `shadow_mode_toggled`, `unprotected_alert_sent`, `agent_tool_used`.
+24:## 1. Data model (§5.2; the user has approved Phase 2's tables in the PRD; new columns listed for the review)
+28:| `order_proposals` (exists) | `status` enum becomes: `proposed`, `validated`, `rejected_by_rules`, `rejected` (by the human), `expired`, `submitting`, `submitted`, `submission_unknown`, `submission_failed`, `filled`, `cancelled`; add `collar` jsonb, `sizing` jsonb, `override_reason`, `evaluated_at`, `decided_at`, `decided_by_id`, `rejection_reason`, `expires_at`, `shadow` boolean, `broker_order_id`, `parent_proposal_id` (a stop adjustment or exit points at the entry it acts on), `child_action` (`cancel_stop`, `replace_stop`, none) |
+29:| `submission_attempts` (exists) | `outcome` enum: `submitted`, `would_have_submitted`, `unknown`, `not_placed`, `failed`; partial unique index on `order_proposal_id` where outcome not in (`failed`, `not_placed`); `broker_order_id`, `reconciled_at` |
+30:| `risk_rules` (exists) | add `mode`, `note`, `changed_by_id`; unique index `(rule_type, setup_id)` where `active` with `NULLS NOT DISTINCT` |
+31:| `system_settings` | add `rule_halt_rule`, `rule_halt_reason`, `rule_halt_tripped_at`, `rule_halt_resets_at`, `shadow_mode_changed_at` |
+32:| `users` | add `approver` boolean |
+33:| `accounts` | the one-trading-account invariant stays a read rule (`Account.trading.order(:id).first`) until the UI is multi-account; a partial unique index would break every spec that builds two accounts, and Phase 2 never approves for a second account |
+37:| `orders` | `order_proposal_id` set by the second submission transaction and by reconciliation; `placed_via` `app` for orders the app placed |
+39:## 2. State table (step 0 of the build)
+41:A written table, state × action × result, including the crash points, from which the transition specs are generated: creation → `proposed` → evaluate → `validated` or `rejected_by_rules`; `validated` → approve (lock, re-evaluate, `submitting`, attempt row) → HTTP → `submitted` (order id) or `submission_unknown` (timeout, 5xx, dropped connection, 2xx without an id) or `submission_failed` (4xx, attempt `failed`, the operator sees the error and may re-propose); `submitting` older than the timeouts → `submission_unknown` (sweep); `submission_unknown` → reconcile → `submitted` (found, linked) or `submission_failed` (confirmed absent twice, attempt `not_placed`) or stays with "ambiguous" for the operator; `submitted` → sync → `filled` or `cancelled`; `proposed` and `validated` → expire at the end of their market day; `validated` → reject (human) → `rejected`. Illegal transitions raise; every legal one audits.
+45:`Guardrails::Evaluator.new(proposal).call` returns `Guardrails::Report` (a `Result(rule, outcome, detail)` per active rule; `blocked?`, `warnings`, `needs_override?`, `unavailable`) and is the only writer of `guardrail_results`. Rules are `Guardrails::Rule` subclasses keyed by `rule_type` over `Guardrails::Context` (fresh balance or its staleness, open positions and their risk, today's realized P&L and drawdown, the projected cash of §0.9, the instrument lock of §0.7, the wash-sale history, the collar): `max_risk_per_trade`, `max_positions`, `max_position_exposure`, `max_sector_exposure` (unavailable → acknowledge), `daily_loss_halt` and `max_drawdown_halt` (which also trip the durable rule halt), `settled_cash`, `earnings_blackout` (unavailable → acknowledge), `wash_sale`, `notional_cap` (per order and per day, counting today's `submitting`, `submitted`, and `filled`), `stop_collar`, `pending_reconciliation`. Evaluation runs on create and again inside the approve lock; `evaluate_hypothetical_order` runs the same evaluator over an unsaved proposal and returns the report without writing anything.
+49:`StopCollar::Calculator.new(instrument, entry_price:, setup:)` pulls one year of daily candles and the current quote, checks quality, computes every enabled method from the setup's `stop_collar` rule, and returns `Collar(methods:, tight:, wide:, floor:, quality:)`; the percent stop is the floor. `Sizing.for(proposal, equity:)` freezes the quantity and the numbers behind it into `sizing`. `StopCollar::TrailJob` (17:00 New York) recomputes chandelier and ATR trails for open positions into `positions.suggested_stop` for the EOD brief's "tighten stop" line; adjusting the real stop is a `stop_adjustment` proposal, tighten-only unless a human types a reason.
+51:## 5. Proposals, approval, submission
+61:`Agent::Tool` gains `audited:`; `Agent::Tools.call` writes `agent_tool_used` with the tool name and arguments (never the account hash) for an audited tool. `ProposeOrder` (through `Proposals::Create`; refused during a rule halt for entries and during the kill switch for everything), `AnnotateTrade` (appends to the post-mortem), `AddWatchlistItem`, `EvaluateHypotheticalOrder`. `Agent::Tools.for(:scheduled)` cannot see a write tool by construction.
+63:## 8. Rule editor, halts, watchlist
+65:`/risk_rules` (Flow 6): one row per active rule, a form that creates the next version, an effect preview over today's positions and pending proposals, locked while any halt is engaged with the override path (engage the kill switch, type a reason, edit). Rule halts show on the dashboard banner (entries blocked, exits open) distinct from the kill switch. `/watchlist` (Flow 7): items from the tool and the form, a link to propose from each, and the morning brief's "watching" section reads the table.
+69:`AlertMailer`: `new_proposal`, `fill_or_cancel`, `halt_tripped`, `unprotected_position`, `submission_unknown`. Proposal queue and detail, manual form, rule editor, watchlist, the shadow-mode and halt controls and the shadow reconciliation count on the system page, the dashboard's pending-proposals line and the unprotected and submission-unknown banners, the EOD brief's fills recap linking fills to proposals, the trade detail's originating proposal. Playwright: a warn, a hard fail, an override, an approve in shadow, a submission unknown, a rule halt with an exit still allowed.
+71:## 10. iOS (Rails side)
+75:## 11. Build order (green `bin/ci`, DHH and counselors review, commit per step)
+77:0. The state table (§2) and the Phase 2 section of `docs/verify-on-approval.md`.
+78:1. Prerequisites and schema: the enum migration and columns of §1, the approver flag, the one-trading-account index, `risk_rules` uniqueness, the halt split on `SystemSettings` with `entries_allowed?` and `exits_allowed?`, `Agent::Tool` `audited` and the registry's audit row, `OrderProposal` states with transition specs generated from the table, `Sizing`.
+79:2. The full evaluator: every rule of §3 including wash sale, settled cash with the projection, notional caps, the durable rule halts, the collar calculator and its quality gates; `evaluate_hypothetical_order`; a seeded rule set.
+83:6. Rule editor with versions, preview, and the halt override; the shadow-mode toggle with typed confirmation.
+88:## 12. Schwab shapes to settle before step 4 (Phase 2 section of `docs/verify-on-approval.md`)
+90:At zero risk, before step 4: place one bracket by hand on Schwab's site, let the sync ingest it, and read the strategy type, the child shape and status while the parent works, `taxLotMethod`, and the fields the order search can filter on and their time precision; probe `previewOrder`. Only the first live submission can settle the `Location` header, write rate limits, and replace semantics on a `TRIGGER` child: a one-share first-live runbook with the operator watching, after shadow reconciliation. The evaluator, collar, sizing, wash sale, queue, and mailer are safe to build and shadow before any of this.
+92:## 13. Not built in Phase 2
+94:Real submission with shadow mode off (the operator's toggle, after reconciled shadow approvals), options, FMP and the earnings and econ calendar (rules 2b and 5 stay acknowledge-only), the allocation module, Phase 3 auto-submit, the Xcode project.
+96:## 14. For the user to confirm (recorded, not blocking the build)
+98:Rules 2b and 5 as acknowledge-only warnings until FMP (a deviation from PRD §5.4); the Xcode shell as a separate effort (a deviation from PRD §6); the APNs gem; the second user as read-only.
+
+exec
+/bin/zsh -lc "sed -n '220,520p' docs/phase-2-plan.md" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'rg -n "manual_halt|shadow_mode|system_settings|submission_attempt|order_proposals|audit_events|risk_rules|CHECK|CONSTRAINT|CREATE UNIQUE INDEX" db/structure.sql' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+ succeeded in 0ms:
+14:-- Name: audit_events_append_only(); Type: FUNCTION; Schema: public; Owner: -
+17:CREATE FUNCTION public.audit_events_append_only() RETURNS trigger
+21:  RAISE EXCEPTION 'audit_events is append-only';
+178:-- Name: audit_events; Type: TABLE; Schema: public; Owner: -
+181:CREATE TABLE public.audit_events (
+195:-- Name: audit_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+198:CREATE SEQUENCE public.audit_events_id_seq
+207:-- Name: audit_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+210:ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
+331:-- Name: order_proposals; Type: TABLE; Schema: public; Owner: -
+334:CREATE TABLE public.order_proposals (
+376:-- Name: order_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+379:CREATE SEQUENCE public.order_proposals_id_seq
+388:-- Name: order_proposals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+391:ALTER SEQUENCE public.order_proposals_id_seq OWNED BY public.order_proposals.id;
+489:-- Name: risk_rules; Type: TABLE; Schema: public; Owner: -
+492:CREATE TABLE public.risk_rules (
+509:-- Name: risk_rules_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+512:CREATE SEQUENCE public.risk_rules_id_seq
+521:-- Name: risk_rules_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+524:ALTER SEQUENCE public.risk_rules_id_seq OWNED BY public.risk_rules.id;
+1196:-- Name: submission_attempts; Type: TABLE; Schema: public; Owner: -
+1199:CREATE TABLE public.submission_attempts (
+1215:-- Name: submission_attempts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+1218:CREATE SEQUENCE public.submission_attempts_id_seq
+1227:-- Name: submission_attempts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+1230:ALTER SEQUENCE public.submission_attempts_id_seq OWNED BY public.submission_attempts.id;
+1275:-- Name: system_settings; Type: TABLE; Schema: public; Owner: -
+1278:CREATE TABLE public.system_settings (
+1280:    shadow_mode boolean DEFAULT true NOT NULL,
+1281:    manual_halt boolean DEFAULT false NOT NULL,
+1282:    manual_halt_reason text,
+1283:    manual_halt_at timestamp(6) with time zone,
+1291:    shadow_mode_changed_at timestamp with time zone,
+1292:    CONSTRAINT system_settings_singleton CHECK ((id = 1))
+1297:-- Name: system_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+1300:CREATE SEQUENCE public.system_settings_id_seq
+1309:-- Name: system_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+1312:ALTER SEQUENCE public.system_settings_id_seq OWNED BY public.system_settings.id;
+1542:-- Name: audit_events id; Type: DEFAULT; Schema: public; Owner: -
+1545:ALTER TABLE ONLY public.audit_events ALTER COLUMN id SET DEFAULT nextval('public.audit_events_id_seq'::regclass);
+1570:-- Name: order_proposals id; Type: DEFAULT; Schema: public; Owner: -
+1573:ALTER TABLE ONLY public.order_proposals ALTER COLUMN id SET DEFAULT nextval('public.order_proposals_id_seq'::regclass);
+1591:-- Name: risk_rules id; Type: DEFAULT; Schema: public; Owner: -
+1594:ALTER TABLE ONLY public.risk_rules ALTER COLUMN id SET DEFAULT nextval('public.risk_rules_id_seq'::regclass);
+1731:-- Name: submission_attempts id; Type: DEFAULT; Schema: public; Owner: -
+1734:ALTER TABLE ONLY public.submission_attempts ALTER COLUMN id SET DEFAULT nextval('public.submission_attempts_id_seq'::regclass);
+1745:-- Name: system_settings id; Type: DEFAULT; Schema: public; Owner: -
+1748:ALTER TABLE ONLY public.system_settings ALTER COLUMN id SET DEFAULT nextval('public.system_settings_id_seq'::regclass);
+1787:-- Name: accounts accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1791:    ADD CONSTRAINT accounts_pkey PRIMARY KEY (id);
+1795:-- Name: activities activities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1799:    ADD CONSTRAINT activities_pkey PRIMARY KEY (id);
+1803:-- Name: agent_runs agent_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1807:    ADD CONSTRAINT agent_runs_pkey PRIMARY KEY (id);
+1811:-- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1815:    ADD CONSTRAINT ar_internal_metadata_pkey PRIMARY KEY (key);
+1819:-- Name: audit_events audit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1822:ALTER TABLE ONLY public.audit_events
+1823:    ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
+1827:-- Name: balances balances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1831:    ADD CONSTRAINT balances_pkey PRIMARY KEY (id);
+1835:-- Name: instruments instruments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1839:    ADD CONSTRAINT instruments_pkey PRIMARY KEY (id);
+1843:-- Name: market_days market_days_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1847:    ADD CONSTRAINT market_days_pkey PRIMARY KEY (id);
+1851:-- Name: order_proposals order_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1854:ALTER TABLE ONLY public.order_proposals
+1855:    ADD CONSTRAINT order_proposals_pkey PRIMARY KEY (id);
+1859:-- Name: orders orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1863:    ADD CONSTRAINT orders_pkey PRIMARY KEY (id);
+1867:-- Name: positions positions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1871:    ADD CONSTRAINT positions_pkey PRIMARY KEY (id);
+1875:-- Name: risk_rules risk_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1878:ALTER TABLE ONLY public.risk_rules
+1879:    ADD CONSTRAINT risk_rules_pkey PRIMARY KEY (id);
+1883:-- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1887:    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+1891:-- Name: schwab_tokens schwab_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1895:    ADD CONSTRAINT schwab_tokens_pkey PRIMARY KEY (id);
+1899:-- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1903:    ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
+1907:-- Name: setups setups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1911:    ADD CONSTRAINT setups_pkey PRIMARY KEY (id);
+1915:-- Name: snapshots snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1919:    ADD CONSTRAINT snapshots_pkey PRIMARY KEY (id);
+1923:-- Name: solid_cable_messages solid_cable_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1927:    ADD CONSTRAINT solid_cable_messages_pkey PRIMARY KEY (id);
+1931:-- Name: solid_cache_entries solid_cache_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1935:    ADD CONSTRAINT solid_cache_entries_pkey PRIMARY KEY (id);
+1939:-- Name: solid_queue_batch_executions solid_queue_batch_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1943:    ADD CONSTRAINT solid_queue_batch_executions_pkey PRIMARY KEY (id);
+1947:-- Name: solid_queue_batches solid_queue_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1951:    ADD CONSTRAINT solid_queue_batches_pkey PRIMARY KEY (id);
+1955:-- Name: solid_queue_blocked_executions solid_queue_blocked_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1959:    ADD CONSTRAINT solid_queue_blocked_executions_pkey PRIMARY KEY (id);
+1963:-- Name: solid_queue_claimed_executions solid_queue_claimed_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1967:    ADD CONSTRAINT solid_queue_claimed_executions_pkey PRIMARY KEY (id);
+1971:-- Name: solid_queue_failed_executions solid_queue_failed_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1975:    ADD CONSTRAINT solid_queue_failed_executions_pkey PRIMARY KEY (id);
+1979:-- Name: solid_queue_jobs solid_queue_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1983:    ADD CONSTRAINT solid_queue_jobs_pkey PRIMARY KEY (id);
+1987:-- Name: solid_queue_pauses solid_queue_pauses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1991:    ADD CONSTRAINT solid_queue_pauses_pkey PRIMARY KEY (id);
+1995:-- Name: solid_queue_processes solid_queue_processes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+1999:    ADD CONSTRAINT solid_queue_processes_pkey PRIMARY KEY (id);
+2003:-- Name: solid_queue_ready_executions solid_queue_ready_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2007:    ADD CONSTRAINT solid_queue_ready_executions_pkey PRIMARY KEY (id);
+2011:-- Name: solid_queue_recurring_executions solid_queue_recurring_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2015:    ADD CONSTRAINT solid_queue_recurring_executions_pkey PRIMARY KEY (id);
+2019:-- Name: solid_queue_recurring_tasks solid_queue_recurring_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2023:    ADD CONSTRAINT solid_queue_recurring_tasks_pkey PRIMARY KEY (id);
+2027:-- Name: solid_queue_scheduled_executions solid_queue_scheduled_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2031:    ADD CONSTRAINT solid_queue_scheduled_executions_pkey PRIMARY KEY (id);
+2035:-- Name: solid_queue_semaphores solid_queue_semaphores_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2039:    ADD CONSTRAINT solid_queue_semaphores_pkey PRIMARY KEY (id);
+2043:-- Name: submission_attempts submission_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2046:ALTER TABLE ONLY public.submission_attempts
+2047:    ADD CONSTRAINT submission_attempts_pkey PRIMARY KEY (id);
+2051:-- Name: sync_runs sync_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2055:    ADD CONSTRAINT sync_runs_pkey PRIMARY KEY (id);
+2059:-- Name: system_settings system_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2062:ALTER TABLE ONLY public.system_settings
+2063:    ADD CONSTRAINT system_settings_pkey PRIMARY KEY (id);
+2067:-- Name: tool_calls tool_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2071:    ADD CONSTRAINT tool_calls_pkey PRIMARY KEY (id);
+2075:-- Name: trade_legs trade_legs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2079:    ADD CONSTRAINT trade_legs_pkey PRIMARY KEY (id);
+2083:-- Name: trades trades_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2087:    ADD CONSTRAINT trades_pkey PRIMARY KEY (id);
+2091:-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2095:    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+2099:-- Name: watchlist_items watchlist_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+2103:    ADD CONSTRAINT watchlist_items_pkey PRIMARY KEY (id);
+2117:CREATE UNIQUE INDEX index_accounts_on_schwab_hash ON public.accounts USING btree (schwab_hash);
+2131:CREATE UNIQUE INDEX index_activities_on_account_id_and_broker_activity_id ON public.activities USING btree (account_id, broker_activity_id);
+2180:CREATE UNIQUE INDEX index_agent_runs_one_per_kind_and_day ON public.agent_runs USING btree (kind, market_date) WHERE ((status)::text <> 'failed'::text);
+2184:-- Name: index_audit_events_on_created_at; Type: INDEX; Schema: public; Owner: -
+2187:CREATE INDEX index_audit_events_on_created_at ON public.audit_events USING btree (created_at);
+2191:-- Name: index_audit_events_on_kind; Type: INDEX; Schema: public; Owner: -
+2194:CREATE INDEX index_audit_events_on_kind ON public.audit_events USING btree (kind);
+2198:-- Name: index_audit_events_on_subject; Type: INDEX; Schema: public; Owner: -
+2201:CREATE INDEX index_audit_events_on_subject ON public.audit_events USING btree (subject_type, subject_id);
+2205:-- Name: index_audit_events_on_user_id; Type: INDEX; Schema: public; Owner: -
+2208:CREATE INDEX index_audit_events_on_user_id ON public.audit_events USING btree (user_id);
+2229:CREATE UNIQUE INDEX index_instruments_on_cusip ON public.instruments USING btree (cusip) WHERE (cusip IS NOT NULL);
+2243:CREATE UNIQUE INDEX index_instruments_on_schwab_instrument_id ON public.instruments USING btree (schwab_instrument_id) WHERE (schwab_instrument_id IS NOT NULL);
+2257:CREATE UNIQUE INDEX index_instruments_provisional ON public.instruments USING btree (symbol, asset_type) WHERE ((cusip IS NULL) AND (schwab_instrument_id IS NULL));
+2264:CREATE UNIQUE INDEX index_market_days_on_date ON public.market_days USING btree (date);
+2268:-- Name: index_order_proposals_on_account_id; Type: INDEX; Schema: public; Owner: -
+2271:CREATE INDEX index_order_proposals_on_account_id ON public.order_proposals USING btree (account_id);
+2275:-- Name: index_order_proposals_on_broker_order_id; Type: INDEX; Schema: public; Owner: -
+2278:CREATE UNIQUE INDEX index_order_proposals_on_broker_order_id ON public.order_proposals USING btree (broker_order_id) WHERE (broker_order_id IS NOT NULL);
+2282:-- Name: index_order_proposals_on_decided_by_id; Type: INDEX; Schema: public; Owner: -
+2285:CREATE INDEX index_order_proposals_on_decided_by_id ON public.order_proposals USING btree (decided_by_id);
+2289:-- Name: index_order_proposals_on_instrument_id; Type: INDEX; Schema: public; Owner: -
+2292:CREATE INDEX index_order_proposals_on_instrument_id ON public.order_proposals USING btree (instrument_id);
+2296:-- Name: index_order_proposals_on_instrument_id_and_status; Type: INDEX; Schema: public; Owner: -
+2299:CREATE INDEX index_order_proposals_on_instrument_id_and_status ON public.order_proposals USING btree (instrument_id, status);
+2303:-- Name: index_order_proposals_on_parent_proposal_id; Type: INDEX; Schema: public; Owner: -
+2306:CREATE INDEX index_order_proposals_on_parent_proposal_id ON public.order_proposals USING btree (parent_proposal_id);
+2310:-- Name: index_order_proposals_on_setup_id; Type: INDEX; Schema: public; Owner: -
+2313:CREATE INDEX index_order_proposals_on_setup_id ON public.order_proposals USING btree (setup_id);
+2317:-- Name: index_order_proposals_on_status; Type: INDEX; Schema: public; Owner: -
+2320:CREATE INDEX index_order_proposals_on_status ON public.order_proposals USING btree (status);
+2324:-- Name: index_order_proposals_on_target_order_id; Type: INDEX; Schema: public; Owner: -
+2327:CREATE INDEX index_order_proposals_on_target_order_id ON public.order_proposals USING btree (target_order_id);
+2331:-- Name: index_order_proposals_on_user_id; Type: INDEX; Schema: public; Owner: -
+2334:CREATE INDEX index_order_proposals_on_user_id ON public.order_proposals USING btree (user_id);
+2348:CREATE UNIQUE INDEX index_orders_on_account_id_and_broker_order_id ON public.orders USING btree (account_id, broker_order_id);
+2404:CREATE UNIQUE INDEX index_positions_on_account_id_and_instrument_id ON public.positions USING btree (account_id, instrument_id);
+2422:-- Name: index_risk_rules_on_changed_by_id; Type: INDEX; Schema: public; Owner: -
+2425:CREATE INDEX index_risk_rules_on_changed_by_id ON public.risk_rules USING btree (changed_by_id);
+2429:-- Name: index_risk_rules_on_setup_id; Type: INDEX; Schema: public; Owner: -
+2432:CREATE INDEX index_risk_rules_on_setup_id ON public.risk_rules USING btree (setup_id);
+2436:-- Name: index_risk_rules_on_superseded_by_id; Type: INDEX; Schema: public; Owner: -
+2439:CREATE INDEX index_risk_rules_on_superseded_by_id ON public.risk_rules USING btree (superseded_by_id);
+2443:-- Name: index_risk_rules_one_active_per_type_and_setup; Type: INDEX; Schema: public; Owner: -
+2446:CREATE UNIQUE INDEX index_risk_rules_one_active_per_type_and_setup ON public.risk_rules USING btree (rule_type, setup_id) NULLS NOT DISTINCT WHERE active;
+2467:CREATE UNIQUE INDEX index_setups_on_name ON public.setups USING btree (name);
+2481:CREATE UNIQUE INDEX index_snapshots_on_account_id_and_as_of ON public.snapshots USING btree (account_id, as_of);
+2516:CREATE UNIQUE INDEX index_solid_cache_entries_on_key_hash ON public.solid_cache_entries USING btree (key_hash);
+2537:CREATE UNIQUE INDEX index_solid_queue_batch_executions_on_job_id ON public.solid_queue_batch_executions USING btree (job_id);
+2544:CREATE UNIQUE INDEX index_solid_queue_batches_on_active_job_batch_id ON public.solid_queue_batches USING btree (active_job_batch_id);
+2572:CREATE UNIQUE INDEX index_solid_queue_blocked_executions_on_job_id ON public.solid_queue_blocked_executions USING btree (job_id);
+2579:CREATE UNIQUE INDEX index_solid_queue_claimed_executions_on_job_id ON public.solid_queue_claimed_executions USING btree (job_id);
+2600:CREATE UNIQUE INDEX index_solid_queue_failed_executions_on_job_id ON public.solid_queue_failed_executions USING btree (job_id);
+2649:CREATE UNIQUE INDEX index_solid_queue_pauses_on_queue_name ON public.solid_queue_pauses USING btree (queue_name);
+2677:CREATE UNIQUE INDEX index_solid_queue_processes_on_name_and_supervisor_id ON public.solid_queue_processes USING btree (name, supervisor_id);
+2691:CREATE UNIQUE INDEX index_solid_queue_ready_executions_on_job_id ON public.solid_queue_ready_executions USING btree (job_id);
+2698:CREATE UNIQUE INDEX index_solid_queue_recurring_executions_on_job_id ON public.solid_queue_recurring_executions USING btree (job_id);
+2705:CREATE UNIQUE INDEX index_solid_queue_recurring_executions_on_task_key_and_run_at ON public.solid_queue_recurring_executions USING btree (task_key, run_at);
+2712:CREATE UNIQUE INDEX index_solid_queue_recurring_tasks_on_key ON public.solid_queue_recurring_tasks USING btree (key);
+2726:CREATE UNIQUE INDEX index_solid_queue_scheduled_executions_on_job_id ON public.solid_queue_scheduled_executions USING btree (job_id);
+2740:CREATE UNIQUE INDEX index_solid_queue_semaphores_on_key ON public.solid_queue_semaphores USING btree (key);
+2751:-- Name: index_submission_attempts_on_order_proposal_id; Type: INDEX; Schema: public; Owner: -
+2754:CREATE INDEX index_submission_attempts_on_order_proposal_id ON public.submission_attempts USING btree (order_proposal_id);
+2758:-- Name: index_submission_attempts_on_reconciled_order_id; Type: INDEX; Schema: public; Owner: -
+2761:CREATE INDEX index_submission_attempts_on_reconciled_order_id ON public.submission_attempts USING btree (reconciled_order_id);
+2765:-- Name: index_submission_attempts_one_live_per_proposal; Type: INDEX; Schema: public; Owner: -
+2768:CREATE UNIQUE INDEX index_submission_attempts_one_live_per_proposal ON public.submission_attempts USING btree (order_proposal_id) WHERE ((outcome)::text <> ALL ((ARRAY['failed'::character varying, 'not_placed'::character varying])::text[]));
+2803:CREATE UNIQUE INDEX index_trade_legs_on_activity_id ON public.trade_legs USING btree (activity_id) WHERE (activity_id IS NOT NULL);
+2845:CREATE UNIQUE INDEX index_trades_on_order_proposal_id ON public.trades USING btree (order_proposal_id);
+2859:CREATE UNIQUE INDEX index_trades_one_open_per_instrument ON public.trades USING btree (account_id, instrument_id) WHERE ((status)::text = 'open'::text);
+2866:CREATE UNIQUE INDEX index_users_on_email_address ON public.users USING btree (email_address);
+2891:-- Name: audit_events audit_events_append_only; Type: TRIGGER; Schema: public; Owner: -
+2894:CREATE TRIGGER audit_events_append_only BEFORE DELETE OR UPDATE ON public.audit_events FOR EACH ROW EXECUTE FUNCTION public.audit_events_append_only();
+2898:-- Name: audit_events audit_events_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+2901:CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events FOR EACH STATEMENT EXECUTE FUNCTION public.audit_events_append_only();
+2905:-- Name: watchlist_items fk_rails_077cf8f283; Type: FK CONSTRAINT; Schema: public; Owner: -
+2909:    ADD CONSTRAINT fk_rails_077cf8f283 FOREIGN KEY (user_id) REFERENCES public.users(id);
+2913:-- Name: instruments fk_rails_0a8f1c5db0; Type: FK CONSTRAINT; Schema: public; Owner: -
+2917:    ADD CONSTRAINT fk_rails_0a8f1c5db0 FOREIGN KEY (predecessor_instrument_id) REFERENCES public.instruments(id);
+2921:-- Name: orders fk_rails_0acd2a4d14; Type: FK CONSTRAINT; Schema: public; Owner: -
+2925:    ADD CONSTRAINT fk_rails_0acd2a4d14 FOREIGN KEY (replaces_order_id) REFERENCES public.orders(id);
+2929:-- Name: orders fk_rails_144e25bef6; Type: FK CONSTRAINT; Schema: public; Owner: -
+2933:    ADD CONSTRAINT fk_rails_144e25bef6 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+2937:-- Name: positions fk_rails_2adf75f9a8; Type: FK CONSTRAINT; Schema: public; Owner: -
+2941:    ADD CONSTRAINT fk_rails_2adf75f9a8 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+2945:-- Name: solid_queue_recurring_executions fk_rails_318a5533ed; Type: FK CONSTRAINT; Schema: public; Owner: -
+2949:    ADD CONSTRAINT fk_rails_318a5533ed FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+2953:-- Name: solid_queue_failed_executions fk_rails_39bbc7a631; Type: FK CONSTRAINT; Schema: public; Owner: -
+2957:    ADD CONSTRAINT fk_rails_39bbc7a631 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+2961:-- Name: trades fk_rails_3dd8f3515d; Type: FK CONSTRAINT; Schema: public; Owner: -
+2965:    ADD CONSTRAINT fk_rails_3dd8f3515d FOREIGN KEY (setup_id) REFERENCES public.setups(id);
+2969:-- Name: risk_rules fk_rails_48618bfc42; Type: FK CONSTRAINT; Schema: public; Owner: -
+2972:ALTER TABLE ONLY public.risk_rules
+2973:    ADD CONSTRAINT fk_rails_48618bfc42 FOREIGN KEY (changed_by_id) REFERENCES public.users(id);
+2977:-- Name: snapshots fk_rails_4c1abcd194; Type: FK CONSTRAINT; Schema: public; Owner: -
+2981:    ADD CONSTRAINT fk_rails_4c1abcd194 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+2985:-- Name: positions fk_rails_4ccd9a0798; Type: FK CONSTRAINT; Schema: public; Owner: -
+2989:    ADD CONSTRAINT fk_rails_4ccd9a0798 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+2993:-- Name: solid_queue_blocked_executions fk_rails_4cd34e2228; Type: FK CONSTRAINT; Schema: public; Owner: -
+2997:    ADD CONSTRAINT fk_rails_4cd34e2228 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+3001:-- Name: submission_attempts fk_rails_4f4bcc6ff0; Type: FK CONSTRAINT; Schema: public; Owner: -
+3004:ALTER TABLE ONLY public.submission_attempts
+3005:    ADD CONSTRAINT fk_rails_4f4bcc6ff0 FOREIGN KEY (reconciled_order_id) REFERENCES public.orders(id);
+3009:-- Name: activities fk_rails_6886e9a52a; Type: FK CONSTRAINT; Schema: public; Owner: -
+3013:    ADD CONSTRAINT fk_rails_6886e9a52a FOREIGN KEY (order_id) REFERENCES public.orders(id);
+3017:-- Name: order_proposals fk_rails_73202120c3; Type: FK CONSTRAINT; Schema: public; Owner: -
+3020:ALTER TABLE ONLY public.order_proposals
+3021:    ADD CONSTRAINT fk_rails_73202120c3 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+3025:-- Name: sessions fk_rails_758836b4f0; Type: FK CONSTRAINT; Schema: public; Owner: -
+3029:    ADD CONSTRAINT fk_rails_758836b4f0 FOREIGN KEY (user_id) REFERENCES public.users(id);
+3033:-- Name: trades fk_rails_759807f5a3; Type: FK CONSTRAINT; Schema: public; Owner: -
+3037:    ADD CONSTRAINT fk_rails_759807f5a3 FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+3041:-- Name: orders fk_rails_7c21493c68; Type: FK CONSTRAINT; Schema: public; Owner: -
+3045:    ADD CONSTRAINT fk_rails_7c21493c68 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+3049:-- Name: solid_queue_batch_executions fk_rails_7c5e073422; Type: FK CONSTRAINT; Schema: public; Owner: -
+3053:    ADD CONSTRAINT fk_rails_7c5e073422 FOREIGN KEY (batch_id) REFERENCES public.solid_queue_batches(id) ON DELETE CASCADE;
+3057:-- Name: solid_queue_ready_executions fk_rails_81fcbd66af; Type: FK CONSTRAINT; Schema: public; Owner: -
+3061:    ADD CONSTRAINT fk_rails_81fcbd66af FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+3065:-- Name: orders fk_rails_830e3b7893; Type: FK CONSTRAINT; Schema: public; Owner: -
+3069:    ADD CONSTRAINT fk_rails_830e3b7893 FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+3073:-- Name: watchlist_items fk_rails_85e9763357; Type: FK CONSTRAINT; Schema: public; Owner: -
+3077:    ADD CONSTRAINT fk_rails_85e9763357 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+3081:-- Name: balances fk_rails_9452e1f8fd; Type: FK CONSTRAINT; Schema: public; Owner: -
+3085:    ADD CONSTRAINT fk_rails_9452e1f8fd FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+3089:-- Name: solid_queue_claimed_executions fk_rails_9cfe4d4944; Type: FK CONSTRAINT; Schema: public; Owner: -
+3093:    ADD CONSTRAINT fk_rails_9cfe4d4944 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+3097:-- Name: activities fk_rails_a922258fa9; Type: FK CONSTRAINT; Schema: public; Owner: -
+3101:    ADD CONSTRAINT fk_rails_a922258fa9 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+3105:-- Name: trades fk_rails_abc1443ac4; Type: FK CONSTRAINT; Schema: public; Owner: -
+3109:    ADD CONSTRAINT fk_rails_abc1443ac4 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+3113:-- Name: order_proposals fk_rails_af52bf430e; Type: FK CONSTRAINT; Schema: public; Owner: -
+3116:ALTER TABLE ONLY public.order_proposals
+3117:    ADD CONSTRAINT fk_rails_af52bf430e FOREIGN KEY (target_order_id) REFERENCES public.orders(id);
+3121:-- Name: risk_rules fk_rails_b11befadb1; Type: FK CONSTRAINT; Schema: public; Owner: -
+3124:ALTER TABLE ONLY public.risk_rules
+3125:    ADD CONSTRAINT fk_rails_b11befadb1 FOREIGN KEY (superseded_by_id) REFERENCES public.risk_rules(id);
+3129:-- Name: trade_legs fk_rails_b361f1f1f1; Type: FK CONSTRAINT; Schema: public; Owner: -
+3133:    ADD CONSTRAINT fk_rails_b361f1f1f1 FOREIGN KEY (activity_id) REFERENCES public.activities(id);
+3137:-- Name: risk_rules fk_rails_b90282de46; Type: FK CONSTRAINT; Schema: public; Owner: -
+3140:ALTER TABLE ONLY public.risk_rules
+3141:    ADD CONSTRAINT fk_rails_b90282de46 FOREIGN KEY (setup_id) REFERENCES public.setups(id);
+3145:-- Name: solid_queue_batch_executions fk_rails_bc9f981155; Type: FK CONSTRAINT; Schema: public; Owner: -
+3149:    ADD CONSTRAINT fk_rails_bc9f981155 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+3153:-- Name: sync_runs fk_rails_bd20a3f65b; Type: FK CONSTRAINT; Schema: public; Owner: -
+3157:    ADD CONSTRAINT fk_rails_bd20a3f65b FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+3161:-- Name: order_proposals fk_rails_bfa8882b3a; Type: FK CONSTRAINT; Schema: public; Owner: -
+3164:ALTER TABLE ONLY public.order_proposals
+3165:    ADD CONSTRAINT fk_rails_bfa8882b3a FOREIGN KEY (decided_by_id) REFERENCES public.users(id);
+3169:-- Name: order_proposals fk_rails_c0ae416341; Type: FK CONSTRAINT; Schema: public; Owner: -
+3172:ALTER TABLE ONLY public.order_proposals
+3173:    ADD CONSTRAINT fk_rails_c0ae416341 FOREIGN KEY (parent_proposal_id) REFERENCES public.order_proposals(id);
+3177:-- Name: trades fk_rails_c19f3a5dfc; Type: FK CONSTRAINT; Schema: public; Owner: -
+3181:    ADD CONSTRAINT fk_rails_c19f3a5dfc FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+3185:-- Name: solid_queue_scheduled_executions fk_rails_c4316f352d; Type: FK CONSTRAINT; Schema: public; Owner: -
+3189:    ADD CONSTRAINT fk_rails_c4316f352d FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+3193:-- Name: order_proposals fk_rails_c925fe9588; Type: FK CONSTRAINT; Schema: public; Owner: -
+3196:ALTER TABLE ONLY public.order_proposals
+3197:    ADD CONSTRAINT fk_rails_c925fe9588 FOREIGN KEY (setup_id) REFERENCES public.setups(id);
+3201:-- Name: tool_calls fk_rails_cc11d0226e; Type: FK CONSTRAINT; Schema: public; Owner: -
+3205:    ADD CONSTRAINT fk_rails_cc11d0226e FOREIGN KEY (agent_run_id) REFERENCES public.agent_runs(id);
+3209:-- Name: audit_events fk_rails_d27dff91d1; Type: FK CONSTRAINT; Schema: public; Owner: -
+3212:ALTER TABLE ONLY public.audit_events
+3213:    ADD CONSTRAINT fk_rails_d27dff91d1 FOREIGN KEY (user_id) REFERENCES public.users(id);
+3217:-- Name: submission_attempts fk_rails_d2c6c378ee; Type: FK CONSTRAINT; Schema: public; Owner: -
+3220:ALTER TABLE ONLY public.submission_attempts
+3221:    ADD CONSTRAINT fk_rails_d2c6c378ee FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+3225:-- Name: activities fk_rails_e53101708c; Type: FK CONSTRAINT; Schema: public; Owner: -
+3229:    ADD CONSTRAINT fk_rails_e53101708c FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+3233:-- Name: positions fk_rails_e6858896be; Type: FK CONSTRAINT; Schema: public; Owner: -
+3237:    ADD CONSTRAINT fk_rails_e6858896be FOREIGN KEY (working_stop_order_id) REFERENCES public.orders(id);
+3241:-- Name: order_proposals fk_rails_ea7b5f70bd; Type: FK CONSTRAINT; Schema: public; Owner: -
+3244:ALTER TABLE ONLY public.order_proposals
+3245:    ADD CONSTRAINT fk_rails_ea7b5f70bd FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+3249:-- Name: orders fk_rails_f5d8121a45; Type: FK CONSTRAINT; Schema: public; Owner: -
+3253:    ADD CONSTRAINT fk_rails_f5d8121a45 FOREIGN KEY (parent_order_id) REFERENCES public.orders(id);
+3257:-- Name: trade_legs fk_rails_fb47c7025b; Type: FK CONSTRAINT; Schema: public; Owner: -
+3261:    ADD CONSTRAINT fk_rails_fb47c7025b FOREIGN KEY (trade_id) REFERENCES public.trades(id);
+3265:-- Name: order_proposals fk_rails_fcc1bd776c; Type: FK CONSTRAINT; Schema: public; Owner: -
+3268:ALTER TABLE ONLY public.order_proposals
+3269:    ADD CONSTRAINT fk_rails_fcc1bd776c FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "nl -ba app/models/order_proposal.rb | sed -n '1,180p'" in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc "nl -ba app/models/risk_rule.rb | sed -n '1,120p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# One proposed order and its whole life (docs/phase-2-state-table.md). Sizing and the collar are frozen at
+     2	# creation; the approve gesture is the submission; nothing leaves the submission path by hand.
+     3	class OrderProposal < ApplicationRecord
+     4	  class IllegalTransition < StandardError; end
+     5	
+     6	  belongs_to :account
+     7	  belongs_to :instrument
+     8	  belongs_to :target_order, class_name: "Order", optional: true
+     9	  belongs_to :user, optional: true
+    10	  belongs_to :decided_by, class_name: "User", optional: true
+    11	  belongs_to :setup, optional: true
+    12	  belongs_to :parent_proposal, class_name: "OrderProposal", optional: true
+    13	  has_many :orders, dependent: :restrict_with_exception
+    14	  has_many :submission_attempts, dependent: :restrict_with_exception
+    15	  has_one :trade, dependent: :restrict_with_exception
+    16	
+    17	  enum :kind, { entry: "entry", exit: "exit", stop_adjustment: "stop_adjustment" }, prefix: true
+    18	  enum :origin, { agent: "agent", human: "human" }
+    19	  enum :side, { buy: Schwab::Order::BUY, sell: Schwab::Order::SELL }
+    20	  enum :child_action, { cancel_stop: "cancel_stop", replace_stop: "replace_stop" }, prefix: true
+    21	  enum :status, {
+    22	    proposed: "proposed", validated: "validated", rejected_by_rules: "rejected_by_rules", rejected: "rejected", expired: "expired",
+    23	    submitting: "submitting", submitted: "submitted", submission_unknown: "submission_unknown", submission_failed: "submission_failed",
+    24	    filled: "filled", cancelled: "cancelled"
+    25	  }
+    26	
+    27	  TERMINAL = %w[ rejected_by_rules rejected expired submission_failed filled cancelled ].freeze
+    28	  APPROVABLE = %w[ validated ].freeze
+    29	  UNRESOLVED = %w[ submitting submission_unknown ].freeze # locks the instrument for every other proposal
+    30	
+    31	  scope :unresolved, -> { where(status: UNRESOLVED) }
+    32	  scope :open_for_cash, -> { where(status: %w[ submitting submission_unknown submitted ]) }
+    33	  scope :queue, -> { where(status: %w[ proposed validated submission_unknown ]).order(created_at: :desc) }
+    34	  scope :expiring, -> { where(status: %w[ proposed validated ]).where(expires_at: ..Time.current) }
+    35	
+    36	  validates :quantity, numericality: { greater_than: 0 }, allow_nil: true
+    37	
+    38	  def self.instrument_locked?(instrument) = unresolved.where(instrument: instrument).exists?
+    39	
+    40	  def terminal? = TERMINAL.include?(status)
+    41	  def approvable? = APPROVABLE.include?(status)
+    42	  def hard_failed? = guardrail_results.values.any? { |r| r["outcome"] == "fail" }
+    43	  def warnings = guardrail_results.select { |_, r| r["outcome"] == "warn" }.keys
+    44	  def live_attempt = submission_attempts.live.first
+    45	
+    46	  # ---- transitions, each from the table, each one audit row ---------------------------------
+    47	
+    48	  def evaluate!(report)
+    49	    transition!(from: %w[ proposed ], to: report.blocked? ? :rejected_by_rules : :validated, event: "proposal_evaluated",
+    50	                attributes: { guardrail_results: report.to_h, evaluated_at: Time.current }, data: { blocked: report.blocked?, warnings: report.warnings })
+    51	  end
+    52	
+    53	  def reject!(user:, reason:)
+    54	    raise ArgumentError, "a rejection needs a reason" if reason.blank?
+    55	    transition!(from: APPROVABLE, to: :rejected, event: "proposal_rejected", user: user, reason: reason,
+    56	                attributes: { decided_at: Time.current, decided_by: user, rejection_reason: reason })
+    57	  end
+    58	
+    59	  def expire!
+    60	    transition!(from: %w[ proposed validated ], to: :expired, event: "proposal_expired")
+    61	  end
+    62	
+    63	  # Transaction one of the submission: the caller holds the row lock and has re-evaluated.
+    64	  def start_submission!(user:, acknowledged:, override_reason:, payload:, shadow:)
+    65	    transition!(from: APPROVABLE, to: :submitting, event: "proposal_approved", user: user, reason: override_reason,
+    66	                attributes: { decided_at: Time.current, decided_by: user, acknowledged_warnings: acknowledged, override_reason: override_reason, shadow: shadow },
+    67	                data: { acknowledged: acknowledged, shadow: shadow })
+    68	    submission_attempts.create!(attempted_at: Time.current, payload: payload, outcome: :pending).tap do
+    69	      AuditEvent.log("proposal_submitting", actor: :human, user: user, subject: self)
+    70	    end
+    71	  end
+    72	
+    73	  # Transaction two: what Schwab, or shadow mode, answered.
+    74	  def record_shadow!(attempt)
+    75	    attempt.update!(outcome: :would_have_submitted)
+    76	    transition!(from: %w[ submitting ], to: :submitted, event: "would_have_submitted", attributes: { submitted_at: Time.current })
+    77	  end
+    78	
+    79	  def record_submitted!(attempt, broker_order_id:)
+    80	    attempt.update!(outcome: :submitted, broker_order_id: broker_order_id)
+    81	    transition!(from: %w[ submitting submission_unknown ], to: :submitted, event: attempt.reconciled_at ? "submission_reconciled" : "proposal_submitted",
+    82	                attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id })
+    83	  end
+    84	
+    85	  def record_unknown!(attempt, error:)
+    86	    attempt.update!(outcome: :unknown, response: { "error" => error })
+    87	    transition!(from: %w[ submitting ], to: :submission_unknown, event: "submission_unknown", reason: error)
+    88	  end
+    89	
+    90	  def record_failed!(attempt, error:, outcome: :failed)
+    91	    attempt.update!(outcome: outcome, response: { "error" => error })
+    92	    transition!(from: %w[ submitting submission_unknown ], to: :submission_failed, event: "submission_failed", reason: error)
+    93	  end
+    94	
+    95	  # Written only by the orders sync.
+    96	  def record_broker_outcome!(status)
+    97	    transition!(from: %w[ submitted ], to: status, event: "proposal_#{status}")
+    98	  end
+    99	
+   100	  private
+   101	    def transition!(from:, to:, event:, attributes: {}, user: nil, reason: nil, data: {})
+   102	      raise IllegalTransition, "#{kind} proposal #{id}: #{status} cannot #{event.delete_prefix('proposal_')}" unless from.include?(status)
+   103	      update!(attributes.merge(status: to))
+   104	      AuditEvent.log(event, actor: user ? :human : :system, user: user, subject: self, reason: reason&.truncate(200), data: data)
+   105	      self
+   106	    end
+   107	end
+
+ succeeded in 0ms:
+     1	# A guardrail as data (docs/phase-2-plan.md §0.8): one active row per type and setup, edited by superseding,
+     2	# never in place, so every proposal's results point at the exact version that judged it.
+     3	class RiskRule < ApplicationRecord
+     4	  TYPES = %w[ max_risk_per_trade max_positions max_position_exposure max_sector_exposure daily_loss_halt max_drawdown_halt
+     5	              settled_cash earnings_blackout wash_sale notional_cap stop_collar ].freeze
+     6	
+     7	  belongs_to :setup, optional: true
+     8	  belongs_to :superseded_by, class_name: "RiskRule", optional: true
+     9	  belongs_to :changed_by, class_name: "User", optional: true
+    10	
+    11	  enum :mode, { block: "block", warn: "warn" }, prefix: true
+    12	
+    13	  validates :rule_type, inclusion: { in: TYPES }
+    14	  validates :params, presence: true
+    15	
+    16	  scope :active, -> { where(active: true) }
+    17	
+    18	  def self.active_for(rule_type, setup: nil) = active.find_by(rule_type: rule_type, setup: setup) || (setup && active.find_by(rule_type: rule_type, setup: nil))
+    19	
+    20	  # The next version of this rule, superseding this one, in one transaction and one audit row.
+    21	  def supersede!(params:, user:, mode: self.mode, note: nil)
+    22	    transaction do
+    23	      update!(active: false) # first, so the one-active index admits the successor
+    24	      successor = self.class.create!(rule_type: rule_type, setup: setup, params: params, mode: mode, note: note, version: version + 1, changed_by: user)
+    25	      update!(superseded_by: successor)
+    26	      AuditEvent.log("rule_changed", actor: :human, user: user, subject: successor, reason: note, data: { rule_type: rule_type, setup: setup&.name, before: self.params, after: params, version: successor.version })
+    27	      successor
+    28	    end
+    29	  end
+    30	
+    31	  def param(name) = params.fetch(name.to_s) { raise KeyError, "#{rule_type} rule has no #{name}" }
+    32	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba app/models/agent/tools.rb | sed -n '1,120p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# The registry and the one dispatch entry point every transport uses.
+     2	module Agent::Tools
+     3	  Result = Data.define(:value, :error, :retry_after) do
+     4	    def self.success(value) = new(value: value, error: nil, retry_after: nil)
+     5	    def self.failure(error, retry_after: nil) = new(value: nil, error: error, retry_after: retry_after)
+     6	    def ok? = error.nil?
+     7	    # The text a model reads: the JSON on success, the message on failure.
+     8	    def text = ok? ? JSON.generate(value) : error
+     9	  end
+    10	
+    11	  def self.all = [ GetPortfolio, GetAccountHealth, GetQuotes, GetPriceHistory, GetJournal, GetSetupStats, GetRiskRules ]
+    12	
+    13	  def self.for(transport)
+    14	    case transport.to_sym
+    15	    when :mcp then all.select(&:mcp_allowed?)
+    16	    when :scheduled then all.select { |t| t.scheduled_allowed? && t.read_only? }
+    17	    else raise ArgumentError, "unknown transport #{transport}"
+    18	    end
+    19	  end
+    20	
+    21	  def self.definitions(transport) = self.for(transport).map(&:definition)
+    22	  def self.find(name, transport:) = self.for(transport).find { |t| t.tool_name == name.to_s }
+    23	
+    24	  # Permission check, argument validation, telemetry, timing, and error normalization in one place.
+    25	  # Never raises to the caller: Schwab and tool failures become results the agent can read and act on.
+    26	  # Every call writes a tool_calls row, including a call the transport is not allowed to make.
+    27	  def self.call(name, arguments = {}, transport:, agent_run: nil)
+    28	    arguments = arguments.to_h.deep_symbolize_keys
+    29	    record = ToolCall.new(agent_run: agent_run, transport: transport, tool_name: name.to_s, arguments: Agent.serialize(arguments))
+    30	    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    31	    result = if (tool = find(name, transport: transport))
+    32	      AuditEvent.log("agent_tool_used", actor: :agent, data: { tool: tool.tool_name, transport: transport.to_s, arguments: Agent.serialize(arguments) }) if tool.audited?
+    33	      invoke(tool, arguments)
+    34	    elsif all.any? { |t| t.tool_name == name.to_s }
+    35	      Result.failure("#{name} is not available on the #{transport} transport")
+    36	    else
+    37	      Result.failure("unknown tool #{name}")
+    38	    end
+    39	    record.duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+    40	    record.error = result.error
+    41	    record.save!
+    42	    result
+    43	  end
+    44	
+    45	  def self.invoke(tool, arguments)
+    46	    tool.validate!(arguments)
+    47	    Result.success(Agent.serialize(tool.new.call(**arguments)))
+    48	  rescue Schwab::RateLimited => e
+    49	    Result.failure("Schwab rate limit: try again in #{e.retry_after || 60} seconds", retry_after: e.retry_after || 60)
+    50	  rescue Schwab::NoUsableToken, Schwab::AuthError => e
+    51	    Result.failure("Schwab connection needs re-authentication: #{e.message}")
+    52	  rescue Schwab::Error => e
+    53	    Result.failure("Schwab unavailable: #{e.message}")
+    54	  rescue Agent::Tool::InvalidArguments => e
+    55	    Result.failure("bad arguments: #{e.message}")
+    56	  rescue StandardError, NotImplementedError => e # NotImplementedError is a ScriptError: the base class's own contract
+    57	    Rails.error.report(e, handled: true, context: { tool: tool.tool_name })
+    58	    Result.failure("#{tool.tool_name} failed: #{e.class.name}")
+    59	  end
+    60	  private_class_method :invoke
+    61	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc "nl -ba db/structure.sql | sed -n '334,376p;1199,1214p;1278,1292p;2443,2447p;2765,2769p'" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+   334	CREATE TABLE public.order_proposals (
+   335	    id bigint NOT NULL,
+   336	    account_id bigint NOT NULL,
+   337	    instrument_id bigint NOT NULL,
+   338	    kind character varying DEFAULT 'entry'::character varying NOT NULL,
+   339	    target_order_id bigint,
+   340	    origin character varying NOT NULL,
+   341	    user_id bigint,
+   342	    status character varying DEFAULT 'proposed'::character varying NOT NULL,
+   343	    side character varying,
+   344	    quantity numeric(18,6),
+   345	    order_type character varying,
+   346	    limit_price numeric(18,4),
+   347	    stop_price numeric(18,4),
+   348	    planned_stop numeric(18,4),
+   349	    target_price numeric(18,4),
+   350	    duration character varying,
+   351	    session character varying,
+   352	    tax_lot_method character varying,
+   353	    thesis text,
+   354	    setup_id bigint,
+   355	    guardrail_results jsonb DEFAULT '{}'::jsonb NOT NULL,
+   356	    acknowledged_warnings jsonb DEFAULT '[]'::jsonb NOT NULL,
+   357	    override_reason text,
+   358	    rejection_reason text,
+   359	    submitted_at timestamp(6) with time zone,
+   360	    expires_at timestamp(6) with time zone,
+   361	    created_at timestamp(6) with time zone NOT NULL,
+   362	    updated_at timestamp(6) with time zone NOT NULL,
+   363	    collar jsonb DEFAULT '{}'::jsonb NOT NULL,
+   364	    sizing jsonb DEFAULT '{}'::jsonb NOT NULL,
+   365	    evaluated_at timestamp with time zone,
+   366	    decided_at timestamp with time zone,
+   367	    decided_by_id bigint,
+   368	    shadow boolean DEFAULT false NOT NULL,
+   369	    broker_order_id character varying,
+   370	    parent_proposal_id bigint,
+   371	    child_action character varying
+   372	);
+   373	
+   374	
+   375	--
+   376	-- Name: order_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+  1199	CREATE TABLE public.submission_attempts (
+  1200	    id bigint NOT NULL,
+  1201	    order_proposal_id bigint NOT NULL,
+  1202	    attempted_at timestamp(6) with time zone NOT NULL,
+  1203	    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+  1204	    response jsonb DEFAULT '{}'::jsonb NOT NULL,
+  1205	    outcome character varying NOT NULL,
+  1206	    reconciled_order_id bigint,
+  1207	    created_at timestamp(6) with time zone NOT NULL,
+  1208	    updated_at timestamp(6) with time zone NOT NULL,
+  1209	    broker_order_id character varying,
+  1210	    reconciled_at timestamp with time zone
+  1211	);
+  1212	
+  1213	
+  1214	--
+  1278	CREATE TABLE public.system_settings (
+  1279	    id bigint NOT NULL,
+  1280	    shadow_mode boolean DEFAULT true NOT NULL,
+  1281	    manual_halt boolean DEFAULT false NOT NULL,
+  1282	    manual_halt_reason text,
+  1283	    manual_halt_at timestamp(6) with time zone,
+  1284	    sync_paused_reason character varying,
+  1285	    created_at timestamp(6) with time zone NOT NULL,
+  1286	    updated_at timestamp(6) with time zone NOT NULL,
+  1287	    rule_halt_rule character varying,
+  1288	    rule_halt_reason character varying,
+  1289	    rule_halt_tripped_at timestamp with time zone,
+  1290	    rule_halt_resets_at timestamp with time zone,
+  1291	    shadow_mode_changed_at timestamp with time zone,
+  1292	    CONSTRAINT system_settings_singleton CHECK ((id = 1))
+  2443	-- Name: index_risk_rules_one_active_per_type_and_setup; Type: INDEX; Schema: public; Owner: -
+  2444	--
+  2445	
+  2446	CREATE UNIQUE INDEX index_risk_rules_one_active_per_type_and_setup ON public.risk_rules USING btree (rule_type, setup_id) NULLS NOT DISTINCT WHERE active;
+  2447	
+  2765	-- Name: index_submission_attempts_one_live_per_proposal; Type: INDEX; Schema: public; Owner: -
+  2766	--
+  2767	
+  2768	CREATE UNIQUE INDEX index_submission_attempts_one_live_per_proposal ON public.submission_attempts USING btree (order_proposal_id) WHERE ((outcome)::text <> ALL ((ARRAY['failed'::character varying, 'not_placed'::character varying])::text[]));
+  2769	
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+Findings, ordered by severity:
+
+1. [order_proposal.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:101): source-state checks are object-memory checks, not database checks. A stale instance can still pass `from.include?(status)` and `update!` the row after another process moved it forward. That can resurrect a proposal into `validated` via `evaluate!`, or rewrite submission states. This breaks “wrong source state refuses” under interleaving and must be fixed before commit with row locking/reload or conditional updates.
+
+2. [order_proposal.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:64): `start_submission!` is not atomic. It writes `submitting` and `proposal_approved` before creating the attempt. If attempt creation fails, including from the partial unique index, the proposal can be left `submitting` with no attempt and a dishonest audit trail. The first transaction belongs in this method or a step-3 service, but the invariant/spec should not imply it is already safe.
+
+3. [order_proposal.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:96): `record_broker_outcome!` accepts arbitrary targets. Passing `:validated` updates the row before `AuditEvent` validation fails, so it can move a submitted proposal back to approvable. Restrict to `filled`/`cancelled` and make transition plus audit transactional.
+
+4. [db/structure.sql](/Users/jathayde/Development/Personal/desk.athayde/db/structure.sql:334): documented DB invariants are incomplete. There is no database enforcement that `submitted`/`filled`/`cancelled` has an attempt; the partial unique index only prevents multiple live attempts. If this is only a model/service invariant until step 3, the docs should say that.
+
+5. [order_proposal_spec.rb](/Users/jathayde/Development/Personal/desk.athayde/spec/models/order_proposal_spec.rb:1): specs are not truly generated row-by-row from the state table. Missing or shallow coverage includes create/`proposal_created`, sweep from stale `submitting` to `submission_unknown`, ambiguous reconcile no-op, cancelled broker outcome, every terminal refusing every action, and stale-instance/concurrency refusals.
+
+6. [application_controller.rb](/Users/jathayde/Development/Personal/desk.athayde/app/controllers/application_controller.rb:4): approver enforcement exists only as a controller helper. The state-changing model methods accept any user, and there is no spec that non-approvers cannot reject/submit/override. That is a commit blocker if these methods are intended as the invariant boundary.
+
+7. [system_settings.rb](/Users/jathayde/Development/Personal/desk.athayde/app/models/system_settings.rb:8): halt split matches the PRD directionally: rule halt blocks entries, manual halt blocks everything. But `trip_rule_halt!` is not locked, so two evaluators can both audit/update. Sequential idempotence is covered; interleaving is not.
+
+Sizing is mostly right on floor/whole shares/BigDecimal behavior, though explicit refusal for nonpositive rule percent would make the invariant cleaner.
+
+Write tools cannot reach scheduled transport through the registry today. The audit row is useful but thin: it records arguments before validation/invocation and omits success/error linkage. Good enough for step 1 metadata, not enough for final audited writes.
+hook: Stop
+hook: Stop Completed
+tokens used
+56,805

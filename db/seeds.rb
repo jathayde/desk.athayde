@@ -1,7 +1,7 @@
 # Access is by allowlist: only seeded users can request a sign-in link. This part runs everywhere, including
 # the production release phase (db:prepare seeds a fresh database).
-{ "john@athayde.com" => "John", "whitney@athayde.com" => "Whitney" }.each do |email_address, name|
-  User.find_or_initialize_by(email_address:).update!(name:)
+[ { email_address: "john@athayde.com", name: "John", approver: true }, { email_address: "whitney@athayde.com", name: "Whitney", approver: false } ].each do |attributes|
+  User.find_or_initialize_by(email_address: attributes[:email_address]).update!(attributes)
 end
 
 # A development desk through the fake broker and the fake model, so every screen and a brief render without

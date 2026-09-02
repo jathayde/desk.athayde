@@ -355,12 +355,20 @@ CREATE TABLE public.order_proposals (
     guardrail_results jsonb DEFAULT '{}'::jsonb NOT NULL,
     acknowledged_warnings jsonb DEFAULT '[]'::jsonb NOT NULL,
     override_reason text,
-    reject_reason text,
-    approved_at timestamp(6) with time zone,
+    rejection_reason text,
     submitted_at timestamp(6) with time zone,
     expires_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    collar jsonb DEFAULT '{}'::jsonb NOT NULL,
+    sizing jsonb DEFAULT '{}'::jsonb NOT NULL,
+    evaluated_at timestamp with time zone,
+    decided_at timestamp with time zone,
+    decided_by_id bigint,
+    shadow boolean DEFAULT false NOT NULL,
+    broker_order_id character varying,
+    parent_proposal_id bigint,
+    child_action character varying
 );
 
 
@@ -452,7 +460,9 @@ CREATE TABLE public.positions (
     synced_at timestamp(6) with time zone NOT NULL,
     raw jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    suggested_stop numeric(18,4),
+    suggested_stop_method character varying
 );
 
 
@@ -488,7 +498,10 @@ CREATE TABLE public.risk_rules (
     setup_id bigint,
     superseded_by_id bigint,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    mode character varying DEFAULT 'block'::character varying NOT NULL,
+    note text,
+    changed_by_id bigint
 );
 
 
@@ -1192,7 +1205,9 @@ CREATE TABLE public.submission_attempts (
     outcome character varying NOT NULL,
     reconciled_order_id bigint,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    broker_order_id character varying,
+    reconciled_at timestamp with time zone
 );
 
 
@@ -1269,6 +1284,11 @@ CREATE TABLE public.system_settings (
     sync_paused_reason character varying,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
+    rule_halt_rule character varying,
+    rule_halt_reason character varying,
+    rule_halt_tripped_at timestamp with time zone,
+    rule_halt_resets_at timestamp with time zone,
+    shadow_mode_changed_at timestamp with time zone,
     CONSTRAINT system_settings_singleton CHECK ((id = 1))
 );
 
@@ -1436,7 +1456,8 @@ CREATE TABLE public.users (
     magic_link_nonce character varying,
     last_login_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    approver boolean DEFAULT false NOT NULL
 );
 
 
@@ -1457,6 +1478,43 @@ CREATE SEQUENCE public.users_id_seq
 --
 
 ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
+
+
+--
+-- Name: watchlist_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.watchlist_items (
+    id bigint NOT NULL,
+    instrument_id bigint,
+    symbol character varying NOT NULL,
+    trigger text,
+    thesis text,
+    origin character varying NOT NULL,
+    user_id bigint,
+    status character varying DEFAULT 'watching'::character varying NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: watchlist_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.watchlist_items_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: watchlist_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.watchlist_items_id_seq OWNED BY public.watchlist_items.id;
 
 
 --
@@ -1716,6 +1774,13 @@ ALTER TABLE ONLY public.trades ALTER COLUMN id SET DEFAULT nextval('public.trade
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Name: watchlist_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchlist_items ALTER COLUMN id SET DEFAULT nextval('public.watchlist_items_id_seq'::regclass);
 
 
 --
@@ -2031,6 +2096,14 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: watchlist_items watchlist_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchlist_items
+    ADD CONSTRAINT watchlist_items_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: idx_on_account_id_instrument_id_executed_at_dd9c0c3d68; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2199,10 +2272,31 @@ CREATE INDEX index_order_proposals_on_account_id ON public.order_proposals USING
 
 
 --
+-- Name: index_order_proposals_on_broker_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_order_proposals_on_broker_order_id ON public.order_proposals USING btree (broker_order_id) WHERE (broker_order_id IS NOT NULL);
+
+
+--
+-- Name: index_order_proposals_on_decided_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_proposals_on_decided_by_id ON public.order_proposals USING btree (decided_by_id);
+
+
+--
 -- Name: index_order_proposals_on_instrument_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_order_proposals_on_instrument_id ON public.order_proposals USING btree (instrument_id);
+
+
+--
+-- Name: index_order_proposals_on_parent_proposal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_proposals_on_parent_proposal_id ON public.order_proposals USING btree (parent_proposal_id);
 
 
 --
@@ -2231,6 +2325,13 @@ CREATE INDEX index_order_proposals_on_target_order_id ON public.order_proposals 
 --
 
 CREATE INDEX index_order_proposals_on_user_id ON public.order_proposals USING btree (user_id);
+
+
+--
+-- Name: index_order_proposals_one_unresolved_per_instrument; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_order_proposals_one_unresolved_per_instrument ON public.order_proposals USING btree (account_id, instrument_id) WHERE ((status)::text = ANY ((ARRAY['submitting'::character varying, 'submission_unknown'::character varying])::text[]));
 
 
 --
@@ -2318,6 +2419,13 @@ CREATE INDEX index_positions_on_working_stop_order_id ON public.positions USING 
 
 
 --
+-- Name: index_risk_rules_on_changed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_risk_rules_on_changed_by_id ON public.risk_rules USING btree (changed_by_id);
+
+
+--
 -- Name: index_risk_rules_on_setup_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2335,7 +2443,7 @@ CREATE INDEX index_risk_rules_on_superseded_by_id ON public.risk_rules USING btr
 -- Name: index_risk_rules_one_active_per_type_and_setup; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_risk_rules_one_active_per_type_and_setup ON public.risk_rules USING btree (rule_type, setup_id) WHERE active;
+CREATE UNIQUE INDEX index_risk_rules_one_active_per_type_and_setup ON public.risk_rules USING btree (rule_type, setup_id) NULLS NOT DISTINCT WHERE active;
 
 
 --
@@ -2654,6 +2762,13 @@ CREATE INDEX index_submission_attempts_on_reconciled_order_id ON public.submissi
 
 
 --
+-- Name: index_submission_attempts_one_live_per_proposal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_submission_attempts_one_live_per_proposal ON public.submission_attempts USING btree (order_proposal_id) WHERE ((outcome)::text <> ALL ((ARRAY['failed'::character varying, 'not_placed'::character varying])::text[]));
+
+
+--
 -- Name: index_sync_runs_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2752,6 +2867,27 @@ CREATE UNIQUE INDEX index_users_on_email_address ON public.users USING btree (em
 
 
 --
+-- Name: index_watchlist_items_on_instrument_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_watchlist_items_on_instrument_id ON public.watchlist_items USING btree (instrument_id);
+
+
+--
+-- Name: index_watchlist_items_on_symbol_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_watchlist_items_on_symbol_and_status ON public.watchlist_items USING btree (symbol, status);
+
+
+--
+-- Name: index_watchlist_items_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_watchlist_items_on_user_id ON public.watchlist_items USING btree (user_id);
+
+
+--
 -- Name: audit_events audit_events_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2763,6 +2899,14 @@ CREATE TRIGGER audit_events_append_only BEFORE DELETE OR UPDATE ON public.audit_
 --
 
 CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events FOR EACH STATEMENT EXECUTE FUNCTION public.audit_events_append_only();
+
+
+--
+-- Name: watchlist_items fk_rails_077cf8f283; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchlist_items
+    ADD CONSTRAINT fk_rails_077cf8f283 FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 
 --
@@ -2819,6 +2963,14 @@ ALTER TABLE ONLY public.solid_queue_failed_executions
 
 ALTER TABLE ONLY public.trades
     ADD CONSTRAINT fk_rails_3dd8f3515d FOREIGN KEY (setup_id) REFERENCES public.setups(id);
+
+
+--
+-- Name: risk_rules fk_rails_48618bfc42; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.risk_rules
+    ADD CONSTRAINT fk_rails_48618bfc42 FOREIGN KEY (changed_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2918,6 +3070,14 @@ ALTER TABLE ONLY public.orders
 
 
 --
+-- Name: watchlist_items fk_rails_85e9763357; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchlist_items
+    ADD CONSTRAINT fk_rails_85e9763357 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+
+
+--
 -- Name: balances fk_rails_9452e1f8fd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2995,6 +3155,22 @@ ALTER TABLE ONLY public.solid_queue_batch_executions
 
 ALTER TABLE ONLY public.sync_runs
     ADD CONSTRAINT fk_rails_bd20a3f65b FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: order_proposals fk_rails_bfa8882b3a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_proposals
+    ADD CONSTRAINT fk_rails_bfa8882b3a FOREIGN KEY (decided_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: order_proposals fk_rails_c0ae416341; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_proposals
+    ADD CONSTRAINT fk_rails_c0ae416341 FOREIGN KEY (parent_proposal_id) REFERENCES public.order_proposals(id);
 
 
 --
@@ -3100,6 +3276,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902120001'),
 ('20260902110001'),
 ('20260902100001'),
 ('20260901260001'),

@@ -8,16 +8,19 @@ class Agent::Tool
     attr_reader :description, :input_schema, :output_schema
 
     # Every output key is required unless listed in output_optional; a half-declared schema is worse than none.
-    def tool(description:, output:, input: {}, required: [], output_optional: [], read_only: true, mcp: true, scheduled: true)
+    # audited: every call is an audit_events row as well as a tool_calls row; required for any tool that writes.
+    def tool(description:, output:, input: {}, required: [], output_optional: [], read_only: true, mcp: true, scheduled: true, audited: !read_only)
       @description = description
       @input_schema = { type: "object", properties: input, required: required.map(&:to_s), additionalProperties: false }
       @output_schema = { type: "object", properties: output, required: (output.keys - output_optional).map(&:to_s), additionalProperties: false }
-      @read_only, @mcp_allowed, @scheduled_allowed = read_only, mcp, scheduled
+      @read_only, @mcp_allowed, @scheduled_allowed, @audited = read_only, mcp, scheduled, audited
       raise ArgumentError, "#{tool_name}: an unattended tool must be read-only" if scheduled && !read_only
+      raise ArgumentError, "#{tool_name}: a tool that writes must be audited" if !read_only && !audited
     end
 
     def tool_name = @tool_name ||= name.to_s.demodulize.underscore.presence || "anonymous"
     def read_only? = @read_only
+    def audited? = @audited
     def mcp_allowed? = @mcp_allowed
     def scheduled_allowed? = @scheduled_allowed
 

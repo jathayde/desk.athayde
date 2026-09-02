@@ -38,6 +38,8 @@ module Agent::Tools
     record.duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     record.error = result.error
     record.save!
+    # An audited tool's row says what was asked and how it ended, after the fact, linked to its telemetry.
+    AuditEvent.log("agent_tool_used", actor: :agent, reason: result.error, data: { tool: tool.tool_name, transport: transport.to_s, arguments: Agent.serialize(arguments), ok: result.ok?, tool_call_id: record.id }) if tool&.audited?
     result
   end
 

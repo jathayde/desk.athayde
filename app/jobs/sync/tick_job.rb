@@ -8,6 +8,7 @@ module Sync
 
     def perform
       SyncRun.sweep_stale!
+      SystemSettings.instance.sweep_rule_halt!
       refresh_calendar
       return pause! unless SchwabToken.usable?
 
