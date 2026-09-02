@@ -18,5 +18,11 @@ Failures between <%= l(@digest.since, format: :weekday_time) %> and <%= l(@diges
   <%= l(failure.created_at, format: :weekday_time) %>: <%= failure.exception_class %>: <%= failure.message.to_s.truncate(160) %>
 <% end -%>
 <% end -%>
+<% @digest.unresolved_proposals.each do |proposal| -%>
+Submission unresolved: <%= proposal.label %>, check Schwab (<%= proposal_url(proposal) %>)
+<% end -%>
+<% @digest.failed_attempts.each do |attempt| -%>
+Not placed: <%= attempt.order_proposal.label %> at <%= l(attempt.updated_at, format: :weekday_time) %>: <%= attempt.error.to_s.truncate(160) %>
+<% end -%>
 
 System: <%= system_url %>

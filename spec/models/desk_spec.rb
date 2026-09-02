@@ -40,6 +40,35 @@ RSpec.describe Desk do
       expect(Desk.new.banner).to eq(:expiring)
     end
 
+    it "puts an unprotected position above the expiry nag" do
+      account = create(:account, trading_enabled: true)
+      create(:schwab_token, issued_at: 6.days.ago - 2.hours)
+      create(:balance, account: account, as_of: Time.current)
+      create(:position, account: account, instrument: create(:instrument, symbol: "XYZ"), working_stop_order: nil)
+      desk = Desk.new
+      expect(desk.banner).to eq(:unprotected)
+      expect(desk.secondary_statuses).to include(:expiring)
+    end
+
+    it "puts an unknown submission on this account above a dead token, and ignores another account's" do
+      account = create(:account, trading_enabled: true)
+      create(:schwab_token, issued_at: 8.days.ago)
+      create(:balance, account: account, as_of: Time.current)
+      xyz = create(:instrument, symbol: "XYZ")
+      create(:order_proposal, account: create(:account, account_type: "ira", trading_enabled: false), instrument: xyz, status: "submission_unknown")
+      expect(Desk.new.banner).to eq(:expired)
+      create(:order_proposal, account: account, instrument: xyz, status: "submission_unknown")
+      desk = Desk.new
+      expect(desk.banner).to eq(:submission_unknown)
+      expect(desk.secondary_statuses).to include(:expired)
+    end
+
+    it "carries a rule halt as a status line and never a missing token on the connect state" do
+      expect(Desk.new.secondary_statuses).to be_empty
+      SystemSettings.instance.trip_rule_halt!(rule: "daily_loss_halt", reason: "down", resets_at: 1.hour.from_now)
+      expect(Desk.new.secondary_statuses).to eq([ :rule_halted ])
+    end
+
     it "has no banner without a token; the connect state carries it" do
       expect(Desk.new.banner).to be_nil
     end
@@ -60,6 +89,14 @@ RSpec.describe Desk do
       create(:sync_run, feed: "orders", account: account, status: "succeeded", started_at: 1.minute.ago, finished_at: 1.minute.ago)
       expect(Desk.new.sync_failure).to be_nil
     end
+  end
+
+  it "counts this account's waiting proposals and hand placements" do
+    account = create(:account, trading_enabled: true)
+    create(:order_proposal, account: account, instrument: create(:instrument, symbol: "XYZ"), status: "validated")
+    create(:order_proposal, account: account, instrument: create(:instrument, symbol: "DEF"), status: "submitted", shadow: true)
+    create(:order_proposal, account: create(:account, account_type: "ira", trading_enabled: false), instrument: create(:instrument, symbol: "IRA"), status: "validated")
+    expect(Desk.new).to have_attributes(pending_proposal_count: 1, hand_placement_count: 1)
   end
 
   it "computes the flow-adjusted day change against the prior snapshot by date" do

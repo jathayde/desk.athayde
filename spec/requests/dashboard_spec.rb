@@ -33,6 +33,18 @@ RSpec.describe "Dashboard" do
       create(:sync_run, feed: "orders", account: account, status: "succeeded", finished_at: 1.minute.ago)
       get root_path
       expect(response.body).to include("$10,240.00").and include("$2,110.00 / $980.00").and include("XYZ").and include("7.7% to stop").and include("1 trade needs review").and include("first snapshot after today")
+      expect(response.body).to include("none waiting")
+      create(:order_proposal, account: account, instrument: xyz, status: "validated")
+      create(:order_proposal, account: account, instrument: xyz, status: "proposed", side: "sell", kind: "exit", stop_price: nil)
+      create(:order_proposal, account: account, instrument: create(:instrument, symbol: "DEF"), status: "submitted", shadow: true)
+      get root_path
+      expect(response.body).to include("2 waiting and 1 to place by hand")
+    end
+
+    it "shows no connection status line on the connect state" do
+      get root_path
+      expect(response.body).to include("Connect Schwab")
+      expect(response.body).not_to include("status-line")
     end
 
     { revoked: -> { create(:schwab_token, :revoked, last_refresh_error: "invalid_grant") },

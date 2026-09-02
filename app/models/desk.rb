@@ -2,7 +2,9 @@
 # Everything it reads is already in the database; a page render never calls Schwab.
 class Desk
   STALE_MULTIPLIER = 2
-  Row = Data.define(:position, :protection, :as_of, :stale, :trade)
+  Row = Data.define(:position, :protection, :as_of, :stale, :trade) do
+    def symbol = position.instrument.symbol
+  end
 
   def initialize(account: nil)
     @settings = SystemSettings.instance
@@ -33,15 +35,31 @@ class Desk
     since.minimum(:started_at)
   end
 
-  # The primary banner, highest severity first. Everything else active shows as a secondary status line.
+  def rule_halted? = @settings.rule_halted?
+  delegate :rule_halt_rule, :rule_halt_reason, :rule_halt_resets_at, to: :@settings
+
+  def pending_proposal_count = @pending_proposal_count ||= account ? account.order_proposals.pending.count : 0
+  def hand_placement_count = @hand_placement_count ||= account ? account.order_proposals.awaiting_hand_placement.count : 0
+  def unresolved_submissions = @unresolved_submissions ||= account ? account.order_proposals.submission_unknown.includes(:instrument).order(:id).to_a : []
+  def unprotected_rows = @unprotected_rows ||= ready? ? rows.select { |r| r.protection == :unprotected } : []
+
+  # The primary banner, highest severity first: the kill switch, then money in an unknown state, then a dead
+  # connection, then an unprotected position, then the week's nag. Everything else active shows as a status line.
   def banner
     return :halted if halted?
-    token_status if %i[ revoked expired expiring ].include?(token_status)
+    return :submission_unknown if unresolved_submissions.any?
+    return token_status if %i[ revoked expired ].include?(token_status)
+    return :unprotected if unprotected_rows.any?
+    token_status if token_status == :expiring
   end
 
   def secondary_statuses
+    primary = banner
     statuses = []
-    statuses << token_status if halted? && token_status != :healthy
+    statuses << token_status if token_status != :healthy && token_status != primary && state != :not_connected
+    statuses << :rule_halted if rule_halted?
+    statuses << :submission_unknown if unresolved_submissions.any? && primary != :submission_unknown
+    statuses << :unprotected if unprotected_rows.any? && primary != :unprotected
     statuses << :sync_paused if sync_paused_reason.present? && %i[ revoked expired missing ].exclude?(token_status)
     statuses << :sync_failed if sync_failure
     statuses << :calendar_fallback if MarketDay.find_by(date: MarketDay.today)&.fallback?

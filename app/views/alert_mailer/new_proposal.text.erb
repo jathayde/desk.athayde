@@ -1,0 +1,15 @@
+<%= @proposal.label %> @ <%= money(@proposal.limit_price) %><% if @proposal.stop_price %>, stop <%= money(@proposal.stop_price) %><% end %>: <%= proposal_status_label(@proposal) %>.
+<% if @proposal.thesis.present? -%>
+
+<%= @proposal.thesis %>
+<% end -%>
+<% if @proposal.warnings.any? -%>
+
+To acknowledge: <%= @proposal.warnings.map { |rule| rule.humanize.downcase }.to_sentence %>.
+<% end -%>
+<% if @proposal.expires_at -%>
+
+Expires <%= l(@proposal.expires_at, format: :weekday_time) %>.
+<% end -%>
+
+Proposal: <%= proposal_url(@proposal) %>

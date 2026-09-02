@@ -4,7 +4,8 @@ module Playwright::Scenario
   extend self
 
   ACCOUNT_HASH = Schwab::FakeClient::ACCOUNT_HASH
-  SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade proposal ].freeze
+  SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade
+                  proposal proposal_warn proposal_blocked proposal_override submission_unknown rule_halted ].freeze
 
   # Guarded here as well as at the route: reset! empties the database.
   def load!(name)
@@ -66,13 +67,43 @@ module Playwright::Scenario
 
   # A validated entry waiting for the approver, with the two not-checked rules to acknowledge.
   def proposal
-    healthy
-    User.first.update!(approver: true)
-    RiskRule.active_for("max_position_exposure").supersede!(params: { "percent" => "60" }, user: User.first, note: "a scale-in on a held name") # the seeds carry the rest
-    account = Account.first
-    account.balances.create!(as_of: Time.current, equity: 10_240, settled_cash: 5000, unsettled_cash: 0, cash_available_for_trading: 5000)
-    Schwab::FakeClient.instance.script_daily_history(symbol: "XYZ", close: 50) # the fake's quote fixture already knows XYZ
-    Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: BigDecimal("50"), stop_price: BigDecimal("47"), thesis: "Adding to the base breakout on volume.", origin: :agent)
+    proposal_desk
+    propose
+  end
+
+  # The same entry after a taxable loss on XYZ this month: the wash-sale caution to acknowledge.
+  def proposal_warn
+    proposal_desk
+    Account.first.trades.create!(instrument: Instrument.find_by!(symbol: "XYZ"), status: :closed, avg_entry: 60, avg_exit: 55, peak_quantity: 10, realized_pnl: -50, initial_risk: 30, realized_r: -1.67,
+                                 opened_at: 20.days.ago, closed_at: 10.days.ago)
+    propose
+  end
+
+  # Over the per-order notional cap: rejected by rules, nothing to approve.
+  def proposal_blocked
+    proposal_desk
+    RiskRule.active_for("notional_cap").supersede!(params: { "per_order" => "1000", "per_day" => "5000" }, user: User.first, note: "tight for the demo")
+    propose
+  end
+
+  # A stop far below the collar: approvable only with a reason.
+  def proposal_override
+    proposal_desk
+    propose(stop_price: BigDecimal("30"))
+  end
+
+  # An approve that got no answer from Schwab, still being looked for: through the state machine, never by hand.
+  def submission_unknown
+    proposal_desk
+    proposal = propose
+    attempt = proposal.start_submission!(user: User.first, acknowledged: proposal.warnings, override_reason: nil, payload: {}, shadow: false)
+    proposal.record_unknown!(attempt, error: "Net::ReadTimeout")
+  end
+
+  # The daily-loss rule tripped: entries refused, exits still allowed.
+  def rule_halted
+    proposal_desk
+    SystemSettings.instance.trip_rule_halt!(rule: "daily_loss_halt", reason: "down 3.2% today", resets_at: nil)
   end
 
   def delisted
@@ -110,6 +141,18 @@ module Playwright::Scenario
   end
 
   private
+    def proposal_desk
+      healthy
+      User.first.update!(approver: true)
+      RiskRule.active_for("max_position_exposure").supersede!(params: { "percent" => "60" }, user: User.first, note: "a scale-in on a held name") # the seeds carry the rest
+      Account.first.balances.create!(as_of: Time.current, equity: 10_240, settled_cash: 5000, unsettled_cash: 0, cash_available_for_trading: 5000)
+      Schwab::FakeClient.instance.script_daily_history(symbol: "XYZ", close: 50) # the fake's quote fixture already knows XYZ
+    end
+
+    def propose(stop_price: BigDecimal("47"))
+      Proposals::Create.call(account: Account.first, kind: :entry, side: :buy, symbol: "XYZ", limit_price: BigDecimal("50"), stop_price: stop_price, thesis: "Adding to the base breakout on volume.", origin: :agent)
+    end
+
     def token!(issued_at: Time.current)
       SchwabToken.create!(access_token: "fake-access", refresh_token: "fake-refresh", issued_at: issued_at, access_expires_at: issued_at + 29.minutes,
                           refresh_expires_at: issued_at + SchwabToken::REFRESH_LIFETIME, scope: "api")

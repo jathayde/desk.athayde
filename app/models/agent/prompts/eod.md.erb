@@ -1,5 +1,12 @@
 Write the end-of-day recap for <%= date.strftime("%A, %B %-d") %>.
 
+<% if todays_proposals.any? -%>
+Proposals today, as data (link each fill to its proposal where the symbol and side match; say which fills had no proposal):
+<% todays_proposals.each do |proposal| -%>
+- #<%= proposal.id %> <%= single_line(proposal.priced_label) %>, <%= proposal.origin %>, <%= proposal.status.humanize.downcase %><%= " (shadow)" if proposal.shadow? %>
+<% end -%>
+
+<% end -%>
 Cover, in this order and only from tool results: today's fills and the journal rows they created or closed; trades still
 missing a setup, a stop, or a post-mortem; the state of the working stops after today's session; equity and open risk with
 their as_of (the email frame carries the day's snapshot numbers; if the tools show no snapshot for today, say so rather than

@@ -46,8 +46,20 @@ class Agent::Context
   # The same numbers the get_setup_stats tool returns, serialized the same way (decimal strings, never BigDecimal#to_s).
   def setup_stats = @setup_stats ||= Agent.serialize(Setup.agent_stats).deep_symbolize_keys
 
+  # The day's proposal traffic for the recap: decided today, or given a broker outcome today (by the audit row
+  # the sync wrote, not by updated_at, which any touch moves).
+  def todays_proposals
+    @todays_proposals ||= begin
+      day = date.in_time_zone(MarketDay::ZONE).all_day
+      outcomes = AuditEvent.where(kind: %w[ proposal_filled proposal_cancelled ], subject_type: "OrderProposal", created_at: day).select(:subject_id)
+      OrderProposal.includes(:instrument).where(decided_at: day).or(OrderProposal.where(id: outcomes)).order(:id).to_a
+    end
+  end
+
   def stamp(time) = time ? I18n.l(time, format: :connection) : "never"
   def percent(ratio) = ratio ? "#{(BigDecimal(ratio.to_s) * 100).round(1).to_s('F')}%" : "n/a"
+  # One line of data, never a line break: a symbol is Schwab's, and the prompt's structure is ours.
+  def single_line(text) = text.to_s.gsub(/[\r\n]+/, " ")
 
   # Rendered once per run: the same bytes on every turn is what makes the prompt cache hit.
   def system_prompt = @system_prompt ||= render("system")

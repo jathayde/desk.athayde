@@ -98,4 +98,16 @@ RSpec.describe BriefMailer do
     text = described_class.failure_digest(FailureDigest.new).text_part.body.to_s
     expect(text).to include("Taxable · orders: 1 failed", "Schwab 503", "end of day, Tue Sep 1: failed: deadline", "morning brief, Tue Sep 1: succeeded but never emailed (bin/rails agent:resend[")
   end
+
+  it "puts unresolved and not-placed submissions in the failure digest" do
+    account = create(:account)
+    unresolved = create(:order_proposal, account: account, instrument: create(:instrument, symbol: "XYZ"), status: "submission_unknown", quantity: 5)
+    unresolved.submission_attempts.create!(attempted_at: 2.hours.ago, outcome: :unknown, payload: {}, response: { "error" => "timeout" })
+    failed = create(:order_proposal, account: account, instrument: create(:instrument, symbol: "DEF"), status: "submission_failed", quantity: 7)
+    failed.submission_attempts.create!(attempted_at: 3.hours.ago, outcome: :not_placed, payload: {}, response: { "error" => "not found at Schwab after two looks" })
+    digest = FailureDigest.new
+    expect(digest).not_to be_empty
+    text = BriefMailer.failure_digest(digest).text_part.body.to_s
+    expect(text).to include("Submission unresolved: BUY 5 XYZ, check Schwab", "Not placed: BUY 7 DEF", "not found at Schwab after two looks")
+  end
 end

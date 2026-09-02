@@ -32,6 +32,11 @@ class OrderProposal < ApplicationRecord
   UNRESOLVED = %w[ submitting submission_unknown ].freeze # locks the instrument for every other proposal
   BROKER_OUTCOMES = %w[ filled cancelled ].freeze
 
+  STATUS_LABELS = { "proposed" => "evaluating", "validated" => "waiting for you", "rejected_by_rules" => "rejected by rules", "rejected" => "rejected",
+                    "expired" => "expired", "submitting" => "submitting", "submitted" => "submitted", "submission_unknown" => "submission unknown",
+                    "submission_failed" => "not placed", "filled" => "filled", "cancelled" => "cancelled" }.freeze
+
+  scope :pending, -> { where(status: %w[ proposed validated ]) }
   scope :unresolved, -> { where(status: UNRESOLVED) }
   scope :queue, -> { where(status: %w[ proposed validated submission_unknown ]).order(created_at: :desc) }
   scope :expiring, -> { where(status: %w[ proposed validated ]).where(expires_at: ..Time.current) }
@@ -99,6 +104,16 @@ class OrderProposal < ApplicationRecord
 
   def expire!
     transition!(from: %w[ proposed validated ], to: :expired, event: "proposal_expired")
+  end
+
+  # The one way a proposal is named in prose: emails, banners, the recap, the journal.
+  def label = "#{side.upcase} #{quantity.to_s('F').sub(/\.0+\z/, '')} #{instrument.symbol}"
+  def priced_label = "#{label} @ #{limit_price.to_s('F')}"
+
+  def status_label
+    return "approved, place by hand" if awaiting_hand_placement?
+    return "submission unknown, ambiguous" if ambiguous_orders.any?
+    STATUS_LABELS.fetch(status)
   end
 
   # Transaction one of the submission: the approval, the state, and the attempt row commit together, or not at all.
@@ -177,6 +192,8 @@ class OrderProposal < ApplicationRecord
     status = status.to_s
     raise ArgumentError, "#{status} is not a broker outcome" unless BROKER_OUTCOMES.include?(status)
     transition!(from: %w[ submitted ], to: status, event: "proposal_#{status}")
+    ActiveRecord.after_all_transactions_commit { AlertMailer.fill_or_cancel(self).deliver_later }
+    self
   end
 
   private

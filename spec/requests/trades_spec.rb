@@ -12,6 +12,13 @@ RSpec.describe "Trades" do
     end
   end
 
+  it "links a trade to the proposal that opened it" do
+    proposal = create(:order_proposal, account: account, instrument: xyz, status: "filled", origin: "agent")
+    trade = trade_with_entry(order_proposal: proposal, needs_review: false, review_reason: nil)
+    get trade_path(trade)
+    expect(response.body).to include("BUY 10 XYZ @ $50.00, agent", proposal_path(proposal))
+  end
+
   it "lists by filter and orders the review queue by seriousness, then never-skipped, then oldest" do
     a = create(:trade, account: account, instrument: xyz, needs_review: true, review_reason: "missing_setup", created_at: 3.days.ago)
     b = create(:trade, account: account, instrument: create(:instrument), needs_review: true, review_reason: "corporate_action", created_at: 1.day.ago)

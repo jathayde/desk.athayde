@@ -7,7 +7,10 @@ class SubmissionAttempt < ApplicationRecord
 
   enum :outcome, { pending: "pending", submitted: "submitted", would_have_submitted: "would_have_submitted", unknown: "unknown", not_placed: "not_placed", failed: "failed" }
 
-  scope :live, -> { where.not(outcome: %w[ failed not_placed ]) }
+  DEAD = %w[ failed not_placed ].freeze # the proposal is resubmittable past these
+
+  scope :live, -> { where.not(outcome: DEAD) }
+  scope :dead, -> { where(outcome: DEAD) }
   scope :unlooked_at_since, ->(time) { where(last_looked_at: ...time).or(where(last_looked_at: nil, attempted_at: ...time)) }
 
   def looked!(could_see:) = update!(last_looked_at: Time.current, last_look_could_see: could_see)

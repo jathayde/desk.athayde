@@ -22,5 +22,4 @@ class BriefMailer < ApplicationMailer
   end
 
   private
-    def recipients = User.pluck(:email_address)
 end

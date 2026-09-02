@@ -4,6 +4,10 @@
     <b>Halted</b><% if desk.halted_by %> by <%= desk.halted_by.user&.name %>, <%= l(desk.halted_by.created_at, format: :weekday_time) %><% end %>: <%= desk.halt_reason %>.
     Clear it on the <%= link_to "System page", system_path %>.
   </div>
+<% when :submission_unknown %>
+  <div class="banner halted"><b>Submission unknown</b> on <%= proposal_links(desk.unresolved_submissions) %>: Schwab gave no answer. Check Schwab before doing anything else there; the app is looking and will say when it knows.</div>
+<% when :unprotected %>
+  <div class="banner expired"><b>Unprotected:</b> <%= desk.unprotected_rows.map(&:symbol).to_sentence %> <%= desk.unprotected_rows.one? ? "has" : "have" %> no working stop. Place one at Schwab.</div>
 <% when :revoked %>
   <div class="banner expired"><b>Schwab rejected the connection.</b> <%= desk.token.last_refresh_error %> Sync is paused. <%= link_to "Re-authenticate with Schwab", schwab_authorize_path, class: "button" %></div>
 <% when :expired %>
@@ -16,6 +20,9 @@
     <% case status
        when :revoked, :expired, :missing %>Schwab connection is down; <%= link_to "re-authenticate", schwab_authorize_path %>.
     <% when :expiring %>Token expires <%= l(desk.token.refresh_expires_at, format: :weekday_time) %>; <%= link_to "re-authenticate", schwab_authorize_path %>.
+    <% when :rule_halted %>Entries halted by <%= desk.rule_halt_rule.to_s.humanize.downcase %>: <%= desk.rule_halt_reason %>; exits stay available<% if desk.rule_halt_resets_at %>, clears <%= l(desk.rule_halt_resets_at, format: :weekday_time) %><% end %>.
+    <% when :submission_unknown %>Submission unknown on <%= proposal_links(desk.unresolved_submissions) %>; check Schwab.
+    <% when :unprotected %><%= desk.unprotected_rows.map(&:symbol).to_sentence %>: no working stop.
     <% when :sync_paused %>Sync paused: <%= desk.sync_paused_reason %>.
     <% when :sync_failed %>Last <%= desk.sync_failure.feed %> sync failed: <%= desk.sync_failure.error.to_s.truncate(100) %>.
     <% when :calendar_fallback %>Market calendar unavailable from Schwab today; assuming a normal session.

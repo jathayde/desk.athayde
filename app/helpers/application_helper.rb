@@ -3,9 +3,6 @@ module ApplicationHelper
     protected: "protected", partial: "partially covered", oversized: "stop larger than position", awaiting: "stop awaiting parent",
     trailing_unknown: "trailing stop, price unknown", unpriced: "stop in place, price unknown", unprotected: "no stop", delisted: "delisted"
   }.freeze
-  PROPOSAL_STATUS_LABELS = { "proposed" => "evaluating", "validated" => "waiting for you", "rejected_by_rules" => "rejected by rules", "rejected" => "rejected",
-                             "expired" => "expired", "submitting" => "submitting", "submitted" => "submitted", "submission_unknown" => "submission unknown",
-                             "submission_failed" => "not placed", "filled" => "filled", "cancelled" => "cancelled" }.freeze
   OUTCOME_LABELS = { "pass" => "pass", "caution" => "caution, acknowledge", "block" => "blocks", "unavailable" => "not checked, acknowledge", "skipped" => "does not apply" }.freeze
   REVIEW_REASON_LABELS = {
     "missing_setup" => "No setup recorded", "missing_stop" => "No planned stop", "bootstrapped" => "Legacy holding: the entry predates the journal",
@@ -42,10 +39,12 @@ module ApplicationHelper
   # An absolute stamp for email, where relative words age badly.
   def stamp(time) = time ? l(time, format: :stamp) : "never"
   def protection_label(protection) = PROTECTION_LABELS.fetch(protection)
-  def proposal_status_label(proposal)
-    return "approved, place by hand" if proposal.awaiting_hand_placement?
-    return "submission unknown, ambiguous" if proposal.ambiguous_orders.any?
-    PROPOSAL_STATUS_LABELS.fetch(proposal.status)
+  def proposal_status_label(proposal) = proposal.status_label
+  def proposal_links(proposals) = safe_join(proposals.map { |proposal| link_to(proposal.instrument.symbol, proposal_path(proposal)) }, ", ")
+
+  def proposals_summary(desk)
+    [ ("#{desk.pending_proposal_count} waiting" if desk.pending_proposal_count.positive?),
+      ("#{desk.hand_placement_count} to place by hand" if desk.hand_placement_count.positive?) ].compact.to_sentence.presence || "none waiting"
   end
   def outcome_label(outcome) = OUTCOME_LABELS.fetch(outcome.to_s)
   def outcome_class(outcome) = { "block" => "warn", "caution" => "warn" }[outcome.to_s]

@@ -1,0 +1,1332 @@
+Reading additional input from stdin...
+OpenAI Codex v0.152.0
+--------
+workdir: /Users/jathayde/Development/Personal/desk.athayde
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a060ef-9909-7b80-b1c6-523462740924
+--------
+user
+Read the file at /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/phase2-step7/1788332710-phase2-step7/prompt.md and follow the instructions within it.
+deprecated: `[features].codex_hooks` is deprecated. Use `[features].hooks` instead.
+Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+codex
+I’ll read the prompt file first and then follow its embedded instructions as far as the current read-only workspace permits.
+hook: PreToolUse
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc "sed -n '1,240p' /Users/jathayde/Development/Personal/desk.athayde/agents/counselors/phase2-step7/1788332710-phase2-step7/prompt.md" in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+Review Phase 2 step 7 of AthaydeDesk (Rails 8.1): notifications and screens. Read only these files:
+- app/mailers/alert_mailer.rb, app/views/alert_mailer/new_proposal.text.erb, fill_or_cancel.text.erb, halt_tripped.text.erb
+- app/models/proposals/create.rb (the new_proposal hook), app/models/order_proposal.rb (record_broker_outcome!, record_unknown!), app/models/system_settings.rb (trip_rule_halt!)
+- app/models/failure_digest.rb, app/views/brief_mailer/failure_digest.text.erb
+- app/models/desk.rb (banner, secondary_statuses, pending_proposals, unresolved_submissions, unprotected_rows), app/views/dashboard/_banner.html.erb, app/views/dashboard/_glance.html.erb
+- app/models/agent/context.rb (todays_proposals), app/models/agent/prompts/eod.md.erb
+- lib/playwright/scenario.rb (proposal_warn, proposal_blocked, proposal_override, submission_unknown, rule_halted)
+- spec/mailers/alert_mailer_spec.rb, spec/models/desk_spec.rb
+Requirements from docs/phase-2-plan.md §9: AlertMailer new_proposal (agent proposals), fill_or_cancel (from the sync's broker outcome), halt_tripped (rule halt, one audit and one email); digest carries failed submissions; dashboard shows a pending-proposals line and the unprotected and submission-unknown banners; the EOD brief links fills to proposals; scheduled runs stay read-only; every mail is sent after the state it reports is committed. Report concrete defects (mail sent inside an uncommitted transaction, duplicate or missing mails, wrong banner precedence, N+1 on the dashboard, prompt injection surface in the EOD recap, spec gaps), each with file:line and a proposed fix. Do not restyle.
+
+hook: PostToolUse
+hook: PostToolUse Completed
+codex
+The prompt is a focused code review. I’m going to inspect only the files it names, with line numbers, so the findings can point to concrete locations.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba app/views/alert_mailer/fill_or_cancel.text.erb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/views/alert_mailer/halt_tripped.text.erb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/views/alert_mailer/new_proposal.text.erb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/mailers/alert_mailer.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	<%= @proposal.side.upcase %> <%= quantity(@proposal.quantity) %> <%= @proposal.instrument.symbol %> @ <%= money(@proposal.limit_price) %> is <%= @proposal.status %> at Schwab<% if @proposal.broker_order_id %> (order <%= @proposal.broker_order_id %>)<% end %>.
+     2	<% if @proposal.filled? && @proposal.kind_entry? -%>
+     3	
+     4	The bracket's stop should now be working; the next orders sync confirms it, and the dashboard says if it is not.
+     5	<% end -%>
+     6	
+     7	Proposal: <%= proposal_url(@proposal) %>
+
+ succeeded in 0ms:
+     1	New entries are halted by the <%= @rule.humanize.downcase %> rule: <%= @reason %>.
+     2	
+     3	Exits and tighten-only stop changes stay available. The halt clears <% if @resets_at %>at <%= l(@resets_at, format: :weekday_time) %><% else %>when you clear it on the System page<% end %>.
+     4	
+     5	System: <%= system_url %>
+
+ succeeded in 0ms:
+     1	<%= @proposal.side.upcase %> <%= quantity(@proposal.quantity) %> <%= @proposal.instrument.symbol %> @ <%= money(@proposal.limit_price) %><% if @proposal.stop_price %>, stop <%= money(@proposal.stop_price) %><% end %>: <%= proposal_status_label(@proposal) %>.
+     2	<% if @proposal.thesis.present? -%>
+     3	
+     4	<%= @proposal.thesis %>
+     5	<% end -%>
+     6	<% if @proposal.warnings.any? -%>
+     7	
+     8	To acknowledge: <%= @proposal.warnings.map { |rule| rule.humanize.downcase }.to_sentence %>.
+     9	<% end -%>
+    10	<% if @proposal.expires_at -%>
+    11	
+    12	Expires <%= l(@proposal.expires_at, format: :weekday_time) %>.
+    13	<% end -%>
+    14	
+    15	Proposal: <%= proposal_url(@proposal) %>
+
+ succeeded in 0ms:
+     1	# The time-sensitive alerts (docs/phase-2-plan.md §0.14): one mail per event, no figures in subjects,
+     2	# template links only. Push replaces these when the iOS shell exists.
+     3	class AlertMailer < ApplicationMailer
+     4	  helper ApplicationHelper
+     5	
+     6	  # A desk with no users yet (the first boot, a test with none) has nobody to alert; the audit row still stands.
+     7	  def unprotected_position(position)
+     8	    return if recipients.empty?
+     9	    @position = position
+    10	    mail to: recipients, subject: "Athayde Desk: #{position.instrument.symbol} is unprotected"
+    11	  end
+    12	
+    13	  def submission_unknown(proposal)
+    14	    return if recipients.empty?
+    15	    @proposal = proposal
+    16	    mail to: recipients, subject: "Athayde Desk: a submission on #{proposal.instrument.symbol} is unresolved"
+    17	  end
+    18	
+    19	  # The agent proposed something: the operator hears about it once, whatever the rules said.
+    20	  def new_proposal(proposal)
+    21	    return if recipients.empty?
+    22	    @proposal = proposal
+    23	    mail to: recipients, subject: "Athayde Desk: #{proposal.side.upcase} #{quantity(proposal.quantity)} #{proposal.instrument.symbol} #{proposal.rejected_by_rules? ? 'rejected by rules' : 'waiting for you'}"
+    24	  end
+    25	
+    26	  def fill_or_cancel(proposal)
+    27	    return if recipients.empty?
+    28	    @proposal = proposal
+    29	    mail to: recipients, subject: "Athayde Desk: #{proposal.side.upcase} #{quantity(proposal.quantity)} #{proposal.instrument.symbol} #{proposal.status}"
+    30	  end
+    31	
+    32	  def halt_tripped(rule:, reason:, resets_at:)
+    33	    return if recipients.empty?
+    34	    @rule, @reason, @resets_at = rule, reason, resets_at
+    35	    mail to: recipients, subject: "Athayde Desk: entries halted by #{rule.humanize.downcase}"
+    36	  end
+    37	
+    38	  private
+    39	    def recipients = User.pluck(:email_address)
+    40	    def quantity(value) = ApplicationController.helpers.quantity(value)
+    41	end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The mailer and templates are small; next I’m reading the state-transition models and dashboard/EOD surfaces to check transaction timing, duplicate delivery paths, banner priority, and query shape.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba app/views/brief_mailer/failure_digest.text.erb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/models/proposals/create.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	Failures between <%= l(@digest.since, format: :weekday_time) %> and <%= l(@digest.now, format: :weekday_time) %>.
+     2	
+     3	<% @digest.sync_by_feed.each do |feed, runs| -%>
+     4	<%= feed %>: <%= runs.size %> failed
+     5	<% runs.first(3).each do |run| -%>
+     6	  <%= l(run.started_at, format: :weekday_time) %> <%= run.status %>: <%= run.error.to_s.truncate(160) %>
+     7	<% end -%>
+     8	<% end -%>
+     9	<% @digest.agent_failures.each do |run| -%>
+    10	<%= run.title %>: <%= run.status %><%= " (#{run.stop_reason})" if run.stop_reason %><%= ": #{run.error}" if run.error %>
+    11	<% end -%>
+    12	<% @digest.undelivered.each do |run| -%>
+    13	<%= run.title %>: <%= run.status %> but never emailed (bin/rails agent:resend[<%= run.id %>])
+    14	<% end -%>
+    15	<% @digest.jobs_by_class.each do |klass, failures| -%>
+    16	<%= klass %>: <%= failures.size %> failed job<%= "s" if failures.size > 1 %>
+    17	<% failures.first(3).each do |failure| -%>
+    18	  <%= l(failure.created_at, format: :weekday_time) %>: <%= failure.exception_class %>: <%= failure.message.to_s.truncate(160) %>
+    19	<% end -%>
+    20	<% end -%>
+    21	<% @digest.unresolved_proposals.each do |proposal| -%>
+    22	Submission unresolved: <%= proposal.side.upcase %> <%= quantity(proposal.quantity) %> <%= proposal.instrument.symbol %>, check Schwab (<%= proposal_url(proposal) %>)
+    23	<% end -%>
+    24	<% @digest.failed_attempts.each do |attempt| -%>
+    25	Not placed: <%= attempt.order_proposal.side.upcase %> <%= quantity(attempt.order_proposal.quantity) %> <%= attempt.order_proposal.instrument.symbol %> at <%= l(attempt.updated_at, format: :weekday_time) %>: <%= attempt.error.to_s.truncate(160) %>
+    26	<% end -%>
+    27	
+    28	System: <%= system_url %>
+
+ succeeded in 0ms:
+     1	# The one way a proposal comes into being, from the tool or the form: refuse what the halts forbid before a
+     2	# row exists, draft, save, evaluate (which engages any halt the rules ask for), and audit the creation.
+     3	class Proposals::Create
+     4	  class Refused < Proposals::Error; end
+     5	
+     6	  def self.call(**) = new(**).call
+     7	
+     8	  def initialize(**arguments) = @arguments = arguments # the keywords Proposals.draft takes
+     9	
+    10	  def call
+    11	    settings = SystemSettings.instance
+    12	    raise Refused, "halted: #{settings.manual_halt_reason}" if settings.manual_halt?
+    13	    raise Refused, "entries are halted by #{settings.rule_halt_rule}: #{settings.rule_halt_reason}" if @arguments[:kind].to_s == "entry" && !settings.entries_allowed?
+    14	    proposal = Proposals.draft(**@arguments)
+    15	    open = proposal.account.order_proposals.where(instrument: proposal.instrument, side: OrderProposal.sides.fetch(proposal.side), status: %w[ proposed validated ]).first
+    16	    raise Refused, "#{proposal.instrument.symbol} already has a #{proposal.side} proposal waiting (##{open.id}); decide it first" if open
+    17	    OrderProposal.transaction do
+    18	      proposal.save!
+    19	      AuditEvent.log("proposal_created", actor: proposal.agent? ? :agent : :human, user: proposal.user, subject: proposal,
+    20	                     data: { kind: proposal.kind, side: proposal.side, symbol: proposal.instrument.symbol, quantity: proposal.quantity, limit_price: proposal.limit_price, stop_price: proposal.stop_price })
+    21	      proposal.evaluate!(Guardrails::Evaluator.new(proposal).call)
+    22	    end
+    23	    AlertMailer.new_proposal(proposal).deliver_later if proposal.agent? # the operator made the human ones
+    24	    proposal
+    25	  rescue ActiveRecord::RecordNotUnique
+    26	    raise Refused, "#{@arguments[:symbol].to_s.upcase} already has a #{@arguments[:side]} proposal waiting; decide it first"
+    27	  rescue ActiveRecord::RecordInvalid => e
+    28	    raise Refused, e.record.errors.full_messages.to_sentence
+    29	  end
+    30	end
+
+exec
+/bin/zsh -lc 'nl -ba app/models/failure_digest.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# Everything that went wrong in a fixed window ending now: failed feeds, failed or capped agent runs,
+     2	# briefs that never left, jobs the queue gave up on, and submissions that did not go through, plus any
+     3	# submission still unresolved, which is standing state and not windowed. Token-skipped runs are the nag's business, not
+     4	# this one's, and stuck runs are swept to failed before the digest reads.
+     5	class FailureDigest
+     6	  WINDOW = 24.hours
+     7	
+     8	  def initialize(now: Time.current)
+     9	    @since = now - WINDOW
+    10	    @now = now
+    11	  end
+    12	
+    13	  attr_reader :since, :now
+    14	
+    15	  def sync_failures = @sync_failures ||= SyncRun.where(status: %w[ failed partial ]).where(finished_at: window).includes(:account).recent_first.to_a
+    16	  def agent_failures = @agent_failures ||= AgentRun.where(status: %w[ failed capped ]).where(finished_at: window).recent_first.to_a
+    17	  def undelivered = @undelivered ||= AgentRun.unemailed.where(finished_at: window).recent_first.to_a
+    18	  def failed_jobs = @failed_jobs ||= SolidQueue::FailedExecution.where(created_at: window).includes(:job).order(created_at: :desc).to_a
+    19	  def failed_attempts = @failed_attempts ||= SubmissionAttempt.where(outcome: %w[ failed not_placed ]).where(updated_at: window).includes(order_proposal: :instrument).order(updated_at: :desc).to_a
+    20	  def unresolved_proposals = @unresolved_proposals ||= OrderProposal.submission_unknown.includes(:instrument).order(:id).to_a
+    21	
+    22	  def sync_by_feed = sync_failures.group_by { |run| [ run.account&.label, run.feed ].compact.join(" · ") }
+    23	  def jobs_by_class = failed_jobs.group_by { |failure| failure.job.class_name }
+    24	
+    25	  def empty? = sync_failures.none? && agent_failures.none? && undelivered.none? && failed_jobs.none? && failed_attempts.none? && unresolved_proposals.none?
+    26	
+    27	  private
+    28	    def window = since..now
+    29	end
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/models/system_settings.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# One row, enforced by a check constraint on id = 1. Holds the global flags the PRD calls out:
+     2	# shadow mode (on by default), the manual halt, and why sync is paused.
+     3	class SystemSettings < ApplicationRecord
+     4	  # Two halts (docs/phase-2-plan.md §0.3): the kill switch stops everything; a rule halt (daily loss, drawdown)
+     5	  # blocks new entries only, so exits and tighten-only stop adjustments stay available. Shadow mode is not a
+     6	  # gate: it is the branch between "would have submitted" and a real call.
+     7	  LIVE_CONFIRMATION, SHADOW_CONFIRMATION = "go live", "shadow"
+     8	
+     9	  def halted? = manual_halt? || rule_halted?
+    10	  def entries_allowed? = !halted?
+    11	  def exits_allowed? = !manual_halt?
+    12	  def rule_halted? = rule_halt_tripped_at.present? && (rule_halt_resets_at.nil? || rule_halt_resets_at > Time.current)
+    13	
+    14	  # Under the row lock, since two evaluators can trip at once. A second rule tripping during a halt extends
+    15	  # it to the later reset and records the rule; a lapsed halt is cleared with its own audit row by the tick.
+    16	  def trip_rule_halt!(rule:, reason:, resets_at:)
+    17	    with_lock do
+    18	      if rule_halted?
+    19	        # nil means until cleared by hand, later than any time; only a strictly later reset changes anything,
+    20	        # so a rule re-evaluated during its own halt writes nothing.
+    21	        indefinite_already = rule_halt_resets_at.nil?
+    22	        extends_the_halt = !indefinite_already && (resets_at.nil? || resets_at > rule_halt_resets_at)
+    23	        if extends_the_halt
+    24	          update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_resets_at: resets_at)
+    25	          AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at, extended: true })
+    26	          AlertMailer.halt_tripped(rule: rule, reason: reason, resets_at: resets_at).deliver_later
+    27	        end
+    28	      else
+    29	        update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_tripped_at: Time.current, rule_halt_resets_at: resets_at)
+    30	        AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at })
+    31	        AlertMailer.halt_tripped(rule: rule, reason: reason, resets_at: resets_at).deliver_later
+    32	      end
+    33	    end
+    34	    self
+    35	  end
+    36	
+    37	  def clear_rule_halt!(user: nil, reason: nil)
+    38	    with_lock do
+    39	      next unless rule_halt_tripped_at
+    40	      AuditEvent.log("rule_halt_cleared", actor: user ? :human : :system, user: user, reason: reason, data: { rule: rule_halt_rule })
+    41	      update!(rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
+    42	    end
+    43	    self
+    44	  end
+    45	
+    46	  class Unconfirmed < StandardError; end
+    47	
+    48	  # Shadow mode off means the next approve reaches Schwab; on is the same gesture in reverse. Audited both ways
+    49	  # with the shadow evidence that justified it. The typed word is checked under the row lock, so two "go live"
+    50	  # posts crossing cannot have the second one flip the desk straight back to shadow.
+    51	  def toggle_shadow_mode!(user:, reason:, confirmation:)
+    52	    with_lock do
+    53	      raise Unconfirmed, "Type #{confirmation_word} to confirm." unless confirmation.to_s.strip.casecmp?(confirmation_word)
+    54	      status = SystemStatus.new
+    55	      update!(shadow_mode: !shadow_mode?, shadow_mode_changed_at: Time.current)
+    56	      AuditEvent.log("shadow_mode_toggled", actor: :human, user: user, reason: reason,
+    57	                     data: { shadow_mode: shadow_mode, shadowed_approvals: status.shadowed_approvals, shadow_reconciled: status.shadow_reconciled })
+    58	    end
+    59	    self
+    60	  end
+    61	
+    62	  def confirmation_word = shadow_mode? ? LIVE_CONFIRMATION : SHADOW_CONFIRMATION
+    63	
+    64	  def sweep_rule_halt!
+    65	    clear_rule_halt!(reason: "reset time passed") if rule_halt_tripped_at && !rule_halted?
+    66	  end
+    67	
+    68	  def self.instance = find_or_create_by!(id: 1)
+    69	
+    70	  # The two halves of the token pause, under the same row lock so a re-auth landing mid-tick cannot be
+    71	  # marked paused: pause while the token is unusable (one audit per episode) and resume on a new token.
+    72	  def self.pause_for_token!
+    73	    transaction do
+    74	      settings = instance.lock!
+    75	      next nil if SchwabToken.usable?
+    76	      unless settings.sync_paused_reason
+    77	        settings.update!(sync_paused_reason: "Schwab token unusable; re-authenticate")
+    78	        AuditEvent.log("sync_paused_token_expired", actor: :system)
+    79	      end
+    80	      settings.sync_paused_reason
+    81	    end
+    82	  end
+    83	
+    84	  def self.resume_sync!
+    85	    settings = instance.lock!
+    86	    AuditEvent.log("sync_resumed", actor: :system, reason: settings.sync_paused_reason) if settings.sync_paused_reason
+    87	    settings.update!(sync_paused_reason: nil)
+    88	  end
+    89	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/models/order_proposal.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# One proposed order and its whole life (docs/phase-2-state-table.md). Sizing and the collar are frozen at
+     2	# creation; the approve gesture is the submission; nothing leaves the submission path by hand. Every
+     3	# transition locks the row, re-reads the state, and writes its audit row in the same transaction.
+     4	class OrderProposal < ApplicationRecord
+     5	  class IllegalTransition < StandardError; end
+     6	
+     7	  belongs_to :account
+     8	  belongs_to :instrument
+     9	  belongs_to :target_order, class_name: "Order", optional: true
+    10	  belongs_to :user, optional: true
+    11	  belongs_to :decided_by, class_name: "User", optional: true
+    12	  belongs_to :setup, optional: true
+    13	  belongs_to :parent_proposal, class_name: "OrderProposal", optional: true
+    14	  has_many :orders, dependent: :restrict_with_exception
+    15	  has_many :submission_attempts, dependent: :restrict_with_exception
+    16	  has_one :trade, dependent: :restrict_with_exception
+    17	
+    18	  enum :kind, { entry: "entry", exit: "exit", stop_adjustment: "stop_adjustment" }, prefix: true
+    19	  enum :origin, { agent: "agent", human: "human" }
+    20	  enum :side, { buy: Schwab::Order::BUY, sell: Schwab::Order::SELL }
+    21	  enum :child_action, { cancel_stop: "cancel_stop", replace_stop: "replace_stop" }, prefix: true
+    22	  enum :status, {
+    23	    proposed: "proposed", validated: "validated", rejected_by_rules: "rejected_by_rules", rejected: "rejected", expired: "expired",
+    24	    submitting: "submitting", submitted: "submitted", submission_unknown: "submission_unknown", submission_failed: "submission_failed",
+    25	    filled: "filled", cancelled: "cancelled"
+    26	  }
+    27	
+    28	  TERMINAL = %w[ rejected_by_rules rejected expired submission_failed filled cancelled ].freeze
+    29	  STALE_SUBMITTING = 5.minutes # past two writes at their timeouts, a refresh, and slack: the worker died
+    30	  LOOK_GAP = 15.minutes # an unknown row nobody has looked at for this long gets a reconcile enqueued again
+    31	  APPROVABLE = %w[ validated ].freeze
+    32	  UNRESOLVED = %w[ submitting submission_unknown ].freeze # locks the instrument for every other proposal
+    33	  BROKER_OUTCOMES = %w[ filled cancelled ].freeze
+    34	
+    35	  scope :unresolved, -> { where(status: UNRESOLVED) }
+    36	  scope :queue, -> { where(status: %w[ proposed validated submission_unknown ]).order(created_at: :desc) }
+    37	  scope :expiring, -> { where(status: %w[ proposed validated ]).where(expires_at: ..Time.current) }
+    38	  # A shadow approval the operator still has to place by hand: the phase's central concept, named once.
+    39	  scope :awaiting_hand_placement, -> { submitted.where(shadow: true, broker_order_id: nil) }
+    40	  scope :stale_submitting, ->(older_than) { submitting.where(updated_at: ..older_than.ago) }
+    41	
+    42	  validates :quantity, numericality: { greater_than: 0 }, allow_nil: true
+    43	  validates :quantity, presence: true, unless: :kind_entry? # an entry may be unsized (and blocked); a sell of nothing is not a proposal
+    44	
+    45	  def self.instrument_locked?(instrument) = unresolved.where(instrument: instrument).exists?
+    46	
+    47	  # A submitting row older than the call's timeouts is a worker that died mid-submission. Shadow rows finish as
+    48	  # what they were going to be; real rows become unknown and the reconcile job looks. Never back to validated.
+    49	  def self.sweep_submitting!
+    50	    stale_submitting(STALE_SUBMITTING).find_each do |proposal|
+    51	      attempt = proposal.submission_attempts.pending.first or next
+    52	      if proposal.shadow?
+    53	        proposal.record_shadow!(attempt)
+    54	      else
+    55	        proposal.record_unknown!(attempt, error: "left submitting")
+    56	        Submission::ReconcileJob.perform_later(proposal)
+    57	      end
+    58	    end
+    59	  end
+    60	
+    61	  # An unknown row the reconcile job has not looked at in a while (its job lost, its retries spent) is looked at again.
+    62	  def self.redrive_unknown!
+    63	    submission_unknown.joins(:submission_attempts).merge(SubmissionAttempt.unknown.unlooked_at_since(LOOK_GAP.ago)).distinct.find_each do |proposal|
+    64	      Submission::ReconcileJob.perform_later(proposal)
+    65	    end
+    66	  end
+    67	
+    68	  def terminal? = TERMINAL.include?(status)
+    69	  def approvable? = APPROVABLE.include?(status)
+    70	  # Everything the approver must acknowledge: warnings and the rules that could not be checked.
+    71	  def warnings = guardrail_results.select { |_, r| r["outcome"].in?(%w[ caution unavailable ]) }.keys
+    72	  def live_attempt = submission_attempts.live.first
+    73	  def awaiting_hand_placement? = submitted? && shadow? && broker_order_id.nil?
+    74	  def latest_attempt = submission_attempts.order(:id).last
+    75	  # What the operator reads on a failed or unresolved submission: Schwab's answer, or the orders that could each be it.
+    76	  def failure_reason = submission_failed? ? latest_attempt&.error : nil
+    77	  def ambiguous_orders = submission_unknown? ? Array(latest_attempt&.ambiguous_order_ids) : []
+    78	  def needs_override? = guardrail_results.any? { |_, r| r["outcome"] == "caution" && r["overridable"] }
+    79	
+    80	  # The approve gesture: transaction one, then the shadow or real branch (Submission::Submit).
+    81	  def approve_and_submit!(user:, acknowledged: [], override_reason: nil) = Submission::Submit.call(self, user: user, acknowledged: acknowledged, override_reason: override_reason)
+    82	
+    83	  # ---- transitions, each a row of the table, each one audit row, each under the row lock ----------
+    84	
+    85	  # The evaluation's writer: stores the report and engages any halt its rules asked for, in the same transaction.
+    86	  def evaluate!(report)
+    87	    transaction do
+    88	      Guardrails.engage_halts!(report)
+    89	      transition!(from: %w[ proposed ], to: report.blocked? ? :rejected_by_rules : :validated, event: "proposal_evaluated",
+    90	                  attributes: { guardrail_results: report.to_h, evaluated_at: Time.current }, data: { blocked: report.blocked?, warnings: report.warnings })
+    91	    end
+    92	  end
+    93	
+    94	  def reject!(user:, reason:)
+    95	    raise ArgumentError, "a rejection needs a reason" if reason.blank?
+    96	    transition!(from: APPROVABLE, to: :rejected, event: "proposal_rejected", user: user, reason: reason,
+    97	                attributes: { decided_at: Time.current, decided_by: user, rejection_reason: reason })
+    98	  end
+    99	
+   100	  def expire!
+   101	    transition!(from: %w[ proposed validated ], to: :expired, event: "proposal_expired")
+   102	  end
+   103	
+   104	  # Transaction one of the submission: the approval, the state, and the attempt row commit together, or not at all.
+   105	  # One live submission per instrument: refused here in words, and by the database's partial unique index.
+   106	  def start_submission!(user:, acknowledged:, override_reason:, payload:, shadow:)
+   107	    transaction do
+   108	      raise IllegalTransition, "#{instrument.symbol} has a submission still unresolved" if self.class.unresolved.where(instrument_id: instrument_id).where.not(id: id).exists?
+   109	      transition!(from: APPROVABLE, to: :submitting, event: "proposal_approved", user: user, reason: override_reason,
+   110	                  attributes: { decided_at: Time.current, decided_by: user, acknowledged_warnings: acknowledged, override_reason: override_reason, shadow: shadow },
+   111	                  data: { acknowledged: acknowledged, shadow: shadow })
+   112	      submission_attempts.create!(attempted_at: Time.current, payload: payload, outcome: :pending).tap do
+   113	        AuditEvent.log("proposal_submitting", actor: :human, user: user, subject: self)
+   114	      end
+   115	    end
+   116	  end
+   117	
+   118	  # Transaction two: what Schwab, or shadow mode, answered. The state moves first; the attempt follows.
+   119	  def record_shadow!(attempt)
+   120	    outcome!(attempt, from: %w[ submitting ], to: :submitted, event: "would_have_submitted", attributes: { submitted_at: Time.current }, data: { payload: attempt.payload }) do
+   121	      attempt.update!(outcome: :would_have_submitted)
+   122	    end
+   123	  end
+   124	
+   125	  # A late answer with the id is authoritative, even after the sweep called the row unknown.
+   126	  def record_submitted!(attempt, broker_order_id:)
+   127	    outcome!(attempt, from: %w[ submitting submission_unknown ], to: :submitted, event: "proposal_submitted",
+   128	             attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id }) do
+   129	      attempt.update!(outcome: :submitted, broker_order_id: broker_order_id)
+   130	    end
+   131	  end
+   132	
+   133	  # Unknown is the one outcome that mails at once: the operator must not touch the instrument until it is resolved.
+   134	  def record_unknown!(attempt, error:)
+   135	    outcome!(attempt, from: %w[ submitting ], to: :submission_unknown, event: "submission_unknown", reason: error) do
+   136	      attempt.update!(outcome: :unknown, response: { "error" => error })
+   137	    end
+   138	    AlertMailer.submission_unknown(self).deliver_later
+   139	    self
+   140	  end
+   141	
+   142	  # Schwab refused the payload (a 4xx): the operator reads the error and may re-propose.
+   143	  def record_rejected!(attempt, error:)
+   144	    outcome!(attempt, from: %w[ submitting ], to: :submission_failed, event: "submission_failed", reason: error) do
+   145	      attempt.update!(outcome: :failed, response: { "error" => error })
+   146	    end
+   147	  end
+   148	
+   149	  # The reconcile job confirmed twice, ten minutes apart, that nothing was placed.
+   150	  def record_not_placed!(attempt)
+   151	    outcome!(attempt, from: %w[ submission_unknown ], to: :submission_failed, event: "submission_failed", reason: "confirmed not placed") do
+   152	      attempt.update!(outcome: :not_placed)
+   153	    end
+   154	  end
+   155	
+   156	  # The reconcile job found the order an unknown submission placed.
+   157	  def record_reconciled!(attempt, order:)
+   158	    outcome!(attempt, from: %w[ submission_unknown ], to: :submitted, event: "submission_reconciled",
+   159	             attributes: { submitted_at: Time.current, broker_order_id: order.broker_order_id }, data: { broker_order_id: order.broker_order_id }) do
+   160	      attempt.update!(outcome: :submitted, broker_order_id: order.broker_order_id, reconciled_order: order, reconciled_at: Time.current)
+   161	    end
+   162	  end
+   163	
+   164	  # A shadowed submission matched to the order the operator placed by hand: no state change, one audit row.
+   165	  def link_shadow_order!(attempt, order:)
+   166	    raise IllegalTransition, "#{status} is not a shadowed submission" unless submitted? && shadow? && attempt.would_have_submitted?
+   167	    transaction do
+   168	      attempt.update!(reconciled_order: order, reconciled_at: Time.current, broker_order_id: order.broker_order_id)
+   169	      update!(broker_order_id: order.broker_order_id)
+   170	      AuditEvent.log("submission_reconciled", actor: :system, subject: self, data: { broker_order_id: order.broker_order_id, shadow: true })
+   171	    end
+   172	    self
+   173	  end
+   174	
+   175	  # Written only by the orders sync, and only to the two states the broker can put an order in.
+   176	  def record_broker_outcome!(status)
+   177	    status = status.to_s
+   178	    raise ArgumentError, "#{status} is not a broker outcome" unless BROKER_OUTCOMES.include?(status)
+   179	    transition!(from: %w[ submitted ], to: status, event: "proposal_#{status}")
+   180	    AlertMailer.fill_or_cancel(self).deliver_later
+   181	    self
+   182	  end
+   183	
+   184	  private
+   185	    def outcome!(attempt, from:, to:, event:, attributes: {}, reason: nil, data: {})
+   186	      raise ArgumentError, "attempt #{attempt.id} belongs to another proposal" unless attempt.order_proposal_id == id
+   187	      transaction do
+   188	        transition!(from: from, to: to, event: event, attributes: attributes, reason: reason, data: data)
+   189	        yield
+   190	      end
+   191	      self
+   192	    end
+   193	
+   194	    # Lock, re-read, refuse from the wrong state, write, audit: one transaction, never a stale instance's guess.
+   195	    def transition!(from:, to:, event:, attributes: {}, user: nil, reason: nil, data: {})
+   196	      with_lock do
+   197	        raise IllegalTransition, "proposal #{id} cannot go from #{status} to #{to}" unless from.include?(status)
+   198	        update!(attributes.merge(status: to))
+   199	        AuditEvent.log(event, actor: user ? :human : :system, user: user, subject: self, reason: reason, data: data)
+   200	      end
+   201	      self
+   202	    end
+   203	end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+I’ve seen one likely transaction-timing issue already around rule halt alerts. I’m continuing through the dashboard and agent recap files before forming findings, because the prompt asks for precedence, N+1, and injection risks too.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba app/models/desk.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba app/models/agent/context.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	# The desk as one read model, for the glance screen, the briefs, and the agent tools: one place that decides the banner, the numbers, and their freshness.
+     2	# Everything it reads is already in the database; a page render never calls Schwab.
+     3	class Desk
+     4	  STALE_MULTIPLIER = 2
+     5	  Row = Data.define(:position, :protection, :as_of, :stale, :trade)
+     6	
+     7	  def initialize(account: nil)
+     8	    @settings = SystemSettings.instance
+     9	    @account = account || Account.trading.order(:id).first
+    10	    @in_session = MarketDay.known_session_open?
+    11	  end
+    12	
+    13	  attr_reader :account, :settings
+    14	
+    15	  def state
+    16	    return :not_connected if token_status == :missing
+    17	    return :waiting_for_accounts if Account.none?
+    18	    return :needs_setup if account.nil?
+    19	    return :waiting_first_sync if balance.nil?
+    20	    :ready
+    21	  end
+    22	
+    23	  def token_status = @token_status ||= SchwabToken.status
+    24	  def token = @token ||= SchwabToken.current
+    25	  def halted? = @settings.manual_halt?
+    26	  def halt_reason = @settings.manual_halt_reason
+    27	  def halted_by = @halted_by ||= AuditEvent.where(kind: "manual_halt_set").order(created_at: :desc).first
+    28	  def sync_paused_reason = @settings.sync_paused_reason
+    29	
+    30	  # The current pause episode, not the first one in history.
+    31	  def sync_paused_since
+    32	    since = token ? SyncRun.skipped_token.where(started_at: token.issued_at..) : SyncRun.skipped_token
+    33	    since.minimum(:started_at)
+    34	  end
+    35	
+    36	  def rule_halted? = @settings.rule_halted?
+    37	  def pending_proposals = @pending_proposals ||= OrderProposal.where(status: %w[ proposed validated ]).count
+    38	  def awaiting_hand_placement = @awaiting_hand_placement ||= OrderProposal.awaiting_hand_placement.count
+    39	  def unresolved_submissions = @unresolved_submissions ||= OrderProposal.submission_unknown.includes(:instrument).order(:id).to_a
+    40	  def unprotected_rows = ready? ? rows.select { |r| r.protection == :unprotected } : []
+    41	
+    42	  # The primary banner, highest severity first: the kill switch, then money in an unknown state, then a dead
+    43	  # connection, then an unprotected position, then the week's nag. Everything else active shows as a status line.
+    44	  def banner
+    45	    return :halted if halted?
+    46	    return :submission_unknown if unresolved_submissions.any?
+    47	    return token_status if %i[ revoked expired ].include?(token_status)
+    48	    return :unprotected if unprotected_rows.any?
+    49	    token_status if token_status == :expiring
+    50	  end
+    51	
+    52	  def secondary_statuses
+    53	    statuses = []
+    54	    statuses << token_status if banner != token_status && token_status != :healthy
+    55	    statuses << :rule_halted if rule_halted?
+    56	    statuses << :submission_unknown if unresolved_submissions.any? && banner != :submission_unknown
+    57	    statuses << :unprotected if unprotected_rows.any? && banner != :unprotected
+    58	    statuses << :sync_paused if sync_paused_reason.present? && %i[ revoked expired missing ].exclude?(token_status)
+    59	    statuses << :sync_failed if sync_failure
+    60	    statuses << :calendar_fallback if MarketDay.find_by(date: MarketDay.today)&.fallback?
+    61	    statuses
+    62	  end
+    63	
+    64	  # The latest feed failure nothing has succeeded since. Nil until an account exists and the token works.
+    65	  def sync_failure
+    66	    return @sync_failure if defined?(@sync_failure)
+    67	    @sync_failure = account && SchwabToken.usable? ? unresolved_failures.max_by(&:started_at) : nil
+    68	  end
+    69	
+    70	  def ready? = state == :ready
+    71	  # A feed's latest failure while nothing has succeeded on it since; nil once it recovered.
+    72	  def unresolved_failure(feed)
+    73	    run = account&.last_sync_failure(feed)
+    74	    run if run && unresolved?(run)
+    75	  end
+    76	
+    77	  def balance = @balance ||= account&.current_balance
+    78	  def latest_snapshot = @latest_snapshot ||= account && account.snapshots.chronological.last
+    79	  def equity = balance&.equity
+    80	
+    81	  # Flow-adjusted change since the prior snapshot by date, never by recency.
+    82	  def prior_snapshot
+    83	    return @prior_snapshot if defined?(@prior_snapshot)
+    84	    @prior_snapshot = account && account.snapshots.where(as_of: ...MarketDay.today).order(as_of: :desc).first
+    85	  end
+    86	
+    87	  def day_change
+    88	    return nil unless equity && prior_snapshot
+    89	    flows = Snapshot.net_flows(account, after: prior_snapshot.as_of, through: MarketDay.today) or return nil # an unpriced flow: unknown, not zero
+    90	    equity - flows - prior_snapshot.equity
+    91	  end
+    92	
+    93	  def day_change_ratio = day_change && prior_snapshot.equity.positive? ? day_change / prior_snapshot.equity : nil
+    94	  def day_change_label = prior_snapshot ? "since #{prior_snapshot.as_of.strftime('%a')} close" : "first snapshot after today's close"
+    95	
+    96	  def rows
+    97	    @rows ||= begin
+    98	      trades = account.trades.open.index_by(&:instrument_id)
+    99	      account.positions.includes(:instrument, :working_stop_order).map do |position|
+   100	        Row.new(position: position, protection: position.protection, as_of: as_of_for(position), stale: stale_row?(position), trade: trades[position.instrument_id])
+   101	      end.sort_by { |r| [ { protected: 1, delisted: 2 }.fetch(r.protection, 0), r.position.distance_to_stop || -BigDecimal("Infinity"), r.position.instrument.symbol ] }
+   102	    end
+   103	  end
+   104	
+   105	  def open_risk = rows.select { |r| r.protection == :protected }.sum { |r| r.position.open_risk }
+   106	  def open_risk_ratio = equity && equity.positive? ? open_risk / equity : nil
+   107	  def excluded_by_reason = rows.reject { |r| r.protection == :protected }.group_by(&:protection).transform_values(&:size)
+   108	  def review_count = account ? account.trades.needing_review.count : 0
+   109	  def balance_stale? = balance && stale?(balance.as_of, :positions)
+   110	  def orders_as_of = @orders_as_of ||= account&.last_sync(:orders)
+   111	
+   112	  # Stale: older than twice the cadence the tick would use right now plus its minute of slack, or any age once sync is paused.
+   113	  def stale?(time, feed)
+   114	    return true if time.nil? || sync_paused_reason.present?
+   115	    time < Time.current - (sync_interval(feed) * STALE_MULTIPLIER + 1.minute)
+   116	  end
+   117	
+   118	  private
+   119	    def sync_interval(feed) = (@intervals ||= {})[feed] ||= account.sync_interval(feed, in_session: @in_session)
+   120	
+   121	    # Every row's protection state depends on the orders feed, judged by its own cadence: "no stop" is only as
+   122	    # current as the last orders sync.
+   123	    def stale_row?(position) = stale?(position.synced_at, :positions) || stale?(orders_as_of, :orders)
+   124	    def as_of_for(position) = [ position.synced_at, orders_as_of ].compact.min
+   125	
+   126	    def unresolved_failures
+   127	      SyncRun::ACCOUNT_FEEDS.filter_map { |feed| account.last_sync_failure(feed) }.select { |run| unresolved?(run) }
+   128	    end
+   129	
+   130	    # Unresolved: nothing has succeeded on that feed since it failed.
+   131	    def unresolved?(run)
+   132	      succeeded_at = account.last_sync(run.feed)
+   133	      succeeded_at.nil? || run.started_at > succeeded_at
+   134	    end
+   135	end
+
+ succeeded in 0ms:
+     1	# What the model is told before it asks anything: the desk's freshness, the token, the calendar, the memory
+     2	# files, and every reason the run is already degraded. Computed once per run from the database alone.
+     3	class Agent::Context
+     4	  def initialize(kind:, date:, memory: Memory::Repo.configured)
+     5	    @kind, @date, @memory = kind, date, memory
+     6	    @desk = Desk.new
+     7	  end
+     8	
+     9	  attr_reader :kind, :date, :memory, :desk
+    10	
+    11	  def account = desk.account
+    12	  def market_day = @market_day ||= MarketDay.find_by(date: date)
+    13	  def token_status = desk.token_status
+    14	
+    15	  def as_of
+    16	    @as_of ||= {
+    17	      positions: account&.last_sync(:positions), orders: account&.last_sync(:orders), activities: account&.last_sync(:activities),
+    18	      calendar: market_day&.source, memory: memory.last_modified_at, memory_sha: memory.head_sha
+    19	    }
+    20	  end
+    21	
+    22	  # Reasons known before the first call; the run adds what the tools report.
+    23	  def degraded_reasons
+    24	    @degraded_reasons ||= [].tap do |reasons|
+    25	      reasons << "Schwab token #{token_status}: nothing has synced since #{desk.sync_paused_since&.in_time_zone(MarketDay::ZONE)&.strftime('%a %-l:%M %p') || 'the token died'}" unless SchwabToken.usable?
+    26	      reasons << "calendar unverified (Schwab hours unavailable); today may be a holiday" if market_day&.fallback?
+    27	      reasons << "positions are stale (last sync #{stamp(as_of[:positions])})" if desk.balance_stale?
+    28	      reasons << "orders are stale (last sync #{stamp(as_of[:orders])}); stop and protection states may be wrong" if account && desk.stale?(as_of[:orders], :orders)
+    29	      reasons << "activities are stale (last sync #{stamp(as_of[:activities])}); fills and journal rows may be missing" if account && desk.stale?(as_of[:activities], :activities)
+    30	      reasons << "no trading account is set up yet" if account.nil?
+    31	      reasons << "memory repo missing at #{memory.path || 'unset MEMORY_REPO_PATH'}" unless memory.present?
+    32	      reasons << "memory repo has none of its files at #{memory.path}" if memory.empty?
+    33	      reasons << "memory files unreadable: #{memory.unreadable.join(', ')}" if memory.unreadable.any?
+    34	      reasons << "memory files truncated: #{memory.truncated.join(', ')}" if memory.truncated.any?
+    35	    end
+    36	  end
+    37	
+    38	  def watchlist = @watchlist ||= WatchlistItem.current.to_a
+    39	
+    40	  # The day's proposal traffic for the recap: decided today, or reached a broker outcome today.
+    41	  def todays_proposals
+    42	    @todays_proposals ||= begin
+    43	      day = date.in_time_zone(MarketDay::ZONE).all_day
+    44	      OrderProposal.includes(:instrument).where(decided_at: day).or(OrderProposal.where(status: %w[ filled cancelled ], updated_at: day)).order(:id).to_a
+    45	    end
+    46	  end
+    47	  def stop_suggestions = @stop_suggestions ||= (account ? account.positions.suggesting_a_stop.includes(:working_stop_order).select(&:stop_suggestion) : [])
+    48	
+    49	  # Held and delisted: an instrument the desk no longer holds is nobody's business in a brief.
+    50	  def delisted_symbols
+    51	    @delisted_symbols ||= account ? desk.rows.filter_map { |r| r.position.instrument.symbol if r.protection == :delisted } : []
+    52	  end
+    53	
+    54	  # The same numbers the get_setup_stats tool returns, serialized the same way (decimal strings, never BigDecimal#to_s).
+    55	  def setup_stats = @setup_stats ||= Agent.serialize(Setup.agent_stats).deep_symbolize_keys
+    56	
+    57	  def stamp(time) = time ? I18n.l(time, format: :connection) : "never"
+    58	  def percent(ratio) = ratio ? "#{(BigDecimal(ratio.to_s) * 100).round(1).to_s('F')}%" : "n/a"
+    59	
+    60	  # Rendered once per run: the same bytes on every turn is what makes the prompt cache hit.
+    61	  def system_prompt = @system_prompt ||= render("system")
+    62	  def user_prompt = @user_prompt ||= render(kind.to_s)
+    63	
+    64	  private
+    65	    def render(name)
+    66	      template = Rails.root.join("app/models/agent/prompts/#{name}.md.erb").read
+    67	      ERB.new(template, trim_mode: "-").result(binding)
+    68	    end
+    69	end
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/views/dashboard/_glance.html.erb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	<section class="hero">
+     2	  <div class="stat">
+     3	    <span class="lbl">Equity</span>
+     4	    <span class="num"><%= money(desk.equity) %></span>
+     5	    <span class="sub">
+     6	      <% if desk.day_change %><%= signed_money(desk.day_change) %> (<%= signed_percent(desk.day_change_ratio) %>) <%= desk.day_change_label %><% else %><%= desk.day_change_label %><% end %>
+     7	      · <%= as_of(desk.balance.as_of, stale: desk.balance_stale?) %>
+     8	    </span>
+     9	  </div>
+    10	  <div class="stat">
+    11	    <span class="lbl">Open risk</span>
+    12	    <span class="num"><%= percent(desk.open_risk_ratio) %></span>
+    13	    <span class="sub"><%= money(desk.open_risk) %> on protected positions<% if desk.excluded_by_reason.any? %>; excludes <%= excluded_summary(desk.excluded_by_reason) %><% end %></span>
+    14	  </div>
+    15	</section>
+    16	
+    17	<dl class="kv-list">
+    18	  <div class="kv"><dt>Settled / unsettled cash</dt><dd><%= money(desk.balance.settled_cash) %> / <%= money(desk.balance.unsettled_cash) %></dd></div>
+    19	  <% if desk.review_count.positive? %>
+    20	    <div class="kv callout"><dt><%= pluralize(desk.review_count, "trade") %> <%= desk.review_count == 1 ? "needs" : "need" %> review</dt><dd><%= link_to "Review now", trades_path(filter: "needs_review") %></dd></div>
+    21	  <% end %>
+    22	  <div class="kv <%= "callout" if desk.pending_proposals.positive? || desk.awaiting_hand_placement.positive? %>"><dt>Proposals</dt><dd>
+    23	    <% if desk.pending_proposals.positive? %><%= link_to pluralize(desk.pending_proposals, "waiting"), proposals_path %><% end %>
+    24	    <% if desk.awaiting_hand_placement.positive? %><%= link_to "#{desk.awaiting_hand_placement} to place by hand", proposals_path %><% end %>
+    25	    <% if desk.pending_proposals.zero? && desk.awaiting_hand_placement.zero? %><%= link_to "none waiting", proposals_path %><% end %>
+    26	  </dd></div>
+    27	</dl>
+    28	
+    29	<section>
+    30	  <h2 class="sec">Positions</h2>
+    31	  <% if desk.rows.empty? %>
+    32	    <p class="empty">No open positions. All cash.</p>
+    33	  <% else %>
+    34	    <ul class="positions">
+    35	      <% desk.rows.each do |row| %>
+    36	        <% position = row.position %>
+    37	        <li class="pos <%= { protected: "protected", delisted: "delisted" }.fetch(row.protection, "at-risk") %>">
+    38	          <div class="top">
+    39	            <span><%= row.trade ? link_to(position.instrument.symbol, trade_path(row.trade)) : position.instrument.symbol %> · <%= quantity(position.quantity) %></span>
+    40	            <span class="primary"><% if position.distance_to_stop && !position.delisted? %><%= percent(position.distance_to_stop) %> to stop<% else %><%= protection_label(row.protection) %><% end %></span>
+    41	          </div>
+    42	          <div class="sub">
+    43	            <span>in @ <%= money(position.average_price) %><% if position.unprotected? && position.distance_to_stop %> · <em class="warn"><%= protection_label(row.protection) %></em><% end %></span>
+    44	            <span><%= signed_money(position.unrealized_pnl) %> · <%= as_of(row.as_of, stale: row.stale) %></span>
+    45	          </div>
+    46	        </li>
+    47	      <% end %>
+    48	    </ul>
+    49	  <% end %>
+    50	</section>
+
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/views/dashboard/_banner.html.erb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	<% case desk.banner
+     2	   when :halted %>
+     3	  <div class="banner halted">
+     4	    <b>Halted</b><% if desk.halted_by %> by <%= desk.halted_by.user&.name %>, <%= l(desk.halted_by.created_at, format: :weekday_time) %><% end %>: <%= desk.halt_reason %>.
+     5	    Clear it on the <%= link_to "System page", system_path %>.
+     6	  </div>
+     7	<% when :submission_unknown %>
+     8	  <div class="banner halted"><b>Submission unknown</b> on <%= desk.unresolved_submissions.map { |p| link_to(p.instrument.symbol, proposal_path(p)) }.to_sentence.html_safe %>: Schwab gave no answer. Check Schwab before doing anything else there; the app is looking and will say when it knows.</div>
+     9	<% when :unprotected %>
+    10	  <div class="banner expired"><b>Unprotected:</b> <%= desk.unprotected_rows.map { |r| r.position.instrument.symbol }.to_sentence %> <%= desk.unprotected_rows.one? ? "has" : "have" %> no working stop. Place one at Schwab.</div>
+    11	<% when :revoked %>
+    12	  <div class="banner expired"><b>Schwab rejected the connection.</b> <%= desk.token.last_refresh_error %> Sync is paused. <%= link_to "Re-authenticate with Schwab", schwab_authorize_path, class: "button" %></div>
+    13	<% when :expired %>
+    14	  <div class="banner expired"><b>Token expired.</b> Sync paused<% if desk.sync_paused_since %> since <%= l(desk.sync_paused_since, format: :weekday_time) %><% end %>. Every number below carries its age. <%= link_to "Re-authenticate with Schwab", schwab_authorize_path, class: "button" %></div>
+    15	<% when :expiring %>
+    16	  <div class="banner expiring"><b>Token expires <%= l(desk.token.refresh_expires_at, format: :weekday_time) %>.</b> <%= link_to "Re-authenticate now", schwab_authorize_path %><% if desk.token.covered_by_sunday_email? %>, or wait for Sunday's email<% end %>.</div>
+    17	<% end %>
+    18	<% desk.secondary_statuses.each do |status| %>
+    19	  <p class="status-line">
+    20	    <% case status
+    21	       when :revoked, :expired, :missing %>Schwab connection is down; <%= link_to "re-authenticate", schwab_authorize_path %>.
+    22	    <% when :expiring %>Token expires <%= l(desk.token.refresh_expires_at, format: :weekday_time) %>; <%= link_to "re-authenticate", schwab_authorize_path %>.
+    23	    <% when :rule_halted %>Entries halted by <%= desk.settings.rule_halt_rule.to_s.humanize.downcase %>: <%= desk.settings.rule_halt_reason %>; exits stay available<% if desk.settings.rule_halt_resets_at %>, clears <%= l(desk.settings.rule_halt_resets_at, format: :weekday_time) %><% end %>.
+    24	    <% when :submission_unknown %>Submission unknown on <%= desk.unresolved_submissions.map { |p| link_to(p.instrument.symbol, proposal_path(p)) }.to_sentence.html_safe %>; check Schwab.
+    25	    <% when :unprotected %><%= desk.unprotected_rows.map { |r| r.position.instrument.symbol }.to_sentence %>: no working stop.
+    26	    <% when :sync_paused %>Sync paused: <%= desk.sync_paused_reason %>.
+    27	    <% when :sync_failed %>Last <%= desk.sync_failure.feed %> sync failed: <%= desk.sync_failure.error.to_s.truncate(100) %>.
+    28	    <% when :calendar_fallback %>Market calendar unavailable from Schwab today; assuming a normal session.
+    29	    <% end %>
+    30	  </p>
+    31	<% end %>
+
+hook: PostToolUse
+hook: PostToolUse
+exec
+/bin/zsh -lc 'nl -ba app/models/agent/prompts/eod.md.erb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	Write the end-of-day recap for <%= date.strftime("%A, %B %-d") %>.
+     2	
+     3	<% if todays_proposals.any? -%>
+     4	Proposals today (link each fill to its proposal where the symbol and side match; say which fills had no proposal):
+     5	<% todays_proposals.each do |p| -%>
+     6	- #<%= p.id %> <%= p.side.upcase %> <%= p.quantity.to_i %> <%= p.instrument.symbol %> @ <%= p.limit_price.to_s("F") %>, <%= p.origin %>, <%= p.status.humanize.downcase %><%= " (shadow)" if p.shadow? %>
+     7	<% end -%>
+     8	
+     9	<% end -%>
+    10	Cover, in this order and only from tool results: today's fills and the journal rows they created or closed; trades still
+    11	missing a setup, a stop, or a post-mortem; the state of the working stops after today's session; equity and open risk with
+    12	their as_of (the email frame carries the day's snapshot numbers; if the tools show no snapshot for today, say so rather than
+    13	using an older one). Then "Suggested actions" as text only.
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+The dashboard’s proposal count is present, but I’m checking the scenario fixtures and specs now to distinguish actual defects from untested-but-working paths.
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+hook: PreToolUse Completed
+exec
+/bin/zsh -lc 'nl -ba spec/mailers/alert_mailer_spec.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba lib/playwright/scenario.rb' in /Users/jathayde/Development/Personal/desk.athayde
+exec
+/bin/zsh -lc 'nl -ba spec/models/desk_spec.rb' in /Users/jathayde/Development/Personal/desk.athayde
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe AlertMailer do
+     4	  include ActiveJob::TestHelper
+     5	
+     6	  let!(:account) { create(:account, schwab_hash: Schwab::FakeClient::ACCOUNT_HASH) }
+     7	  let!(:token) { create(:schwab_token) }
+     8	  let!(:xyz) { create(:instrument, symbol: "XYZ", cusip: "037833100") }
+     9	  let!(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
+    10	  let(:mail) { ActionMailer::Base.deliveries }
+    11	
+    12	  before { ready_desk(account, settled: 6000) }
+    13	
+    14	  it "mails an agent proposal once with its warnings, and not a human one" do
+    15	    perform_enqueued_jobs do
+    16	      Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, thesis: "base breakout", origin: :agent)
+    17	    end
+    18	    expect(mail.map(&:subject)).to eq([ "Athayde Desk: BUY 33 XYZ waiting for you" ])
+    19	    expect(mail.last.text_part.body.to_s).to include("base breakout", "To acknowledge: earnings blackout and max sector exposure.", "/proposals/")
+    20	    OrderProposal.last.reject!(user: john, reason: "no")
+    21	    perform_enqueued_jobs do
+    22	      Proposals::Create.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, origin: :human, user: john)
+    23	    end
+    24	    expect(mail.size).to eq(1)
+    25	  end
+    26	
+    27	  it "mails a fill and a cancel as the sync records them, and a tripped rule halt with its reset" do
+    28	    proposal = create(:order_proposal, account: account, instrument: xyz, status: "submitted", broker_order_id: "o-1")
+    29	    perform_enqueued_jobs { proposal.record_broker_outcome!(:filled) }
+    30	    expect(mail.last.subject).to eq("Athayde Desk: BUY 10 XYZ filled")
+    31	    expect(mail.last.text_part.body.to_s).to include("order o-1", "The bracket's stop should now be working")
+    32	    perform_enqueued_jobs { SystemSettings.instance.trip_rule_halt!(rule: "daily_loss_halt", reason: "down 3.2%", resets_at: nil) }
+    33	    expect(mail.last.subject).to eq("Athayde Desk: entries halted by daily loss halt")
+    34	    expect(mail.last.text_part.body.to_s).to include("down 3.2%", "Exits and tighten-only stop changes stay available", "when you clear it on the System page")
+    35	  end
+    36	
+    37	  it "puts unresolved and not-placed submissions in the failure digest" do
+    38	    unresolved = create(:order_proposal, account: account, instrument: xyz, status: "submission_unknown", quantity: 5)
+    39	    unresolved.submission_attempts.create!(attempted_at: 2.hours.ago, outcome: :unknown, payload: {}, response: { "error" => "timeout" })
+    40	    failed = create(:order_proposal, account: account, instrument: create(:instrument, symbol: "DEF"), status: "submission_failed", quantity: 7)
+    41	    failed.submission_attempts.create!(attempted_at: 3.hours.ago, outcome: :not_placed, payload: {}, response: { "error" => "not found at Schwab after two looks" })
+    42	    digest = FailureDigest.new
+    43	    expect(digest).not_to be_empty
+    44	    text = BriefMailer.failure_digest(digest).text_part.body.to_s
+    45	    expect(text).to include("Submission unresolved: BUY 5 XYZ, check Schwab", "Not placed: BUY 7 DEF", "not found at Schwab after two looks")
+    46	  end
+    47	end
+
+ succeeded in 0ms:
+     1	# Seeded states for the clickable UI. Rows are written directly, never by driving jobs, and every time is
+     2	# relative so the state reads the same under either sync cadence.
+     3	module Playwright::Scenario
+     4	  extend self
+     5	
+     6	  ACCOUNT_HASH = Schwab::FakeClient::ACCOUNT_HASH
+     7	  SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade
+     8	                  proposal proposal_warn proposal_blocked proposal_override submission_unknown rule_halted ].freeze
+     9	
+    10	  # Guarded here as well as at the route: reset! empties the database.
+    11	  def load!(name)
+    12	    raise "scenarios are test-only" unless Rails.env.test? && Schwab.fake?
+    13	    name = name.to_s.tr("-", "_")
+    14	    raise ArgumentError, "unknown scenario #{name}" unless SCENARIOS.include?(name)
+    15	    reset!
+    16	    public_send(name)
+    17	  end
+    18	
+    19	  def reset!
+    20	    Schwab::FakeClient.instance.reset!
+    21	    Rails.cache.clear
+    22	    [ TradeLeg, Trade, Snapshot, Position, Balance, Activity, SubmissionAttempt, Order, OrderProposal, WatchlistItem, RiskRule, SyncRun, MarketDay, SchwabToken, Session, Account, Instrument, Setup ].each(&:delete_all)
+    23	    SystemSettings.instance.update!(shadow_mode: true, manual_halt: false, manual_halt_reason: nil, manual_halt_at: nil, sync_paused_reason: nil,
+    24	                                    rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
+    25	    Rails.application.load_seed
+    26	    MarketDay.for(MarketDay.today)
+    27	  end
+    28	
+    29	  def not_connected = nil
+    30	
+    31	  def waiting_for_accounts = token!
+    32	
+    33	  def needs_setup
+    34	    token!
+    35	    Account.create!(schwab_hash: ACCOUNT_HASH, account_type: nil, trading_enabled: false)
+    36	  end
+    37	
+    38	  def healthy
+    39	    token!
+    40	    populate(account!)
+    41	  end
+    42	
+    43	  def expiring
+    44	    token!(issued_at: 6.days.ago - 2.hours)
+    45	    populate(account!)
+    46	  end
+    47	
+    48	  def expired
+    49	    token!(issued_at: 8.days.ago)
+    50	    populate(account!, synced_at: 3.hours.ago)
+    51	    SystemSettings.instance.update!(sync_paused_reason: "Schwab token unusable; re-authenticate")
+    52	    SyncRun.create!(feed: :positions, status: :skipped_token, started_at: 2.hours.ago, finished_at: 2.hours.ago, error: "token expired")
+    53	  end
+    54	
+    55	  def halted
+    56	    healthy
+    57	    SystemSettings.instance.update!(manual_halt: true, manual_halt_reason: "daily loss limit, by hand", manual_halt_at: 1.hour.ago)
+    58	    AuditEvent.log("manual_halt_set", actor: :human, user: User.first, reason: "daily loss limit, by hand")
+    59	  end
+    60	
+    61	  def unprotected
+    62	    healthy
+    63	    position = Position.find_by!(instrument: Instrument.find_by!(symbol: "DEF"))
+    64	    position.working_stop_order.update!(status: "CANCELED")
+    65	    position.update!(working_stop_order: nil)
+    66	  end
+    67	
+    68	  # A validated entry waiting for the approver, with the two not-checked rules to acknowledge.
+    69	  def proposal = propose
+    70	
+    71	  # The same entry after a taxable loss on XYZ this month: the wash-sale caution to acknowledge.
+    72	  def proposal_warn
+    73	    proposal_desk
+    74	    xyz = Instrument.find_by!(symbol: "XYZ")
+    75	    Account.first.trades.create!(instrument: xyz, status: :closed, avg_entry: 60, avg_exit: 55, peak_quantity: 10, realized_pnl: -50, initial_risk: 30, realized_r: -1.67, opened_at: 20.days.ago, closed_at: 10.days.ago)
+    76	    propose(desk: false)
+    77	  end
+    78	
+    79	  # Over the per-order notional cap: rejected by rules, nothing to approve.
+    80	  def proposal_blocked
+    81	    proposal_desk
+    82	    RiskRule.active_for("notional_cap").supersede!(params: { "per_order" => "1000", "per_day" => "5000" }, user: User.first, note: "tight for the demo")
+    83	    propose(desk: false)
+    84	  end
+    85	
+    86	  # A stop far below the collar: approvable only with a reason.
+    87	  def proposal_override = propose(stop_price: BigDecimal("30"))
+    88	
+    89	  # An approve that got no answer from Schwab, still being looked for.
+    90	  def submission_unknown
+    91	    proposal = propose
+    92	    proposal.update!(status: :submission_unknown, decided_at: 6.minutes.ago, decided_by: User.first)
+    93	    proposal.submission_attempts.create!(attempted_at: 6.minutes.ago, outcome: :unknown, payload: {}, response: { "error" => "Net::ReadTimeout" })
+    94	  end
+    95	
+    96	  # The daily-loss rule tripped: entries refused, exits still allowed.
+    97	  def rule_halted
+    98	    healthy
+    99	    User.first.update!(approver: true)
+   100	    Schwab::FakeClient.instance.script_daily_history(symbol: "XYZ", close: 50)
+   101	    SystemSettings.instance.trip_rule_halt!(rule: "daily_loss_halt", reason: "down 3.2% today", resets_at: nil)
+   102	  end
+   103	
+   104	  def delisted
+   105	    healthy
+   106	    position = Position.find_by!(instrument: Instrument.find_by!(symbol: "DEF"))
+   107	    position.instrument.delist!(user: User.first, price: position.last_price)
+   108	  end
+   109	
+   110	  # The failure is the latest thing that happened to the orders feed, so it is still unresolved.
+   111	  def sync_failed
+   112	    token!
+   113	    populate(account!, synced_at: 10.minutes.ago)
+   114	    SyncRun.create!(feed: :orders, account: Account.first, status: :failed, started_at: 5.minutes.ago, finished_at: 5.minutes.ago, error: "Schwab responded 503")
+   115	  end
+   116	
+   117	  def review_queue
+   118	    healthy
+   119	    account = Account.first
+   120	    %w[ LBAS SLV ].each do |symbol|
+   121	      instrument = Instrument.create!(symbol: symbol, cusip: SecureRandom.hex(4).upcase.ljust(9, "0"), asset_type: "EQUITY")
+   122	      account.positions.create!(instrument: instrument, quantity: 10, average_price: 20, cost_basis: 200, market_value: 210, last_price: 21, synced_at: Time.current)
+   123	      trade = account.trades.create!(instrument: instrument, status: :open, needs_review: true, review_reason: "bootstrapped", bootstrapped: true, avg_entry: 20, quantity: 10, peak_quantity: 10)
+   124	      trade.trade_legs.create!(kind: :entry, quantity: 10, price: 20, cash_amount: -200, note: "plug")
+   125	    end
+   126	  end
+   127	
+   128	  def closed_trade
+   129	    healthy
+   130	    account = Account.first
+   131	    xyz = Instrument.find_by!(symbol: "XYZ")
+   132	    trade = account.trades.create!(instrument: xyz, status: :closed, avg_entry: 51.18, avg_exit: 55.31, peak_quantity: 40, realized_pnl: 165.2, initial_risk: 91.2, realized_r: 1.81,
+   133	                                   planned_stop: 48.9, setup: Setup.create!(name: "breakout-A"), opened_at: 5.days.ago, closed_at: 1.day.ago)
+   134	    trade.trade_legs.create!(kind: :entry, quantity: 40, price: 51.18, cash_amount: -2047.2, executed_at: 5.days.ago)
+   135	    trade.trade_legs.create!(kind: :exit, quantity: 40, price: 55.31, cash_amount: 2212.4, executed_at: 1.day.ago)
+   136	  end
+   137	
+   138	  private
+   139	    def proposal_desk
+   140	      healthy
+   141	      User.first.update!(approver: true)
+   142	      RiskRule.active_for("max_position_exposure").supersede!(params: { "percent" => "60" }, user: User.first, note: "a scale-in on a held name") # the seeds carry the rest
+   143	      Account.first.balances.create!(as_of: Time.current, equity: 10_240, settled_cash: 5000, unsettled_cash: 0, cash_available_for_trading: 5000)
+   144	      Schwab::FakeClient.instance.script_daily_history(symbol: "XYZ", close: 50) # the fake's quote fixture already knows XYZ
+   145	    end
+   146	
+   147	    def propose(desk: true, stop_price: BigDecimal("47"))
+   148	      proposal_desk if desk
+   149	      Proposals::Create.call(account: Account.first, kind: :entry, side: :buy, symbol: "XYZ", limit_price: BigDecimal("50"), stop_price: stop_price, thesis: "Adding to the base breakout on volume.", origin: :agent)
+   150	    end
+   151	
+   152	    def token!(issued_at: Time.current)
+   153	      SchwabToken.create!(access_token: "fake-access", refresh_token: "fake-refresh", issued_at: issued_at, access_expires_at: issued_at + 29.minutes,
+   154	                          refresh_expires_at: issued_at + SchwabToken::REFRESH_LIFETIME, scope: "api")
+   155	    end
+   156	
+   157	    def account! = Account.create!(schwab_hash: ACCOUNT_HASH, account_type: :taxable, trading_enabled: true, nickname: "Taxable")
+   158	
+   159	    def populate(account, synced_at: Time.current)
+   160	      account.balances.create!(as_of: synced_at, equity: 10_240, settled_cash: 2_110, unsettled_cash: 980, cash_available_for_trading: 3_090)
+   161	      account.snapshots.create!(as_of: MarketDay.today.prev_weekday, equity: 10_180, index_value: 1, high_water_index: 1)
+   162	      { "XYZ" => [ 40, 51.18, 53.0, 48.9 ], "DEF" => [ 15, 88.02, 86.57, 85.6 ] }.each do |symbol, (qty, avg, last, stop)|
+   163	        instrument = Instrument.create!(symbol: symbol, cusip: symbol == "XYZ" ? "037833100" : "594918104", asset_type: "EQUITY")
+   164	        stop_order = account.orders.create!(instrument: instrument, broker_order_id: "stop-#{symbol}", status: Schwab::Order::WORKING, side: Schwab::Order::SELL, order_type: Schwab::Order::STOP_TYPES.first,
+   165	                                             quantity: qty, remaining_quantity: qty, stop_price: stop, entered_at: 2.days.ago)
+   166	        account.positions.create!(instrument: instrument, quantity: qty, average_price: avg, cost_basis: qty * avg, market_value: qty * last, last_price: last,
+   167	                                  working_stop_order: stop_order, synced_at: synced_at)
+   168	      end
+   169	      %w[ positions orders activities ].each { |feed| SyncRun.create!(feed: feed, account: account, status: :succeeded, started_at: synced_at, finished_at: synced_at, window_to: synced_at) }
+   170	    end
+   171	end
+
+ succeeded in 0ms:
+     1	require "rails_helper"
+     2	
+     3	RSpec.describe Desk do
+     4	  let(:account) { create(:account, trading_enabled: true) }
+     5	
+     6	  describe "#state" do
+     7	    it "is not connected without a token" do
+     8	      expect(Desk.new.state).to eq(:not_connected)
+     9	    end
+    10	
+    11	    it "waits for accounts, then setup, then the first sync, then is ready" do
+    12	      create(:schwab_token)
+    13	      expect(Desk.new.state).to eq(:waiting_for_accounts)
+    14	      create(:account, account_type: nil, trading_enabled: false)
+    15	      expect(Desk.new.state).to eq(:needs_setup)
+    16	      account
+    17	      expect(Desk.new.state).to eq(:waiting_first_sync)
+    18	      create(:balance, account: account, equity: 10_000, as_of: Time.current)
+    19	      expect(Desk.new.state).to eq(:ready)
+    20	    end
+    21	  end
+    22	
+    23	  describe "#banner" do
+    24	    it "puts a halt first and carries the token problem as a status line" do
+    25	      create(:schwab_token, :revoked)
+    26	      SystemSettings.instance.update!(manual_halt: true, manual_halt_reason: "testing")
+    27	      d = Desk.new
+    28	      expect(d.banner).to eq(:halted)
+    29	      expect(d.secondary_statuses).to include(:revoked)
+    30	    end
+    31	
+    32	    it "shows revoked, expired, and expiring in that order of seriousness" do
+    33	      create(:schwab_token, :revoked)
+    34	      expect(Desk.new.banner).to eq(:revoked)
+    35	      SchwabToken.delete_all
+    36	      create(:schwab_token, issued_at: 8.days.ago)
+    37	      expect(Desk.new.banner).to eq(:expired)
+    38	      SchwabToken.delete_all
+    39	      create(:schwab_token, issued_at: 6.days.ago - 2.hours)
+    40	      expect(Desk.new.banner).to eq(:expiring)
+    41	    end
+    42	
+    43	    it "puts an unknown submission above a dead token, an unprotected position above the expiry nag, and a rule halt on a status line" do
+    44	      account = create(:account, trading_enabled: true)
+    45	      create(:schwab_token, issued_at: 6.days.ago - 2.hours)
+    46	      create(:balance, account: account, as_of: Time.current)
+    47	      xyz = create(:instrument, symbol: "XYZ")
+    48	      create(:position, account: account, instrument: xyz, working_stop_order: nil)
+    49	      desk = Desk.new
+    50	      expect(desk.banner).to eq(:unprotected)
+    51	      expect(desk.secondary_statuses).to include(:expiring)
+    52	      create(:order_proposal, account: account, instrument: xyz, status: "submission_unknown")
+    53	      SchwabToken.delete_all
+    54	      create(:schwab_token, issued_at: 8.days.ago)
+    55	      desk = Desk.new
+    56	      expect(desk.banner).to eq(:submission_unknown)
+    57	      expect(desk.secondary_statuses).to include(:expired, :unprotected)
+    58	      SystemSettings.instance.trip_rule_halt!(rule: "daily_loss_halt", reason: "down", resets_at: 1.hour.from_now)
+    59	      create(:order_proposal, account: account, instrument: create(:instrument, symbol: "DEF"), status: "validated")
+    60	      desk = Desk.new
+    61	      expect(desk.secondary_statuses).to include(:rule_halted)
+    62	      expect(desk.pending_proposals).to eq(1)
+    63	    end
+    64	
+    65	    it "has no banner without a token; the connect state carries it" do
+    66	      expect(Desk.new.banner).to be_nil
+    67	    end
+    68	  end
+    69	
+    70	  describe "#secondary_statuses" do
+    71	    before { create(:schwab_token); create(:balance, account: account, equity: 10_000, as_of: Time.current) }
+    72	
+    73	    it "reports a pause for a non-token reason and a fallback calendar" do
+    74	      SystemSettings.instance.update!(sync_paused_reason: "operator")
+    75	      MarketDay.for(MarketDay.today).update!(source: :fallback)
+    76	      expect(Desk.new.secondary_statuses).to include(:sync_paused, :calendar_fallback)
+    77	    end
+    78	
+    79	    it "reports a failed sync only until something succeeds after it, including on a feed that never succeeded" do
+    80	      create(:sync_run, feed: "orders", account: account, status: "failed", error: "503", started_at: 5.minutes.ago)
+    81	      expect(Desk.new.sync_failure.error).to eq("503")
+    82	      create(:sync_run, feed: "orders", account: account, status: "succeeded", started_at: 1.minute.ago, finished_at: 1.minute.ago)
+    83	      expect(Desk.new.sync_failure).to be_nil
+    84	    end
+    85	  end
+    86	
+    87	  it "computes the flow-adjusted day change against the prior snapshot by date" do
+    88	    create(:schwab_token)
+    89	    create(:balance, account: account, equity: 12_000, as_of: Time.current)
+    90	    create(:snapshot, account: account, as_of: MarketDay.today - 3, equity: 10_000)
+    91	    create(:snapshot, account: account, as_of: MarketDay.today, equity: 11_500) # today's exists but is not the prior
+    92	    flow(account, "deposit", 1_000, on: MarketDay.today)
+    93	    d = Desk.new
+    94	    expect(d.prior_snapshot.as_of).to eq(MarketDay.today - 3)
+    95	    expect(d.day_change).to eq(1_000)
+    96	    expect(d.day_change_ratio).to eq(BigDecimal("0.1"))
+    97	  end
+    98	
+    99	  it "sorts unprotected first, then by distance, links each row to its trade, and marks stale rows" do
+   100	    create(:schwab_token)
+   101	    create(:balance, account: account, equity: 10_000, as_of: Time.current)
+   102	    near = create(:instrument, symbol: "NEAR"); far = create(:instrument, symbol: "FAR"); bare = create(:instrument, symbol: "BARE")
+   103	    create(:position, account: account, instrument: far, quantity: 40, last_price: 60, working_stop_order: create(:order, :working_stop, account: account, instrument: far, stop_price: 48))
+   104	    create(:position, account: account, instrument: near, quantity: 40, last_price: 50, working_stop_order: create(:order, :working_stop, account: account, instrument: near, stop_price: 48.9), synced_at: 5.hours.ago)
+   105	    create(:position, account: account, instrument: bare, quantity: 10, last_price: 20)
+   106	    trade = create(:trade, account: account, instrument: near)
+   107	    create(:sync_run, feed: "orders", account: account, status: "succeeded", finished_at: 1.minute.ago)
+   108	    d = Desk.new
+   109	    expect(d.rows.map { |r| r.position.instrument.symbol }).to eq(%w[ BARE NEAR FAR ])
+   110	    expect(d.rows.map(&:stale)).to eq([ false, true, false ])
+   111	    expect(d.rows.find { |r| r.position.instrument == near }.trade).to eq(trade)
+   112	    expect(d.excluded_by_reason).to eq(unprotected: 1)
+   113	    expect(d.open_risk).to eq(40 * BigDecimal("1.1") + 40 * 12)
+   114	  end
+   115	
+   116	  it "judges a stop-bearing row by the orders cadence too" do
+   117	    create(:schwab_token)
+   118	    create(:balance, account: account, equity: 10_000, as_of: Time.current)
+   119	    xyz = create(:instrument)
+   120	    create(:position, account: account, instrument: xyz, quantity: 40, last_price: 53, working_stop_order: create(:order, :working_stop, account: account, instrument: xyz), synced_at: Time.current)
+   121	    expect(Desk.new.rows.sole.stale).to be(true) # no orders run has ever finished
+   122	    create(:sync_run, feed: "orders", account: account, status: "succeeded", finished_at: 3.hours.ago)
+   123	    expect(Desk.new.rows.sole.stale).to be(true)
+   124	    create(:sync_run, feed: "orders", account: account, status: "succeeded", finished_at: 1.minute.ago)
+   125	    expect(Desk.new.rows.sole.stale).to be(false)
+   126	  end
+   127	
+   128	  it "treats everything as stale while sync is paused, and dates the pause from the current token" do
+   129	    create(:sync_run, feed: "positions", status: "skipped_token", started_at: 30.days.ago)
+   130	    token = create(:schwab_token, :revoked, issued_at: 2.days.ago)
+   131	    create(:sync_run, feed: "positions", status: "skipped_token", started_at: 1.hour.ago)
+   132	    create(:balance, account: account, equity: 10_000, as_of: Time.current)
+   133	    SystemSettings.instance.update!(sync_paused_reason: "expired")
+   134	    d = Desk.new
+   135	    expect(d.balance_stale?).to be(true)
+   136	    expect(d.sync_paused_since).to be_within(1.second).of(1.hour.ago)
+   137	  end
+   138	
+   139	  it "never calls Schwab while rendering, even with a fallback calendar" do
+   140	    create(:schwab_token)
+   141	    create(:balance, account: account, equity: 10_000, as_of: Time.current)
+   142	    create(:position, account: account, instrument: create(:instrument), quantity: 10, last_price: 20)
+   143	    MarketDay.for(MarketDay.today).update!(source: :fallback)
+   144	    Schwab::FakeClient.instance.reset!
+   145	    d = Desk.new
+   146	    d.rows; d.secondary_statuses; d.balance_stale?
+   147	    expect(Schwab::FakeClient.instance.calls).to be_empty
+   148	  end
+   149	end
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+**Findings**
+
+1. **High: rule-halt alert is enqueued inside the uncommitted halt transaction.**  
+   [app/models/system_settings.rb:26](/Users/jathayde/Development/Personal/desk.athayde/app/models/system_settings.rb:26) and [app/models/system_settings.rb:31](/Users/jathayde/Development/Personal/desk.athayde/app/models/system_settings.rb:31) call `deliver_later` inside `with_lock`. That can enqueue/send an alert before the `rule_halt_*` fields and audit row are committed.  
+   Proposed fix: set a local `mail = { rule:, reason:, resets_at: }` flag inside the lock, then call `AlertMailer.halt_tripped(...).deliver_later` after the `with_lock` block commits.
+
+2. **High: proposal creation does not respect unresolved submission locks.**  
+   [app/models/proposals/create.rb:15](/Users/jathayde/Development/Personal/desk.athayde/app/models/proposals/create.rb:15) only blocks existing `proposed`/`validated` proposals. It ignores `submitting` and `submission_unknown`, even though [app/models/order_proposal.rb:32](/Users/jathayde/Development/Personal/desk.athayde/app/models/order_proposal.rb:32) defines those as unresolved instrument locks. This can let a new agent proposal and alert happen while Schwab state is unknown for the same instrument.  
+   Proposed fix: include `OrderProposal::UNRESOLVED` in the blocking query, or use a shared scope/constant for “open proposal or unresolved submission” so creation and submission locking agree.
+
+3. **Medium: EOD proposal matching uses `updated_at` as a broker-outcome timestamp.**  
+   [app/models/agent/context.rb:44](/Users/jathayde/Development/Personal/desk.athayde/app/models/agent/context.rb:44) includes filled/cancelled proposals based on `updated_at: day`. A later unrelated update can make an old broker outcome appear in today’s recap, and a broker outcome timestamp is not represented directly.  
+   Proposed fix: query the audit event created by `record_broker_outcome!` (`proposal_filled` / `proposal_cancelled`) or persist a dedicated `broker_outcome_at`/`filled_at`/`cancelled_at` column and query that.
+
+4. **Medium: EOD prompt has a raw prompt-injection surface.**  
+   [app/models/agent/prompts/eod.md.erb:6](/Users/jathayde/Development/Personal/desk.athayde/app/models/agent/prompts/eod.md.erb:6) interpolates proposal data directly into the model prompt as Markdown text. If any field such as `instrument.symbol` contains newlines or instruction-like text, it can alter the prompt structure.  
+   Proposed fix: render proposals as escaped JSON/data, strip CR/LF from symbols, and frame it explicitly as untrusted data.
+
+5. **Medium: EOD scheduled-run read-only behavior is not asserted in this prompt.**  
+   [app/models/agent/prompts/eod.md.erb:10](/Users/jathayde/Development/Personal/desk.athayde/app/models/agent/prompts/eod.md.erb:10) says to cover items “only from tool results,” but does not explicitly forbid writes, approvals, proposal creation, or state mutation. If the read-only guarantee is enforced elsewhere, this file does not make it visible.  
+   Proposed fix: add a direct read-only instruction to the EOD prompt, and preferably enforce a read-only tool allowlist in the scheduled runner.
+
+6. **Low: alert spec says cancel is covered, but only fill is tested.**  
+   [spec/mailers/alert_mailer_spec.rb:27](/Users/jathayde/Development/Personal/desk.athayde/spec/mailers/alert_mailer_spec.rb:27) describes “a fill and a cancel,” but the example only exercises `record_broker_outcome!(:filled)` at [spec/mailers/alert_mailer_spec.rb:29](/Users/jathayde/Development/Personal/desk.athayde/spec/mailers/alert_mailer_spec.rb:29).  
+   Proposed fix: add a submitted proposal that records `:cancelled` and assert the cancel subject/body.
+
+7. **Low: no spec covers halt-mail rollback/commit timing.**  
+   [spec/mailers/alert_mailer_spec.rb:32](/Users/jathayde/Development/Personal/desk.athayde/spec/mailers/alert_mailer_spec.rb:32) covers the happy-path halt email, but not that the mail is sent only after the halt state and audit commit.  
+   Proposed fix: add a transaction rollback test or refactor `trip_rule_halt!` to return a mail-intent and test delivery happens after the lock block.
+
+I did not find a concrete dashboard N+1 in the reviewed files. `unresolved_submissions` includes instruments, `rows` includes instruments/stops, and the proposal counts are memoized.
+hook: Stop
+hook: Stop Completed
+tokens used
+32,915

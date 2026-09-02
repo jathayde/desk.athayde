@@ -1,0 +1,5 @@
+New entries are halted by the <%= @rule.humanize.downcase %> rule: <%= @reason %>.
+
+Exits and tighten-only stop changes stay available. The halt clears <% if @resets_at %>at <%= l(@resets_at, format: :weekday_time) %><% else %>when you clear it on the System page<% end %>.
+
+System: <%= system_url %>

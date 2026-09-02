@@ -1,21 +1,35 @@
-# The time-sensitive alerts (docs/phase-2-plan.md §0.14): one mail per event, no figures in subjects,
-# template links only. Push replaces these when the iOS shell exists.
+# One email per event the operator must act on or know about, sent by the model that made the state, after it
+# is committed. A desk with no users yet (the first boot, a test with none) has nobody to alert; the audit row
+# still stands.
 class AlertMailer < ApplicationMailer
   helper ApplicationHelper
 
-  # A desk with no users yet (the first boot, a test with none) has nobody to alert; the audit row still stands.
   def unprotected_position(position)
-    return if recipients.empty?
     @position = position
-    mail to: recipients, subject: "Athayde Desk: #{position.instrument.symbol} is unprotected"
+    alert "#{position.instrument.symbol} is unprotected"
   end
 
   def submission_unknown(proposal)
-    return if recipients.empty?
     @proposal = proposal
-    mail to: recipients, subject: "Athayde Desk: a submission on #{proposal.instrument.symbol} is unresolved"
+    alert "a submission on #{proposal.instrument.symbol} is unresolved"
+  end
+
+  # The agent proposed something: the operator hears about it once, whatever the rules said.
+  def new_proposal(proposal)
+    @proposal = proposal
+    alert "#{proposal.label} #{proposal.status_label}"
+  end
+
+  def fill_or_cancel(proposal)
+    @proposal = proposal
+    alert "#{proposal.label} #{proposal.status}"
+  end
+
+  def halt_tripped(rule:, reason:, resets_at:)
+    @rule, @reason, @resets_at = rule, reason, resets_at
+    alert "entries halted by #{rule.humanize.downcase}"
   end
 
   private
-    def recipients = User.pluck(:email_address)
+    def alert(subject) = (mail to: recipients, subject: "Athayde Desk: #{subject}" if recipients.any?)
 end

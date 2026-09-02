@@ -15,19 +15,13 @@ class SystemSettings < ApplicationRecord
   # it to the later reset and records the rule; a lapsed halt is cleared with its own audit row by the tick.
   def trip_rule_halt!(rule:, reason:, resets_at:)
     with_lock do
-      if rule_halted?
-        # nil means until cleared by hand, later than any time; only a strictly later reset changes anything,
-        # so a rule re-evaluated during its own halt writes nothing.
-        indefinite_already = rule_halt_resets_at.nil?
-        extends_the_halt = !indefinite_already && (resets_at.nil? || resets_at > rule_halt_resets_at)
-        if extends_the_halt
-          update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_resets_at: resets_at)
-          AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at, extended: true })
-        end
-      else
-        update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_tripped_at: Time.current, rule_halt_resets_at: resets_at)
-        AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at })
-      end
+      extending = rule_halted?
+      next if extending && !extends_halt?(resets_at)
+      update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_resets_at: resets_at, rule_halt_tripped_at: extending ? rule_halt_tripped_at : Time.current)
+      AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at, extended: extending })
+      # The evaluator trips halts inside the proposal's transaction: the mail waits for the outermost commit,
+      # so a rolled-back evaluation sends nothing about a halt that never happened.
+      ActiveRecord.after_all_transactions_commit { AlertMailer.halt_tripped(rule: rule, reason: reason, resets_at: resets_at).deliver_later }
     end
     self
   end
@@ -84,4 +78,9 @@ class SystemSettings < ApplicationRecord
     AuditEvent.log("sync_resumed", actor: :system, reason: settings.sync_paused_reason) if settings.sync_paused_reason
     settings.update!(sync_paused_reason: nil)
   end
+
+  private
+    # nil means until cleared by hand, later than any time; only a strictly later reset changes anything, so a
+    # rule re-evaluated during its own halt writes nothing.
+    def extends_halt?(resets_at) = rule_halt_resets_at.present? && (resets_at.nil? || resets_at > rule_halt_resets_at)
 end
