@@ -45,7 +45,7 @@ dokku storage:list "$APP" | grep -q "$MEMORY_CONTAINER_DIR" || dokku storage:mou
 say "one-time steps that need a secret or a human"
 cat <<TXT
 1. First push:      git push dokku@gc2.meticulous.net:$APP main
-   then, after the first deploy only:   dokku ps:scale $APP web=1 worker=1   (app.json formation covers later deploys)
+   app.json's formation scales web=1 worker=1 on every deploy; ps:scale is refused while it exists
 2. Memory repo:     as root on the host, clone John's repo into $MEMORY_HOST_DIR with a read-only deploy key,
                     chown -R 1000:1000 $MEMORY_HOST_DIR, and cron the pull every 30 minutes, for example
                       */30 * * * * git -C $MEMORY_HOST_DIR -c safe.directory=$MEMORY_HOST_DIR pull --ff-only --quiet
