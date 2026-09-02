@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# The dokku side of desk.athayde.com, idempotent and secret-free. Run it ON THE HOST as root in one SSH
+# session (repeated connections trip fail2ban): ssh gc2 'bash -s' < bin/dokku-setup
+# It settles what a push needs and prints the one-time steps that need a secret or a human.
+set -euo pipefail
+
+APP=athayde-desk
+DB=athayde-desk-db
+MEMORY_HOST_DIR=/var/lib/dokku/data/storage/$APP/memory
+MEMORY_CONTAINER_DIR=/rails/memory
+
+say() { printf '\n==> %s\n' "$*"; }
+
+say "app and database"
+dokku apps:exists "$APP" 2>/dev/null || dokku apps:create "$APP"
+dokku postgres:exists "$DB" 2>/dev/null || dokku postgres:create "$DB"
+dokku postgres:linked "$DB" "$APP" 2>/dev/null || dokku postgres:link "$DB" "$APP"
+dokku postgres:info "$DB" --version   # db/structure.sql was dumped from Postgres 17; 16 rejects transaction_timeout
+
+say "config (non-secret only; secrets live in config/credentials/production.yml.enc under RAILS_MASTER_KEY)"
+dokku config:set --no-restart "$APP" \
+  SCHWAB_CALLBACK_URL=https://desk.athayde.com/schwab/callback \
+  MEMORY_REPO_PATH=$MEMORY_CONTAINER_DIR \
+  RAILS_LOG_LEVEL=info
+dokku config:get "$APP" RAILS_MASTER_KEY >/dev/null || echo "!! set RAILS_MASTER_KEY from config/credentials/production.key: dokku config:set $APP RAILS_MASTER_KEY=..."
+for stale in SCHWAB_APP_KEY SCHWAB_APP_SECRET MCP_BEARER_TOKEN ANTHROPIC_API_KEY RESEND_API_KEY; do
+  dokku config:get "$APP" "$stale" >/dev/null 2>&1 && dokku config:unset --no-restart "$APP" "$stale" || true
+done
+
+say "network: one container port everywhere (Dockerfile has no EXPOSE; Puma reads PORT)"
+dokku ports:set "$APP" http:80:5000 https:443:5000
+dokku config:set --no-restart "$APP" PORT=5000
+dokku nginx:set "$APP" client-max-body-size 1m   # the MCP body cap should not depend on nginx's default
+dokku domains:add "$APP" desk.athayde.com 2>/dev/null || true
+dokku letsencrypt:active "$APP" >/dev/null 2>&1 || echo "!! run once: dokku letsencrypt:set $APP email john@athayde.com && dokku letsencrypt:enable $APP && dokku letsencrypt:cron-job --add"
+
+say "processes: web plus one Solid Queue worker (recurring tasks run inside it); a killed worker leaves rows the app sweeps"
+dokku ps:set "$APP" restart-policy unless-stopped
+dokku ps:set "$APP" stop-timeout-seconds 30
+
+say "memory repo: a host-owned clone mounted read-only into the container (the app never pulls; see below)"
+dokku storage:ensure-directory --chown heroku "$APP" memory >/dev/null   # heroku = uid 1000, the image's rails user
+dokku storage:list "$APP" | grep -q "$MEMORY_CONTAINER_DIR" || dokku storage:mount "$APP" "$MEMORY_HOST_DIR:$MEMORY_CONTAINER_DIR:ro"
+
+say "one-time steps that need a secret or a human"
+cat <<TXT
+1. First push:      git push dokku@gc2.meticulous.net:$APP main
+   then, after the first deploy only:   dokku ps:scale $APP web=1 worker=1   (app.json formation covers later deploys)
+2. Memory repo:     as root on the host, clone John's repo into $MEMORY_HOST_DIR with a read-only deploy key,
+                    chown -R 1000:1000 $MEMORY_HOST_DIR, and cron the pull every 30 minutes, for example
+                      */30 * * * * git -C $MEMORY_HOST_DIR -c safe.directory=$MEMORY_HOST_DIR pull --ff-only --quiet
+                    The app's Memory::CheckRepoJob records what it finds; an empty mount is a degraded brief, never a crash.
+3. Backups (PRD 5.9): dokku postgres:backup-auth $DB KEY SECRET REGION s3v4 https://ENDPOINT
+                      dokku postgres:backup-set-encryption $DB PASSPHRASE
+                      dokku postgres:backup-schedule $DB "0 8 * * *" BUCKET   # 08:00 UTC is 04:00 New York, clear of every job
+                      dokku postgres:backup $DB BUCKET  (once, then restore it locally to prove it)
+                    Keep config/credentials/production.key with the dumps: without it the encrypted tokens are unrecoverable.
+4. First evening:   sign in (dokku run $APP bin/rails 'login:link[john@athayde.com]' if mail is down), connect Schwab
+                    ticking EVERY account on the consent screen, set the taxable account up on /system, wait for a tick,
+                    check the feeds on /system, and confirm the worker: dokku ps:report $APP
+5. Claude app:      add the connector at https://desk.athayde.com/mcp with header Authorization: Bearer <mcp.bearer_token>
+TXT

@@ -15,7 +15,8 @@ class AgentRun < ApplicationRecord
   scope :stale_running, -> { running.where(started_at: ..STALE_AFTER.ago) }
   scope :unemailed, -> { where(status: %w[ succeeded capped failed ]).where(emailed_at: nil) }
 
-  def self.served?(kind, date) = where(kind: kind, market_date: date).where.not(status: :failed).exists?
+  # A row a killed worker left running does not count as served: the retry after a deploy still briefs.
+  def self.served?(kind, date) = where(kind: kind, market_date: date).where.not(status: :failed).where.not(id: stale_running).exists?
 
   # A worker killed mid-run leaves a running row; the next scheduled job and the digest both sweep it.
   def self.sweep_stale!

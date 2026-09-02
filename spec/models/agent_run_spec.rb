@@ -7,6 +7,8 @@ RSpec.describe AgentRun do
     expect { described_class.create!(kind: :eod, market_date: Date.new(2026, 9, 1), status: :running, started_at: Time.current) }.to raise_error(ActiveRecord::RecordNotUnique)
     expect(described_class.served?(:eod, Date.new(2026, 9, 1))).to be(true)
     expect(described_class.served?(:morning_brief, Date.new(2026, 9, 1))).to be(false)
+    described_class.create!(kind: :morning_brief, market_date: Date.new(2026, 9, 1), status: :running, started_at: 25.minutes.ago)
+    expect(described_class.served?(:morning_brief, Date.new(2026, 9, 1))).to be(false) # a killed worker's row does not count
   end
 
   it "sweeps a running row a killed worker left behind, and only that" do

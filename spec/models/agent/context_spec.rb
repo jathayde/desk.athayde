@@ -16,6 +16,7 @@ RSpec.describe Agent::Context do
     expect(described_class.new(kind: :eod, date: Date.new(2026, 9, 1), memory: Memory::Repo.new(memory_path)).degraded_reasons).to include(a_string_starting_with("orders are stale (last sync never)"))
     expect(reasons).not_to include(a_string_starting_with("memory repo missing"))
     expect(described_class.new(kind: :eod, date: Date.new(2026, 9, 1), memory: Memory::Repo.new(nil)).degraded_reasons).to include("memory repo missing at unset MEMORY_REPO_PATH")
+    expect(context.degraded_reasons).to include("memory repo has none of its files at #{memory_path}")
   end
 
   it "renders the system prompt with the rules, desk status, setup stats, and the memory files, and the user prompt by kind" do

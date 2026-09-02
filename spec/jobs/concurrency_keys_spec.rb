@@ -11,7 +11,7 @@ RSpec.describe "Job concurrency keys" do
       expect { job.new(*arguments).concurrency_key }.not_to raise_error, job.name
       expect(job.new(*arguments).concurrency_key).to be_present, job.name
     end
-    expect(Memory::PullRepoJob.new.concurrency_key).to include("Memory::PullRepoJob")
+    expect(Memory::CheckRepoJob.new.concurrency_key).to include("Memory::CheckRepoJob")
     expect(Agent::SundayReviewJob.new.concurrency_key).to include("Agent::SundayReviewJob")
   end
 end

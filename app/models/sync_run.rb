@@ -16,6 +16,13 @@ class SyncRun < ApplicationRecord
   scope :for, ->(feed, account) { where(feed: feed, account: account) }
   scope :advanced_cursor, -> { where(status: %w[ succeeded partial ]) }
   scope :live, -> { running.where(started_at: STALE_AFTER.ago..) }
+  scope :stale_running, -> { running.where(started_at: ..STALE_AFTER.ago) }
+
+  # A worker killed mid-feed leaves a running row; the tick and the digest both sweep it so the system page and
+  # the digest see a failure, not a run that never ends.
+  def self.sweep_stale!
+    stale_running.find_each { |run| run.finish!(:failed, error: "left running") }
+  end
 
   def self.record(feed, account: nil, window_from: nil, window_to: nil)
     run = create!(feed: feed, account: account, status: :running, started_at: Time.current, window_from: window_from, window_to: window_to)

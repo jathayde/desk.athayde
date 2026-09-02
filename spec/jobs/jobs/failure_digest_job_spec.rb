@@ -13,6 +13,7 @@ RSpec.describe Jobs::FailureDigestJob do
 
   it "sweeps stuck runs and reports them as failed, with undelivered briefs and failed jobs by class" do
     AgentRun.create!(kind: :eod, market_date: Date.yesterday, status: :running, started_at: 40.minutes.ago)
+    SyncRun.create!(feed: :positions, status: :running, started_at: 15.minutes.ago)
     unsent = AgentRun.create!(kind: :morning_brief, market_date: Date.yesterday, status: :succeeded, started_at: 3.hours.ago, finished_at: 3.hours.ago)
     job = SolidQueue::Job.create!(class_name: "Sync::PositionsJob", queue_name: "default", active_job_id: SecureRandom.uuid)
     SolidQueue::FailedExecution.create!(job: job, error: { "exception_class" => "Schwab::ServerError", "message" => "503 from Schwab", "backtrace" => [] })
@@ -20,7 +21,8 @@ RSpec.describe Jobs::FailureDigestJob do
     expect(AgentRun.eod.last.status).to eq("failed")
     mail = ActionMailer::Base.deliveries.last
     expect(mail.subject).to eq("Athayde Desk: failures in the last 24 hours")
-    expect(mail.text_part.body.to_s).to include("end of day, #{Date.yesterday.strftime('%a %b %-d')}: failed: left running",
+    expect(SyncRun.running).to be_empty
+    expect(mail.text_part.body.to_s).to include("positions: 1 failed", "end of day, #{Date.yesterday.strftime('%a %b %-d')}: failed: left running",
                                                 "morning brief, #{Date.yesterday.strftime('%a %b %-d')}: succeeded but never emailed (bin/rails agent:resend[#{unsent.id}])",
                                                 "Sync::PositionsJob: 1 failed job", "Schwab::ServerError: 503 from Schwab")
   end

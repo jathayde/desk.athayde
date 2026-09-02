@@ -7,6 +7,7 @@ module Sync
     SNAPSHOT_DELAY = 20.minutes
 
     def perform
+      SyncRun.sweep_stale!
       refresh_calendar
       return pause! unless SchwabToken.usable?
 

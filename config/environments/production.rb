@@ -54,7 +54,8 @@ Rails.application.configure do
 
   # Ignore bad email addresses and do not raise email delivery errors.
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.
-  # config.action_mailer.raise_delivery_errors = false
+  # Login, nags, briefs, and the Sunday ritual all ride on email: a delivery failure is an outage, not a shrug.
+  config.action_mailer.raise_delivery_errors = true
 
   # Set host to be used by links generated in mailer templates.
   config.action_mailer.default_url_options = { host: "desk.athayde.com", protocol: "https" }
@@ -66,7 +67,7 @@ Rails.application.configure do
     port: 465,
     tls: true,
     user_name: "resend",
-    password: Rails.application.credentials.resend!.fetch(:api_key),
+    password: Rails.application.credentials.dig(:resend, :api_key), # dig: the image build loads this file without a key
     authentication: :plain
   }
 

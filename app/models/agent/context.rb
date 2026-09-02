@@ -28,6 +28,7 @@ class Agent::Context
       reasons << "orders are stale (last sync #{stamp(as_of[:orders])}); stop and protection states may be wrong" if account && dashboard.stale?(as_of[:orders], :orders)
       reasons << "no trading account is set up yet" if account.nil?
       reasons << "memory repo missing at #{memory.path || 'unset MEMORY_REPO_PATH'}" unless memory.present?
+      reasons << "memory repo has none of its files at #{memory.path}" if memory.empty?
       reasons << "memory files unreadable: #{memory.unreadable.join(', ')}" if memory.unreadable.any?
       reasons << "memory files truncated: #{memory.truncated.join(', ')}" if memory.truncated.any?
     end

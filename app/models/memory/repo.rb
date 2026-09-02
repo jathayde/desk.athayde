@@ -1,6 +1,7 @@
-# The human-authored strategy files at MEMORY_REPO_PATH, read as text for the scheduled prompt. Rails never
-# writes here. Files are snapshotted in one pass, capped, and scrubbed so a mid-pull read or a stray byte
-# cannot break a run; a missing checkout or an unreadable file is a degraded reason, not an exception.
+# The human-authored strategy files at MEMORY_REPO_PATH, read as text for the scheduled prompt. The checkout is
+# owned and pulled on the host (bin/dokku-setup); Rails never writes here and never pulls in production. Files
+# are snapshotted in one pass, capped, and scrubbed so a mid-pull read or a stray byte cannot break a run; a
+# missing or empty checkout or an unreadable file is a degraded reason, not an exception.
 class Memory::Repo
   FILES = %w[ investor-profile.md strategy.md watchlist.md prompts.md instructions.md edge.md ].freeze
   PER_FILE_LIMIT = 32.kilobytes
@@ -18,6 +19,7 @@ class Memory::Repo
   attr_reader :path
 
   def present? = path&.directory? || false
+  def empty? = present? && paths.empty?
   def git? = present? && path.join(".git").exist?
   def paths = present? ? FILES.map { |name| path.join(name) }.select(&:file?) : []
 
@@ -35,8 +37,8 @@ class Memory::Repo
   def last_modified_at = paths.map(&:mtime).max
   def head_sha = git? ? git("rev-parse", "--short", "HEAD") : nil
 
-  # A fast-forward pull; any other state (dirty, diverged, missing, dubious ownership, a remote wanting
-  # credentials, a hung fetch) is the error text.
+  # A fast-forward pull for development and the memory:pull task; any other state (dirty, diverged, missing,
+  # dubious ownership, a remote wanting credentials, a hung fetch) is the error text.
   def pull!
     raise ArgumentError, "MEMORY_REPO_PATH is not set" unless path
     raise ArgumentError, "#{path} is not a git checkout" unless git?

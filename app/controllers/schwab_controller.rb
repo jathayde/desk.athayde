@@ -1,7 +1,7 @@
 # The three-legged OAuth round trip. Both routes require login; an unauthenticated hit is sent to
 # sign in without a return-to URL, so the authorization code never lands in the session.
 class SchwabController < ApplicationController
-  STATE_TTL = 10.minutes
+  STATE_TTL = 15.minutes # a Schwab login with a slow SMS code takes a while from a phone
 
   before_action :require_fake_adapter, only: :fake_authorize
 

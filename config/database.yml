@@ -74,6 +74,7 @@ test:
 # URL environment variable explicitly:
 #
 #   production:
+production:
   <<: *default
   # dokku supplies DATABASE_URL; Solid Queue, Cache, and Cable live in this same database.
   url: <%= ENV["DATABASE_URL"] %>

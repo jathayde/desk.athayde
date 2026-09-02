@@ -18,11 +18,12 @@ RSpec.describe Sync::TickJob do
     end
   end
 
-  it "uses the off-hours cadence outside the session" do
-    create(:schwab_token)
+  it "uses the off-hours cadence outside the session, when only the day's snapshot is due" do
     travel_to Time.zone.parse("2026-09-08 22:00 EDT") do
+      create(:schwab_token) # inside the travel: a token issued at the real clock would be seven days old here and unusable
       [ trading, ira ].each { |a| %w[ positions orders activities ].each { |f| create(:sync_run, feed: f, account: a, started_at: 30.minutes.ago) } }
-      expect { described_class.perform_now }.not_to have_enqueued_job
+      expect { described_class.perform_now }.to have_enqueued_job(Snapshots::DailyJob).with(trading, Date.new(2026, 9, 8)).once
+      [ Sync::PositionsJob, Sync::OrdersJob, Sync::ActivitiesJob ].each { |job| expect(job).not_to have_been_enqueued }
     end
   end
 

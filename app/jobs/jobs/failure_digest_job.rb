@@ -3,6 +3,7 @@ module Jobs
   class FailureDigestJob < ApplicationJob
     def perform
       AgentRun.sweep_stale!
+      SyncRun.sweep_stale!
       digest = FailureDigest.new
       return if digest.empty?
       BriefMailer.failure_digest(digest).deliver_now

@@ -68,7 +68,7 @@ RSpec.describe "Schwab re-auth" do
 
     it "rejects a stale state" do
       state = start_authorize
-      travel 11.minutes
+      travel SchwabController::STATE_TTL + 1.minute
       get schwab_callback_path(code: Schwab::FakeClient::FAKE_CODE, state: state)
       expect(response).to have_http_status(:conflict)
     end

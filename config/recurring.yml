@@ -23,8 +23,8 @@ shared: &shared
   agent_sunday_review:
     class: Agent::SundayReviewJob
     schedule: "0 18 * * 0 America/New_York"
-  memory_pull_repo:
-    class: Memory::PullRepoJob
+  memory_check_repo:
+    class: Memory::CheckRepoJob
     schedule: "*/30 * * * * America/New_York"
   failure_digest:
     class: Jobs::FailureDigestJob

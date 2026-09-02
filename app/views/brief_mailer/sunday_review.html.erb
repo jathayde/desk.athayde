@@ -1,4 +1,5 @@
 <p><%= link_to "Re-authenticate with Schwab", @reauth_url %></p>
+<p>Open it in Safari (not the home-screen app), sign in if asked, and tick every account on Schwab's consent screen: an account left unticked stops syncing.</p>
 <% if @status.token %>
   <p>Token: <%= @status.token_status %>, issued <%= l(@status.token.issued_at, format: :connection) %>, expires <%= l(@status.token.refresh_expires_at, format: :connection) %></p>
 <% else %>

@@ -1,0 +1,13 @@
+{
+  "name": "athayde-desk",
+  "description": "Investment Copilot Phase 1: Schwab-backed trading desk, journal, and MCP server",
+  "formation": {
+    "web": { "quantity": 1 },
+    "worker": { "quantity": 1 }
+  },
+  "healthchecks": {
+    "web": [
+      { "type": "startup", "name": "rails up", "path": "/up", "attempts": 12, "wait": 5, "timeout": 5 }
+    ]
+  }
+}
