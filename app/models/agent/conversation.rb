@@ -46,7 +46,7 @@ class Agent::Conversation
         @capped_by ||= budget_spent
         forced = @capped_by.present?
         response = call(tool_choice: forced ? { type: :none } : { type: :auto })
-        @messages << { role: :assistant, content: response.content.map(&:to_h) } # verbatim: thinking blocks carry signatures
+        @messages << { role: :assistant, content: response.content.map { |block| replay(block) } }
         @texts << response.content.select { |b| b.type == :text }.map(&:text).join("\n")
         @stop = response.stop_reason
         case @stop
@@ -89,6 +89,13 @@ class Agent::Conversation
 
     # The brief is the final response's text; interim narration from tool turns counts only when nothing followed it.
     def text = @texts.last.presence || @texts.reject(&:blank?).join("\n")
+
+    # What the API accepts back of its own answer: the fields each block type is defined by, and nothing the
+    # response adds for the reader (a tool_use's caller, a text block's citations), which a request refuses.
+    # Thinking blocks go back whole: the signature is what lets the model continue them.
+    REPLAYED = { text: %i[ type text ], tool_use: %i[ type id name input ], thinking: %i[ type thinking signature ], redacted_thinking: %i[ type data ] }.freeze
+
+    def replay(block) = REPLAYED.key?(block.type) ? block.to_h.slice(*REPLAYED.fetch(block.type)) : block.to_h
 
     # Every tool_use id is answered in one user message, results first. A batch that would pass the call cap,
     # or one asked for after tools were withdrawn, runs nothing: each id gets an error result and the next call carries no tools.

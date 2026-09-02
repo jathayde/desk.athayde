@@ -5,7 +5,7 @@ RSpec.describe Agent::Conversation do
   let(:run) { AgentRun.create!(kind: :morning_brief, market_date: Date.new(2026, 9, 1), status: :running, started_at: Time.current) }
 
   def text(string) = { type: :text, text: string }
-  def tool_use(name, input = {}, id: "tu_#{SecureRandom.hex(3)}") = { type: :tool_use, id: id, name: name, input: input }
+  def tool_use(name, input = {}, id: "tu_#{SecureRandom.hex(3)}") = { type: :tool_use, id: id, name: name, input: input, caller: { type: :direct } } # caller: what the API adds to its answer
   def thinking = { type: :thinking, thinking: "considering", signature: "sig-abc" }
   def perform(agent_run = run) = described_class.new(agent_run).perform.reload
   def another_run(date) = AgentRun.create!(kind: :eod, market_date: date, status: :running, started_at: Time.current)
@@ -19,6 +19,8 @@ RSpec.describe Agent::Conversation do
 
     second = fake.requests.last
     expect(second[:messages][1][:content].first).to include(type: :thinking, signature: "sig-abc")
+    replayed = second[:messages][1][:content].find { |b| b[:type] == :tool_use }
+    expect(replayed.keys).to contain_exactly(:type, :id, :name, :input) # the API refuses its own caller field back (the 2026-09-02 morning brief)
     expect(second[:messages][2][:role]).to eq(:user)
     expect(second[:messages][2][:content].map { |b| b[:tool_use_id] }).to eq(%w[ a b ])
     expect(second[:messages][2][:content]).to all(include(type: :tool_result, is_error: false))
