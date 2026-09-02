@@ -41,5 +41,6 @@ module AthaydeDesk
 
     # Don't generate system test files.
     config.generators.system_tests = nil
+    config.active_storage.variant_processor = :disabled # no image variants; silences the image_processing boot warning
   end
 end
