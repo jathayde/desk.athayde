@@ -92,6 +92,26 @@ module Schwab
       get(MARKET, "/instruments", symbol: symbol, projection: "symbol-search").fetch("instruments", [])
     end
 
+    # ---- Orders (Phase 2). Writes are never retried: a timeout after send is an UnknownOutcome the caller reconciles.
+    # SCHWAB_SHAPE_UNVERIFIED: the 201 with the order id in the Location header, previewOrder's existence, and
+    # replace semantics on a TRIGGER child (docs/verify-on-approval.md items 50, 56, 57).
+
+    # The new order's id, from the Location header; a success without one is an unknown outcome, never a guess.
+    def place_order(hash, payload)
+      response = write(:post, TRADER, "/accounts/#{hash}/orders", payload)
+      order_id_from(response) or raise UnknownOutcome.new("Schwab accepted the order without a Location header", status: response.code.to_i, body: Scrub.body(response.body), attempts: 1)
+    end
+
+    def cancel_order(hash, order_id)
+      write(:delete, TRADER, "/accounts/#{hash}/orders/#{order_id}")
+      true
+    end
+
+    def replace_order(hash, order_id, payload)
+      response = write(:put, TRADER, "/accounts/#{hash}/orders/#{order_id}", payload)
+      order_id_from(response) or raise UnknownOutcome.new("Schwab replaced the order without a Location header", status: response.code.to_i, body: Scrub.body(response.body), attempts: 1)
+    end
+
     def instrument_by_cusip(cusip)
       get(MARKET, "/instruments/#{cusip}").fetch("instruments", [])
     end
@@ -114,10 +134,25 @@ module Schwab
       def get(base, path, **params)
         uri = URI("#{base}#{path}")
         uri.query = URI.encode_www_form(params) if params.any?
-        response, attempts = authorized(uri)
+        response, attempts = authorized(Net::HTTP::Get.new(uri))
         raise Error.for_response(response, attempts: attempts, idempotent: true) unless response.is_a?(Net::HTTPSuccess)
         Scrub.json(parse(response, attempts: attempts, idempotent: true))
       end
+
+      # One attempt, no retries, the response itself on success; a 5xx or a dropped connection is an UnknownOutcome
+      # for a write that may have landed.
+      def write(method, base, path, payload = nil)
+        request = { post: Net::HTTP::Post, put: Net::HTTP::Put, delete: Net::HTTP::Delete }.fetch(method).new(URI("#{base}#{path}"))
+        if payload
+          request["Content-Type"] = "application/json"
+          request.body = JSON.generate(payload)
+        end
+        response, attempts = authorized(request, idempotent: false)
+        raise Error.for_response(response, attempts: attempts, idempotent: false) unless response.is_a?(Net::HTTPSuccess)
+        response
+      end
+
+      def order_id_from(response) = response["Location"].to_s[%r{/orders/([^/?]+)/?\z}, 1]
 
       # A non-JSON success body is a gateway page, not data.
       def parse(response, attempts:, idempotent:)
@@ -129,14 +164,14 @@ module Schwab
 
       # One refresh-and-retry on 401, outside the backoff budget. The token model decides whether a
       # refresh is still needed, so two processes seeing the same 401 cannot double-refresh.
-      def authorized(uri, refreshed: false)
-        request = Net::HTTP::Get.new(uri)
+      # A 401 means nothing was accepted, so the one refresh-and-retry is safe for writes too.
+      def authorized(request, idempotent: true, refreshed: false)
         request["Authorization"] = "Bearer #{@token.access_token}"
         request["Accept"] = "application/json"
-        response, attempts = perform(request, template: Scrub.path(uri.path), idempotent: true)
+        response, attempts = perform(request, template: Scrub.path(request.uri.path), idempotent: idempotent)
         if response.code.to_i == 401 && !refreshed && @token.respond_to?(:refresh!)
           @token.refresh!(wait: @wait)
-          return authorized(uri, refreshed: true)
+          return authorized(request, idempotent: idempotent, refreshed: true)
         end
         [ response, attempts ]
       end

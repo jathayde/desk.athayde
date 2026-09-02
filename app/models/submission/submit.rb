@@ -1,7 +1,7 @@
 # Approve is the submission. Transaction one: lock the proposal, check the approver and the gates, re-evaluate
 # over the frozen sizing and refuse anything that changed, move to submitting with the attempt row. Then the
-# branch: shadow audits what would have been sent; the real call arrives in step 4 and is refused until then.
-# A refusal rolls transaction one back, leaves the row as it was, and is audited outside it.
+# branch: shadow audits what would have been sent; real places it (Submission::Place). A refusal rolls
+# transaction one back, leaves the row as it was, and is audited outside it.
 class Submission::Submit
   # A blocking re-evaluation carries its report out of the transaction, so the halt it asked for is engaged after the rollback.
   class Blocked < StandardError
@@ -16,9 +16,8 @@ class Submission::Submit
   end
 
   def call
-    raise Submission::Refused, "real submission is not built yet; shadow mode must stay on" unless SystemSettings.instance.shadow_mode?
     attempt = OrderProposal.transaction { first_transaction }
-    @proposal.record_shadow!(attempt)
+    @proposal.shadow? ? @proposal.record_shadow!(attempt) : Submission::Place.call(@proposal, attempt)
   rescue Blocked => e
     Guardrails.engage_halts!(e.report)
     refuse "the desk changed: #{e.report.results.select(&:block?).map { |r| r.rule_type.humanize.downcase }.to_sentence} now block; re-propose"
@@ -62,10 +61,10 @@ class Submission::Submit
 
     def payload
       symbol = @proposal.instrument.symbol
-      if @proposal.kind_entry?
-        Schwab::OrderPayload.bracket(symbol: symbol, quantity: @proposal.quantity, limit_price: @proposal.limit_price, stop_price: @proposal.stop_price)
-      else
-        Schwab::OrderPayload.sell(symbol: symbol, quantity: @proposal.quantity, limit_price: @proposal.limit_price, tax_lot_method: @proposal.tax_lot_method)
+      case @proposal.kind
+      when "entry" then Schwab::OrderPayload.bracket(symbol: symbol, quantity: @proposal.quantity, limit_price: @proposal.limit_price, stop_price: @proposal.stop_price)
+      when "exit" then Schwab::OrderPayload.sell(symbol: symbol, quantity: @proposal.quantity, limit_price: @proposal.limit_price, tax_lot_method: @proposal.tax_lot_method)
+      else raise Submission::Refused, "#{@proposal.kind.humanize.downcase} proposals cannot be submitted yet"
       end
     end
 end

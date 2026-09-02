@@ -23,6 +23,11 @@ module Schwab
                                  .merge(tax_lot_method ? { "taxLotMethod" => tax_lot_method } : {})
     end
 
+    # A standalone STOP sell, good until cancelled: the replacement for a bracket child after a partial exit.
+    def self.stop(symbol:, quantity:, stop_price:)
+      leg(SELL, symbol, quantity).merge("orderType" => STOP, "stopPrice" => price(stop_price), "duration" => GOOD_TILL_CANCEL, "orderStrategyType" => SINGLE)
+    end
+
     def self.leg(instruction, symbol, quantity)
       { "session" => NORMAL, "duration" => DAY,
         "orderLegCollection" => [ { "instruction" => instruction, "quantity" => quantity.to_i, "instrument" => { "symbol" => symbol, "assetType" => "EQUITY" } } ] }

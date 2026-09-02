@@ -186,3 +186,37 @@ RSpec.describe Schwab::Client do
     end
   end
 end
+
+RSpec.describe Schwab::Client, "order writes" do
+  let(:token) { Schwab::BearerToken.new(access_token: "tok") }
+  let(:client) { described_class.new(token: token, app_key: "k", app_secret: "s", callback_url: "https://x/cb", wait: false) }
+  let(:hash) { "A" * 64 }
+  let(:orders_url) { "https://api.schwabapi.com/trader/v1/accounts/#{hash}/orders" }
+  let(:payload) { Schwab::OrderPayload.bracket(symbol: "XYZ", quantity: 3, limit_price: 50, stop_price: 47) }
+
+  it "posts the order once, unretried, and reads the new id from the Location header" do
+    stub = stub_request(:post, orders_url).with(body: JSON.generate(payload), headers: { "Content-Type" => "application/json" }).to_return(status: 201, headers: { "Location" => "#{orders_url}/123456" })
+    expect(client.place_order(hash, payload)).to eq("123456")
+    expect(stub).to have_been_requested.once
+  end
+
+  it "treats a 4xx as a request error and a 5xx, a dropped connection, or a success without an id as unknown, never retrying" do
+    stub_request(:post, orders_url).to_return(status: 400, body: '{"message":"quantity invalid"}')
+    expect { client.place_order(hash, payload) }.to raise_error(Schwab::RequestError, /quantity invalid/)
+    WebMock.reset_executed_requests!
+    stub = stub_request(:post, orders_url).to_return(status: 502)
+    expect { client.place_order(hash, payload) }.to raise_error(Schwab::UnknownOutcome)
+    expect(stub).to have_been_requested.once
+    stub_request(:post, orders_url).to_timeout
+    expect { client.place_order(hash, payload) }.to raise_error(Schwab::UnknownOutcome)
+    stub_request(:post, orders_url).to_return(status: 201)
+    expect { client.place_order(hash, payload) }.to raise_error(Schwab::UnknownOutcome, /without a Location header/)
+  end
+
+  it "cancels and replaces by id" do
+    stub_request(:delete, "#{orders_url}/9").to_return(status: 200)
+    expect(client.cancel_order(hash, "9")).to be(true)
+    stub_request(:put, "#{orders_url}/9").to_return(status: 201, headers: { "Location" => "#{orders_url}/10" })
+    expect(client.replace_order(hash, "9", Schwab::OrderPayload.stop(symbol: "XYZ", quantity: 2, stop_price: 47))).to eq("10")
+  end
+end

@@ -26,6 +26,8 @@ class OrderProposal < ApplicationRecord
   }
 
   TERMINAL = %w[ rejected_by_rules rejected expired submission_failed filled cancelled ].freeze
+  STALE_SUBMITTING = 5.minutes # past two writes at their timeouts, a refresh, and slack: the worker died
+  LOOK_GAP = 15.minutes # an unknown row nobody has looked at for this long gets a reconcile enqueued again
   APPROVABLE = %w[ validated ].freeze
   UNRESOLVED = %w[ submitting submission_unknown ].freeze # locks the instrument for every other proposal
   BROKER_OUTCOMES = %w[ filled cancelled ].freeze
@@ -42,12 +44,37 @@ class OrderProposal < ApplicationRecord
 
   def self.instrument_locked?(instrument) = unresolved.where(instrument: instrument).exists?
 
+  # A submitting row older than the call's timeouts is a worker that died mid-submission. Shadow rows finish as
+  # what they were going to be; real rows become unknown and the reconcile job looks. Never back to validated.
+  def self.sweep_submitting!
+    stale_submitting(STALE_SUBMITTING).find_each do |proposal|
+      attempt = proposal.submission_attempts.pending.first or next
+      if proposal.shadow?
+        proposal.record_shadow!(attempt)
+      else
+        proposal.record_unknown!(attempt, error: "left submitting")
+        Submission::ReconcileJob.perform_later(proposal)
+      end
+    end
+  end
+
+  # An unknown row the reconcile job has not looked at in a while (its job lost, its retries spent) is looked at again.
+  def self.redrive_unknown!
+    submission_unknown.joins(:submission_attempts).merge(SubmissionAttempt.unknown.unlooked_at_since(LOOK_GAP.ago)).distinct.find_each do |proposal|
+      Submission::ReconcileJob.perform_later(proposal)
+    end
+  end
+
   def terminal? = TERMINAL.include?(status)
   def approvable? = APPROVABLE.include?(status)
   # Everything the approver must acknowledge: warnings and the rules that could not be checked.
   def warnings = guardrail_results.select { |_, r| r["outcome"].in?(%w[ caution unavailable ]) }.keys
   def live_attempt = submission_attempts.live.first
   def awaiting_hand_placement? = submitted? && shadow? && broker_order_id.nil?
+  def latest_attempt = submission_attempts.order(:id).last
+  # What the operator reads on a failed or unresolved submission: Schwab's answer, or the orders that could each be it.
+  def failure_reason = submission_failed? ? latest_attempt&.error : nil
+  def ambiguous_orders = submission_unknown? ? Array(latest_attempt&.ambiguous_order_ids) : []
   def needs_override? = guardrail_results.any? { |_, r| r["outcome"] == "caution" && r["overridable"] }
 
   # The approve gesture: transaction one, then the shadow or real branch (Submission::Submit).
@@ -95,17 +122,21 @@ class OrderProposal < ApplicationRecord
     end
   end
 
+  # A late answer with the id is authoritative, even after the sweep called the row unknown.
   def record_submitted!(attempt, broker_order_id:)
-    outcome!(attempt, from: %w[ submitting ], to: :submitted, event: "proposal_submitted",
+    outcome!(attempt, from: %w[ submitting submission_unknown ], to: :submitted, event: "proposal_submitted",
              attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id }) do
       attempt.update!(outcome: :submitted, broker_order_id: broker_order_id)
     end
   end
 
+  # Unknown is the one outcome that mails at once: the operator must not touch the instrument until it is resolved.
   def record_unknown!(attempt, error:)
     outcome!(attempt, from: %w[ submitting ], to: :submission_unknown, event: "submission_unknown", reason: error) do
       attempt.update!(outcome: :unknown, response: { "error" => error })
     end
+    AlertMailer.submission_unknown(self).deliver_later
+    self
   end
 
   # Schwab refused the payload (a 4xx): the operator reads the error and may re-propose.

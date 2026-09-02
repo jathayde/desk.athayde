@@ -89,8 +89,8 @@ RSpec.describe Submission::Submit do
     SystemSettings.instance.clear_rule_halt!(reason: "test")
     Trade.delete_all
     SystemSettings.instance.update!(shadow_mode: false)
-    expect { proposal.approve_and_submit!(user: john, acknowledged: acknowledged) }.to raise_error(Submission::Refused, /not built yet/)
-    expect(proposal.reload).to be_validated # refused before transaction one: the row is as it was
-    expect(proposal.submission_attempts).to be_empty
+    proposal.approve_and_submit!(user: john, acknowledged: acknowledged)
+    expect(proposal.reload).to have_attributes(status: "submitted", shadow: false)
+    expect(proposal.broker_order_id).to be_present # the real branch placed it with the fake broker
   end
 end

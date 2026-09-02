@@ -1207,7 +1207,11 @@ CREATE TABLE public.submission_attempts (
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
     broker_order_id character varying,
-    reconciled_at timestamp with time zone
+    reconciled_at timestamp with time zone,
+    last_looked_at timestamp with time zone,
+    last_look_could_see boolean,
+    first_absence_at timestamp with time zone,
+    ambiguous_order_ids jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 
@@ -2331,14 +2335,14 @@ CREATE INDEX index_order_proposals_on_user_id ON public.order_proposals USING bt
 -- Name: index_order_proposals_one_open_per_instrument_and_side; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_order_proposals_one_open_per_instrument_and_side ON public.order_proposals USING btree (account_id, instrument_id, side) WHERE ((status)::text = ANY ((ARRAY['proposed'::character varying, 'validated'::character varying])::text[]));
+CREATE UNIQUE INDEX index_order_proposals_one_open_per_instrument_and_side ON public.order_proposals USING btree (account_id, instrument_id, side) WHERE ((status)::text = ANY (ARRAY[('proposed'::character varying)::text, ('validated'::character varying)::text]));
 
 
 --
 -- Name: index_order_proposals_one_unresolved_per_instrument; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_order_proposals_one_unresolved_per_instrument ON public.order_proposals USING btree (account_id, instrument_id) WHERE ((status)::text = ANY ((ARRAY['submitting'::character varying, 'submission_unknown'::character varying])::text[]));
+CREATE UNIQUE INDEX index_order_proposals_one_unresolved_per_instrument ON public.order_proposals USING btree (account_id, instrument_id) WHERE ((status)::text = ANY (ARRAY[('submitting'::character varying)::text, ('submission_unknown'::character varying)::text]));
 
 
 --
@@ -2772,7 +2776,7 @@ CREATE INDEX index_submission_attempts_on_reconciled_order_id ON public.submissi
 -- Name: index_submission_attempts_one_live_per_proposal; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_submission_attempts_one_live_per_proposal ON public.submission_attempts USING btree (order_proposal_id) WHERE ((outcome)::text <> ALL ((ARRAY['failed'::character varying, 'not_placed'::character varying])::text[]));
+CREATE UNIQUE INDEX index_submission_attempts_one_live_per_proposal ON public.submission_attempts USING btree (order_proposal_id) WHERE ((outcome)::text <> ALL (ARRAY[('failed'::character varying)::text, ('not_placed'::character varying)::text]));
 
 
 --
@@ -3283,6 +3287,7 @@ ALTER TABLE ONLY public.order_proposals
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260902140001'),
 ('20260902130001'),
 ('20260902120001'),
 ('20260902110001'),

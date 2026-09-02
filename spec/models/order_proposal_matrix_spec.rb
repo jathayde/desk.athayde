@@ -10,7 +10,7 @@ RSpec.describe OrderProposal, "transition matrix" do
   # action => { from state => to state }, straight from the table
   def self.allowed
     { evaluate: { "proposed" => "validated" }, reject: { "validated" => "rejected" }, expire: { "proposed" => "expired", "validated" => "expired" },
-      start_submission: { "validated" => "submitting" }, record_shadow: { "submitting" => "submitted" }, record_submitted: { "submitting" => "submitted" },
+      start_submission: { "validated" => "submitting" }, record_shadow: { "submitting" => "submitted" }, record_submitted: { "submitting" => "submitted", "submission_unknown" => "submitted" },
       record_unknown: { "submitting" => "submission_unknown" }, record_rejected: { "submitting" => "submission_failed" },
       record_not_placed: { "submission_unknown" => "submission_failed" }, record_reconciled: { "submission_unknown" => "submitted" },
       record_broker_outcome: { "submitted" => "filled" } }

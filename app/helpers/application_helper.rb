@@ -42,7 +42,11 @@ module ApplicationHelper
   # An absolute stamp for email, where relative words age badly.
   def stamp(time) = time ? l(time, format: :stamp) : "never"
   def protection_label(protection) = PROTECTION_LABELS.fetch(protection)
-  def proposal_status_label(proposal) = proposal.awaiting_hand_placement? ? "approved, place by hand" : PROPOSAL_STATUS_LABELS.fetch(proposal.status)
+  def proposal_status_label(proposal)
+    return "approved, place by hand" if proposal.awaiting_hand_placement?
+    return "submission unknown, ambiguous" if proposal.ambiguous_orders.any?
+    PROPOSAL_STATUS_LABELS.fetch(proposal.status)
+  end
   def outcome_label(outcome) = OUTCOME_LABELS.fetch(outcome)
   def review_reason_label(trade) = REVIEW_REASON_LABELS.fetch(trade.review_reason.to_s, "Needs a look")
   def excluded_summary(by_reason) = by_reason.map { |reason, n| "#{n} #{protection_label(reason)}" }.to_sentence

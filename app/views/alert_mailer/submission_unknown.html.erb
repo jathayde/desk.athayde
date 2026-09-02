@@ -1,0 +1,3 @@
+<p><b>The submission of <%= @proposal.side.upcase %> <%= quantity(@proposal.quantity) %> <%= @proposal.instrument.symbol %> got no answer from Schwab.</b></p>
+<p>Do nothing else on <%= @proposal.instrument.symbol %> until it is resolved: the app is looking for the order and will say when it finds it or confirms it was never placed. Check Schwab if you want to see for yourself.</p>
+<p><%= link_to "Proposal", proposal_url(@proposal) %></p>

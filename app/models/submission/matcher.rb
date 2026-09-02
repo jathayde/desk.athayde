@@ -7,8 +7,8 @@ class Submission::Matcher
   PRICE_TOLERANCE = BigDecimal("0.01")
   SHADOW_WINDOW = 3.days
 
-  def initialize(proposal, attempt)
-    @proposal, @attempt = proposal, attempt
+  def initialize(proposal, attempt, window: SHADOW_WINDOW)
+    @proposal, @attempt, @window = proposal, attempt, window
   end
 
   def candidates
@@ -21,7 +21,7 @@ class Submission::Matcher
 
   private
     def find_candidates
-      window = @attempt.attempted_at - 5.minutes..@attempt.attempted_at + SHADOW_WINDOW
+      window = @attempt.attempted_at - 5.minutes..@attempt.attempted_at + @window
     scope = @proposal.account.orders.where(order_proposal_id: nil, parent_order_id: nil, instrument: @proposal.instrument, side: OrderProposal.sides.fetch(@proposal.side),
                                            order_type: @proposal.order_type, entered_at: window).where.not(status: Schwab::Order::DEAD_STATUSES + [ Schwab::Order::GONE ])
     scope.includes(:child_orders).select { |o| o.quantity.to_d == @proposal.quantity.to_d && (o.limit_price.to_d - @proposal.limit_price.to_d).abs <= PRICE_TOLERANCE && shape_matches?(o) }

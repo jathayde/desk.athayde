@@ -21,8 +21,12 @@ module Schwab
       @sticky = {}
       @calls = []
       @closed_dates = Set.new
+      @placed = []
+      @next_order_id = 9_000_000_000
       self
     end
+
+    attr_reader :placed
 
     # Script the next response for a method (or every response with sticky: true). The block receives the call's arguments.
     def enqueue(method_name, sticky: false, &block)
@@ -50,8 +54,12 @@ module Schwab
     # ---- Trader API
     def account_numbers = scripted(:account_numbers) { fixture("account_numbers").map { |row| row["hashValue"] } }
     def account(hash, fields: [ :positions ]) = scripted(:account, hash, fields) { fixture("account") }
-    def orders(hash, from:, to: ::Time.current, status: nil) = scripted(:orders, hash, from, to, status) { fixture("orders") }
-    def order(hash, order_id) = scripted(:order, hash, order_id) { find_order(fixture("orders"), order_id.to_s) or raise RequestError.new("order not found", status: 404) }
+    def orders(hash, from:, to: ::Time.current, status: nil)
+      scripted(:orders, hash, from, to, status) do
+        fixture("orders") + @placed.select { |o| (from..to).cover?(::Time.zone.parse(o["enteredTime"])) && (status.nil? || o["status"] == status) }
+      end
+    end
+    def order(hash, order_id) = scripted(:order, hash, order_id) { find_order(fixture("orders") + @placed, order_id.to_s) or raise RequestError.new("order not found", status: 404) }
     def transactions(hash, from:, to: ::Time.current, type:) = scripted(:transactions, hash, from, to, type) { fixture("transactions").select { |a| a["type"] == type } }
 
     # ---- Market Data API
@@ -68,6 +76,18 @@ module Schwab
         [ known.slice(*requested).merge("errors" => { "invalidSymbols" => requested - known.keys }) ]
       end
     end
+    # ---- Orders: a placed order is remembered and served by the next orders call, as Schwab would.
+    def place_order(hash, payload) = scripted(:place_order, hash, payload) { place!(payload) }
+
+    # Remember an order as if Schwab had it, with an id of the caller's choosing: specs use it for "the order that
+    # was placed while we were not looking".
+    def place!(payload, id: (@next_order_id += 1).to_s, status: "WORKING", entered_at: ::Time.current)
+      @placed << placed_order(id, payload, status: status, entered_at: entered_at)
+      id
+    end
+    def cancel_order(hash, order_id) = scripted(:cancel_order, hash, order_id) { @placed.find { |o| o["orderId"].to_s == order_id.to_s }&.store("status", "CANCELED"); true }
+    def replace_order(hash, order_id, payload) = scripted(:replace_order, hash, order_id, payload) { cancel_order(hash, order_id); place_order(hash, payload) }
+
     def price_history(symbol, period_type: :month, period: 3, frequency_type: :daily, frequency: 1, from: nil, to: nil) = scripted(:price_history, symbol) { fixture("price_history").merge("symbol" => symbol) }
     def instrument_by_symbol(symbol) = scripted(:instrument_by_symbol, symbol) { fixture("instruments")["instruments"].select { |i| i["symbol"] == symbol } }
     def instrument_by_cusip(cusip) = scripted(:instrument_by_cusip, cusip) { fixture("instruments")["instruments"].select { |i| i["cusip"] == cusip } }
@@ -78,6 +98,20 @@ module Schwab
         block = @queues[method_name].shift || @sticky[method_name]
         block ? block.call(*args) : yield
       end
+
+      # The raw shape an order the fake placed comes back in, close enough for the mappers and the matcher.
+      # SCHWAB_SHAPE_UNVERIFIED: enteredTime, filledQuantity, remainingQuantity, the AWAITING_PARENT_ORDER child
+      # status, and child ids are guessed from schwab-py's examples, not read from a placed order.
+      def placed_order(id, payload, status: "WORKING", entered_at: ::Time.current)
+        now = entered_at.utc.iso8601(3)
+        base = payload.except("childOrderStrategies").merge("orderId" => id.to_i, "status" => status, "enteredTime" => now, "filledQuantity" => 0,
+                                                              "remainingQuantity" => payload.dig("orderLegCollection", 0, "quantity"), "quantity" => payload.dig("orderLegCollection", 0, "quantity"),
+                                                              "orderLegCollection" => payload["orderLegCollection"].map { |leg| leg.merge("instrument" => leg["instrument"].merge("assetType" => "EQUITY", "cusip" => cusip_for(leg.dig("instrument", "symbol")))) })
+        children = Array(payload["childOrderStrategies"]).map { |child| placed_order((@next_order_id += 1), child, status: "AWAITING_PARENT_ORDER") }
+        children.any? ? base.merge("childOrderStrategies" => children) : base
+      end
+
+      def cusip_for(symbol) = fixture("instruments")["instruments"].find { |i| i["symbol"] == symbol }&.dig("cusip") # the fixture is the broker's reference data
 
       def fixture(name) = Scrub.json(JSON.parse(FIXTURES.join("#{name}.json").read))
 

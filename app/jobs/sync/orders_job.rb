@@ -27,6 +27,7 @@ module Sync
         # no longer returns is known, and its position must lose it.
         complete = !truncated && run.unmapped_values.except("stops_gone").none?
         account.positions.includes(:working_stop_order).each(&:assign_working_stop!) if complete
+        Orders::ProtectionWatch.call(account) if complete # judged only after the stops are assigned from a whole run
         run.touched(rows.size)
         truncated ? :partial : :succeeded
       end
@@ -50,7 +51,7 @@ module Sync
         account.positions.includes(:working_stop_order).filter_map(&:working_stop_order).reject { |o| seen.include?(o.broker_order_id) }.flat_map do |stop|
           Schwab::Order.from(client.order(account.schwab_hash, stop.broker_order_id)).flatten
         rescue Schwab::RequestError => e
-          stop.update!(status: Schwab::Order::GONE)
+          stop.update!(status: Schwab::Order::GONE, closed_at: Time.current) # gone as of now, for the protection watch's clock
           run.quarantine(:stops_gone, "#{stop.broker_order_id}: #{e.message}")
           []
         end
