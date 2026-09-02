@@ -14,5 +14,6 @@ if Rails.env.production? && ENV["SECRET_KEY_BASE_DUMMY"].blank?
     "anthropic.api_key" => credentials.dig(:anthropic, :api_key),
     "resend.api_key" => credentials.dig(:resend, :api_key)
   }.select { |_, value| value.blank? }.keys
+  # apns is not here on purpose: the shell may not exist yet, and Push.configured? sends nothing without it.
   raise "production credentials are missing: #{missing.join(', ')} (edit with bin/rails credentials:edit --environment production)" if missing.any?
 end

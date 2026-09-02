@@ -10,7 +10,7 @@ class Orders::ProtectionWatch
   def call
     @account.positions.includes(:instrument, :working_stop_order).each do |position|
       next unless position.unprotected? && expected_protection?(position) && !alerted_recently?(position)
-      AlertMailer.unprotected_position(position).deliver_later
+      Alert.unprotected_position(position)
       AuditEvent.log("unprotected_alert_sent", actor: :system, subject: position, data: { symbol: position.instrument.symbol, protection: position.protection })
     end
   end

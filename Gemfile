@@ -64,3 +64,5 @@ group :development do
 end
 
 gem "anthropic", "~> 1.68"
+
+gem "apnotic", "~> 1.8"

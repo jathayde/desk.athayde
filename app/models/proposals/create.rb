@@ -22,7 +22,7 @@ class Proposals::Create
                      data: { kind: proposal.kind, side: proposal.side, symbol: proposal.instrument.symbol, quantity: proposal.quantity, limit_price: proposal.limit_price, stop_price: proposal.stop_price })
       proposal.evaluate!(Guardrails::Evaluator.new(proposal).call)
     end
-    ActiveRecord.after_all_transactions_commit { AlertMailer.new_proposal(proposal).deliver_later } if proposal.agent? # the operator made the human ones
+    ActiveRecord.after_all_transactions_commit { Alert.new_proposal(proposal) } if proposal.agent? # the operator made the human ones
     proposal
   rescue ActiveRecord::RecordNotUnique
     raise Refused, "#{@arguments[:symbol].to_s.upcase} already has a #{@arguments[:side]} proposal waiting; decide it first"

@@ -18,17 +18,17 @@ RSpec.describe Orders::ProtectionWatch do
   it "alerts once a day for a position whose entry the app placed" do
     position = create(:position, account: account, instrument: xyz, quantity: 10)
     OrderProposal.create!(account: account, instrument: xyz, kind: :entry, origin: :human, side: :buy, status: "filled", quantity: 10, limit_price: 50)
-    expect { described_class.call(account); described_class.call(account) }.to have_enqueued_mail(AlertMailer, :unprotected_position).with(position).once
+    expect { described_class.call(account); described_class.call(account) }.to have_enqueued_mail(AlertMailer, :unprotected_position).with(position, subject: "XYZ is unprotected").once
     expect(alerts.where(subject: position).count).to eq(1)
     travel 25.hours
-    expect { described_class.call(account) }.to have_enqueued_mail(AlertMailer, :unprotected_position).with(position).once
+    expect { described_class.call(account) }.to have_enqueued_mail(AlertMailer, :unprotected_position).with(position, subject: "XYZ is unprotected").once
   end
 
   it "alerts when a stop died at the broker today, and the mail names the state" do
     position = create(:position, account: account, instrument: xyz, quantity: 5)
     create(:order, :working_stop, account: account, instrument: xyz, status: "CANCELED", closed_at: 1.hour.ago, broker_order_id: "gone-1")
-    expect { described_class.call(account) }.to have_enqueued_mail(AlertMailer, :unprotected_position).with(position)
-    mail = AlertMailer.unprotected_position(position)
+    expect { described_class.call(account) }.to have_enqueued_mail(AlertMailer, :unprotected_position).with(position, subject: "XYZ is unprotected")
+    mail = AlertMailer.unprotected_position(position, subject: "XYZ is unprotected")
     expect(mail.subject).to eq("Athayde Desk: XYZ is unprotected")
     expect(mail.text_part.body.to_s).to include("no stop")
   end

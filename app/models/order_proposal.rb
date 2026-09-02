@@ -114,8 +114,8 @@ class OrderProposal < ApplicationRecord
     transition!(from: %w[ proposed validated ], to: :expired, event: "proposal_expired")
   end
 
-  # The one way a proposal is named in prose: emails, banners, the recap, the journal.
-  def label = "#{side.upcase} #{quantity.to_s('F').sub(/\.0+\z/, '')} #{instrument.symbol}"
+  # The one way a proposal is named in prose: emails, banners, the recap, the journal. An unsized entry has no number to show.
+  def label = [ side.upcase, quantity&.to_s("F")&.sub(/\.0+\z/, ""), instrument.symbol ].compact.join(" ")
   def priced_label = "#{label} @ #{ActiveSupport::NumberHelper.number_to_currency(limit_price)}"
   def cost = quantity.to_d * limit_price.to_d
 
@@ -156,7 +156,7 @@ class OrderProposal < ApplicationRecord
              attributes: { submitted_at: Time.current, broker_order_id: broker_order_id }, data: { broker_order_id: broker_order_id, late: late }) do
       attempt.update!(outcome: :submitted, broker_order_id: broker_order_id)
     end
-    ActiveRecord.after_all_transactions_commit { AlertMailer.late_submission(self).deliver_later } if late
+    ActiveRecord.after_all_transactions_commit { Alert.late_submission(self) } if late
     self
   end
 
@@ -168,7 +168,7 @@ class OrderProposal < ApplicationRecord
     outcome!(attempt, from: late ? %w[ submission_failed ] : %w[ submitting ], to: :submission_unknown, event: "submission_unknown", reason: error, data: { late: late }) do
       attempt.update!(outcome: :unknown, response: { "error" => error }, first_absence_at: nil)
     end
-    ActiveRecord.after_all_transactions_commit { AlertMailer.submission_unknown(self).deliver_later } # the caller enqueues the look
+    ActiveRecord.after_all_transactions_commit { Alert.submission_unknown(self) } # the caller enqueues the look
     self
   end
 
@@ -211,7 +211,7 @@ class OrderProposal < ApplicationRecord
     status = status.to_s
     raise ArgumentError, "#{status} is not a broker outcome" unless BROKER_OUTCOMES.include?(status)
     transition!(from: %w[ submitted ], to: status, event: "proposal_#{status}")
-    ActiveRecord.after_all_transactions_commit { AlertMailer.fill_or_cancel(self).deliver_later }
+    ActiveRecord.after_all_transactions_commit { Alert.fill_or_cancel(self) }
     self
   end
 

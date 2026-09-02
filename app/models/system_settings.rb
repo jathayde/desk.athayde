@@ -21,7 +21,7 @@ class SystemSettings < ApplicationRecord
       AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at, extended: extending })
       # The evaluator trips halts inside the proposal's transaction: the mail waits for the outermost commit,
       # so a rolled-back evaluation sends nothing about a halt that never happened.
-      ActiveRecord.after_all_transactions_commit { AlertMailer.halt_tripped(rule: rule, reason: reason, resets_at: resets_at).deliver_later }
+      ActiveRecord.after_all_transactions_commit { Alert.halt_tripped(rule: rule, reason: reason, resets_at: resets_at) }
     end
     self
   end

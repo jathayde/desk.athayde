@@ -1,40 +1,37 @@
-# One email per event the operator must act on or know about, sent by the model that made the state, after it
-# is committed. A desk with no users yet (the first boot, a test with none) has nobody to alert; the audit row
-# still stands.
+# One email per event the operator must act on or know about, with the sentence Alert wrote for it (the push
+# carries the same sentence). A desk with no users yet (the first boot, a test with none) has nobody to
+# alert; the audit row still stands.
 class AlertMailer < ApplicationMailer
   helper ApplicationHelper
 
-  def unprotected_position(position)
+  def unprotected_position(position, subject:)
     @position = position
-    alert "#{position.instrument.symbol} is unprotected"
+    alert subject
   end
 
-  def submission_unknown(proposal)
+  def submission_unknown(proposal, subject:)
     @proposal = proposal
-    alert "a submission on #{proposal.instrument.symbol} is unresolved"
+    alert subject
   end
 
-  # The agent proposed something: the operator hears about it once, whatever the rules said.
-  def new_proposal(proposal)
+  def new_proposal(proposal, subject:)
     @proposal = proposal
-    alert "#{proposal.label} #{proposal.status_label}"
+    alert subject
   end
 
-  def fill_or_cancel(proposal)
+  def fill_or_cancel(proposal, subject:)
     @proposal = proposal
-    alert "#{proposal.label} #{proposal.status}"
+    alert subject
   end
 
-  # Schwab answered with an id after the reconcile job had called the order not placed: the operator was told
-  # nothing was working, and now something is.
-  def late_submission(proposal)
+  def late_submission(proposal, subject:)
     @proposal = proposal
-    alert "#{proposal.label} is working at Schwab after all"
+    alert subject
   end
 
-  def halt_tripped(rule:, reason:, resets_at:)
+  def halt_tripped(rule:, reason:, resets_at:, subject:)
     @rule, @reason, @resets_at = rule, reason, resets_at
-    alert "entries halted by #{rule.humanize.downcase}"
+    alert subject
   end
 
   private
