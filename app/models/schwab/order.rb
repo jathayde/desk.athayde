@@ -9,6 +9,7 @@ module Schwab
                            AWAITING_CONDITION NEW AWAITING_RELEASE_TIME ].freeze
     LIVE_STATUSES = %w[ WORKING ACCEPTED QUEUED PENDING_ACTIVATION ].freeze # in the market, not awaiting a parent or condition
     STOP_TYPES = %w[ STOP STOP_LIMIT TRAILING_STOP TRAILING_STOP_LIMIT ].freeze
+    LIMIT = "LIMIT"
     WORKING = "WORKING"
     SELL = "SELL"
     BUY = "BUY"

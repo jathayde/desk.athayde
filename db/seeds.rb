@@ -4,6 +4,14 @@
   User.find_or_initialize_by(email_address: attributes[:email_address]).update!(attributes)
 end
 
+# The starting guardrail set (PRD §5.4), global rows the rule editor supersedes; idempotent by the one-active index.
+{ "max_risk_per_trade" => { "percent" => "1.0" }, "max_positions" => { "count" => "8" }, "max_position_exposure" => { "percent" => "25" },
+  "max_sector_exposure" => {}, "daily_loss_halt" => { "percent" => "3" }, "max_drawdown_halt" => { "percent" => "10" },
+  "earnings_blackout" => {}, "wash_sale" => { "days" => "30" }, "notional_cap" => { "per_order" => "2500", "per_day" => "5000" },
+  "stop_collar" => StopCollar::Calculator::DEFAULTS }.each do |rule_type, params|
+  RiskRule.active_for(rule_type) || RiskRule.create!(rule_type: rule_type, params: params, mode: rule_type == "wash_sale" ? "warn" : "block", note: "seeded starting set")
+end
+
 # A development desk through the fake broker and the fake model, so every screen and a brief render without
 # Schwab or Anthropic. Never in production, never against the real adapters, never twice.
 return unless Rails.env.development? && Schwab.fake? && Agent.fake?

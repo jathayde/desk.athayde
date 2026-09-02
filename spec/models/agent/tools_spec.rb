@@ -1,8 +1,8 @@
 require "rails_helper"
 
 RSpec.describe Agent::Tools do
-  it "exposes the seven Phase 1 read tools to both transports, all read-only" do
-    expect(described_class.for(:mcp).map(&:tool_name)).to match_array(%w[ get_portfolio get_account_health get_quotes get_price_history get_journal get_setup_stats get_risk_rules ])
+  it "exposes the read tools to both transports, all read-only" do
+    expect(described_class.for(:mcp).map(&:tool_name)).to match_array(%w[ get_portfolio get_account_health get_quotes get_price_history get_journal get_setup_stats get_risk_rules evaluate_hypothetical_order ])
     expect(described_class.for(:scheduled)).to match_array(described_class.for(:mcp))
     expect(described_class.all).to all(be_read_only)
     expect(described_class.definitions(:scheduled).first).to include(:name, :description, :input_schema)

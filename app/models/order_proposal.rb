@@ -42,14 +42,18 @@ class OrderProposal < ApplicationRecord
   def terminal? = TERMINAL.include?(status)
   def approvable? = APPROVABLE.include?(status)
   # Everything the approver must acknowledge: warnings and the rules that could not be checked.
-  def warnings = guardrail_results.select { |_, r| r["outcome"].in?(%w[ warn unavailable ]) }.keys
+  def warnings = guardrail_results.select { |_, r| r["outcome"].in?(%w[ caution unavailable ]) }.keys
   def live_attempt = submission_attempts.live.first
 
   # ---- transitions, each a row of the table, each one audit row, each under the row lock ----------
 
+  # The evaluation's writer: stores the report and engages any halt its rules asked for, in the same transaction.
   def evaluate!(report)
-    transition!(from: %w[ proposed ], to: report.blocked? ? :rejected_by_rules : :validated, event: "proposal_evaluated",
-                attributes: { guardrail_results: report.to_h, evaluated_at: Time.current }, data: { blocked: report.blocked?, warnings: report.warnings })
+    transaction do
+      Guardrails.engage_halts!(report)
+      transition!(from: %w[ proposed ], to: report.blocked? ? :rejected_by_rules : :validated, event: "proposal_evaluated",
+                  attributes: { guardrail_results: report.to_h, evaluated_at: Time.current }, data: { blocked: report.blocked?, warnings: report.warnings })
+    end
   end
 
   def reject!(user:, reason:)

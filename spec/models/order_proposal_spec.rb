@@ -7,12 +7,12 @@ RSpec.describe OrderProposal do
   let(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
   let(:proposal) { described_class.create!(account: account, instrument: instrument, kind: :entry, origin: :human, user: john, side: :buy, quantity: 10, limit_price: 50, stop_price: 48) }
 
-  def result(type, outcome) = Guardrails::Result.new(rule_type: type, outcome: outcome, detail: {}, version: 1, params: {})
+  def result(type, outcome, **rest) = Guardrails::Result.new(rule_type: type, outcome: outcome, detail: {}, version: 1, params: {}, **rest)
   def report(*results) = Guardrails::Report.new(results)
   def audits = AuditEvent.where(subject: proposal).order(:id).pluck(:kind)
 
   it "validates on an evaluation without a hard fail and rejects on one, snapshotting the results" do
-    proposal.evaluate!(report(result("settled_cash", :pass), result("wash_sale", :warn)))
+    proposal.evaluate!(report(result("settled_cash", :pass), result("wash_sale", :caution)))
     expect(proposal).to be_validated
     expect(proposal.warnings).to eq([ "wash_sale" ])
     proposal.update!(guardrail_results: proposal.guardrail_results.merge("earnings_blackout" => { "outcome" => "unavailable" }))
@@ -20,10 +20,17 @@ RSpec.describe OrderProposal do
     expect(proposal.guardrail_results.dig("settled_cash", "outcome")).to eq("pass")
 
     other = described_class.create!(account: account, instrument: instrument, kind: :entry, origin: :agent, side: :buy)
-    other.evaluate!(report(result("settled_cash", :fail)))
+    other.evaluate!(report(result("settled_cash", :block)))
     expect(other).to be_rejected_by_rules
     expect(other).to be_terminal
     expect { other.evaluate!(report) }.to raise_error(OrderProposal::IllegalTransition)
+  end
+
+  it "engages the halt a report asks for in the same transaction as the evaluation" do
+    proposal.evaluate!(report(result("daily_loss_halt", :block, trip: { rule: "daily_loss_halt", reason: "down 4% today", resets_at: 1.hour.from_now })))
+    expect(proposal).to be_rejected_by_rules
+    expect(SystemSettings.instance).to be_rule_halted
+    expect(SystemSettings.instance.rule_halt_rule).to eq("daily_loss_halt")
   end
 
   it "rejects only with a reason, expires only while undecided, and refuses to expire a submission" do
@@ -40,7 +47,7 @@ RSpec.describe OrderProposal do
   end
 
   it "walks approve into submitting with one live attempt, then submitted with the broker id, and locks the instrument meanwhile" do
-    proposal.evaluate!(report(result("wash_sale", :warn)))
+    proposal.evaluate!(report(result("wash_sale", :caution)))
     attempt = proposal.start_submission!(user: john, acknowledged: [ "wash_sale" ], override_reason: nil, payload: { "orderType" => "LIMIT" }, shadow: false)
     expect(proposal).to be_submitting
     expect(described_class.instrument_locked?(instrument)).to be(true)

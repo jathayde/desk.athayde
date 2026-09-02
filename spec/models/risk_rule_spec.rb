@@ -4,12 +4,13 @@ RSpec.describe RiskRule do
   let(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
 
   it "keeps one active global rule per type, even with a null setup, and supersedes instead of editing" do
-    rule = described_class.create!(rule_type: "notional_cap", params: { "per_order" => "1000" })
-    expect { described_class.create!(rule_type: "notional_cap", params: { "per_order" => "2000" }) }.to raise_error(ActiveRecord::RecordNotUnique)
-    successor = rule.supersede!(params: { "per_order" => "2000" }, user: john, note: "raised")
+    rule = described_class.create!(rule_type: "notional_cap", params: { "per_order" => "1000", "per_day" => "3000" })
+    expect { described_class.create!(rule_type: "notional_cap", params: { "per_order" => "2000", "per_day" => "3000" }) }.to raise_error(ActiveRecord::RecordNotUnique)
+    successor = rule.supersede!(params: { "per_order" => "2000", "per_day" => "3000" }, user: john, note: "raised")
     expect(rule.reload).to have_attributes(active: false, superseded_by: successor)
     expect(successor).to have_attributes(version: 2, active: true, changed_by: john)
-    expect(AuditEvent.find_by(kind: "rule_changed").data).to include("before" => { "per_order" => "1000" }, "after" => { "per_order" => "2000" })
+    expect(AuditEvent.find_by(kind: "rule_changed").data).to include("before" => { "per_order" => "1000", "per_day" => "3000" }, "after" => { "per_order" => "2000", "per_day" => "3000" })
+    expect(described_class.new(rule_type: "notional_cap", params: { "per_order" => "1" })).not_to be_valid # a row missing its parameter never reaches the evaluator
     expect(described_class.active_for("notional_cap")).to eq(successor)
   end
 

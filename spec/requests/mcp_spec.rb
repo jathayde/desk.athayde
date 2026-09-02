@@ -46,7 +46,7 @@ RSpec.describe "MCP endpoint" do
     rpc("tools/call", { name: "get_risk_rules", arguments: {} })
     expect(response).to have_http_status(:ok)
     result = response.parsed_body["result"]
-    expect(result["structuredContent"]).to include("available" => false)
+    expect(result["structuredContent"]).to include("available" => false) # no rules seeded here: not unlimited, none
     expect(JSON.parse(result["content"].first["text"])).to include("available" => false)
     expect(ToolCall.last).to have_attributes(transport: "mcp", tool_name: "get_risk_rules")
   end

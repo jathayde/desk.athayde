@@ -4,9 +4,9 @@ class Desk
   STALE_MULTIPLIER = 2
   Row = Data.define(:position, :protection, :as_of, :stale, :trade)
 
-  def initialize
+  def initialize(account: nil)
     @settings = SystemSettings.instance
-    @account = Account.trading.order(:id).first
+    @account = account || Account.trading.order(:id).first
     @in_session = MarketDay.known_session_open?
   end
 

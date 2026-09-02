@@ -13,10 +13,13 @@ class SystemSettings < ApplicationRecord
   def trip_rule_halt!(rule:, reason:, resets_at:)
     with_lock do
       if rule_halted?
-        extends_the_halt = resets_at.nil? || rule_halt_resets_at.nil? || resets_at > rule_halt_resets_at
+        # nil means until cleared by hand, later than any time; only a strictly later reset changes anything,
+        # so a rule re-evaluated during its own halt writes nothing.
+        indefinite_already = rule_halt_resets_at.nil?
+        extends_the_halt = !indefinite_already && (resets_at.nil? || resets_at > rule_halt_resets_at)
         if extends_the_halt
-          update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_resets_at: [ rule_halt_resets_at, resets_at ].compact.max)
-          AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: rule_halt_resets_at, extended: true })
+          update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_resets_at: resets_at)
+          AuditEvent.log("rule_halt_tripped", actor: :system, reason: reason, data: { rule: rule, resets_at: resets_at, extended: true })
         end
       else
         update!(rule_halt_rule: rule, rule_halt_reason: reason, rule_halt_tripped_at: Time.current, rule_halt_resets_at: resets_at)

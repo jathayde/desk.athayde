@@ -2,7 +2,9 @@
 # never in place, so every proposal's results point at the exact version that judged it.
 class RiskRule < ApplicationRecord
   TYPES = %w[ max_risk_per_trade max_positions max_position_exposure max_sector_exposure daily_loss_halt max_drawdown_halt
-              settled_cash earnings_blackout wash_sale notional_cap stop_collar ].freeze
+              earnings_blackout wash_sale notional_cap stop_collar ].freeze
+  REQUIRED_PARAMS = { "max_risk_per_trade" => %w[ percent ], "max_positions" => %w[ count ], "max_position_exposure" => %w[ percent ],
+                      "daily_loss_halt" => %w[ percent ], "max_drawdown_halt" => %w[ percent ], "notional_cap" => %w[ per_order per_day ] }.freeze
 
   belongs_to :setup, optional: true
   belongs_to :superseded_by, class_name: "RiskRule", optional: true
@@ -11,7 +13,7 @@ class RiskRule < ApplicationRecord
   enum :mode, { block: "block", warn: "warn" }, prefix: true
 
   validates :rule_type, inclusion: { in: TYPES }
-  validates :params, presence: true
+  validate :required_params_present
 
   scope :active, -> { where(active: true) }
 
@@ -29,4 +31,10 @@ class RiskRule < ApplicationRecord
   end
 
   def param(name) = params.fetch(name.to_s) { raise KeyError, "#{rule_type} rule has no #{name}" }
+
+  private
+    def required_params_present
+      missing = REQUIRED_PARAMS.fetch(rule_type.to_s, []).reject { |key| params.to_h[key].present? }
+      errors.add(:params, "is missing #{missing.to_sentence}") if missing.any?
+    end
 end
