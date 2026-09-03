@@ -1,11 +1,14 @@
 <% content_for :title, "Review #{@trade.instrument.symbol}" %>
 <h1>Is this part of a setup? <small><%= pluralize(@queue.count, "more") %> to review</small></h1>
 <p class="callout"><%= review_reason_label(@trade) %>. <%= @trade.instrument.symbol %> · <%= quantity(@trade.quantity) %> held · avg entry <%= money(@trade.avg_entry) %><% if @position %> · <%= @position.protection == :protected ? "stop #{money(@position.stop_price)}" : protection_label(@position.protection) %><% end %>. Saving records the setup and clears this from the queue.</p>
+<%= render "shared/candles", chart: @chart %>
+<% if @collar&.ok? %>
+  <p class="muted">Collar today (computed now, not stored) from <%= money(@collar_from) %>: tight <%= money(@collar.tight) %>, wide <%= money(@collar.wide) %>; the percent floor is <%= money(@collar.floor) %>. A stop inside the collar passes the rule; outside it needs a reason at approval.</p>
+<% elsif @collar %>
+  <p class="muted">No collar today: <%= @collar.refusal %>.</p>
+<% end %>
 
 <%= form_with url: trade_review_path(@trade), method: :patch do |f| %>
-  <%= f.label :setup_id, "Setup" %>
-  <%= f.select :setup_id, options_from_collection_for_select(@setups, :id, :name, @trade.setup_id), include_blank: "Pick a setup" %>
-  <%= f.text_field :new_setup, placeholder: "or create a new setup by name" %>
   <% if @trade.closed? && @trade.bootstrapped? %>
     <p class="muted">Closed legacy holding: setup and thesis only, R stays blank.</p>
   <% else %>
@@ -17,8 +20,16 @@
       <p class="muted">Without a stop, R stays blank. A stop at or above the average entry gives no risk to measure.</p>
     <% end %>
   <% end %>
+  <% if @setups.any? %>
+    <%= f.label :setup_id, "Setup" %>
+    <%= f.select :setup_id, options_from_collection_for_select(@setups, :id, :name, @trade.setup_id), include_blank: "Pick a setup" %>
+    <%= f.text_field :new_setup, placeholder: "or create a new setup by name" %>
+  <% else %>
+    <%= f.label :new_setup, "Setup name" %>
+    <%= f.text_field :new_setup, placeholder: "breakout, pullback, legacy holding…" %>
+  <% end %>
   <%= f.label :thesis, "Thesis" %>
-  <%= f.text_area :thesis, value: @trade.thesis, rows: 3 %>
+  <%= f.text_area :thesis, value: @trade.thesis, rows: 3, placeholder: "Why you own it and what would prove you wrong, in one line" %>
   <%= f.submit "Save" %>
 <% end %>
 <div class="choice">

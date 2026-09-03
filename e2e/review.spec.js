@@ -9,7 +9,7 @@ test("review queue: skip persists across reload, save moves to the next, not-a-s
   await expect(page).toHaveURL(/\/trades\/\d+\/review/);
   await page.reload();
   await expect(page.getByRole("heading")).toContainText("Is this part of a setup?");
-  await page.getByPlaceholder("or create a new setup by name").fill("breakout-A");
+  await page.getByLabel("Setup name").fill("breakout-A");
   await page.getByLabel("Planned stop").fill("18");
   await page.getByLabel("Thesis").fill("legacy holding, base breakout");
   await page.getByRole("button", { name: "Save" }).click();
@@ -40,4 +40,13 @@ test("a proposal is approved from the phone in shadow mode: acknowledge, type th
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByText("Approved in shadow mode")).toBeVisible();
   await expect(page.getByText("place this order at Schwab by hand")).toBeVisible();
+});
+
+test("the review page draws the candles with the collar above the stop field", async ({ page }) => {
+  await page.goto("/playwright/scenarios/review_queue?then=%2Ftrades");
+  await page.getByRole("link", { name: /Needs review \(2\)/ }).click();
+  await page.getByRole("link", { name: "LBAS" }).click();
+  await expect(page.locator(".candles svg")).toBeVisible();
+  await expect(page.getByText(/Collar today from|No collar today/)).toBeVisible();
+  await page.screenshot({ path: "tmp/screenshots/review-candles.png", fullPage: true });
 });

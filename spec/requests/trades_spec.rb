@@ -12,6 +12,26 @@ RSpec.describe "Trades" do
     end
   end
 
+  it "draws the candles with the stop and the entry on the trade page, and the collar on the review page with the stop field first" do
+    create(:schwab_token)
+    Schwab::FakeClient.instance.script_daily_history(symbol: "XYZ", close: 50)
+    trade = trade_with_entry(planned_stop: 47)
+    get trade_path(trade)
+    expect(response.body).to include('<svg viewBox="0 0 480 240"', "stop $47.00", "entry $50.00")
+    get trade_review_path(trade)
+    expect(response.body).to include("Collar today (computed now, not stored) from $50.00", "collar tight", "Setup name") # no setups yet: the name field alone
+    expect(response.body.index("Planned stop")).to be < response.body.index("Setup name")
+    create(:setup, name: "breakout")
+    get trade_review_path(trade)
+    expect(response.body).to include("Pick a setup", "or create a new setup by name")
+    expect(response.body.scan(/ [xy][12]?="([^"]*)"/).flatten).to all(match(/\A-?\d+(\.\d+)?\z/)) # no BigDecimal notation in the SVG
+    Rails.cache.clear
+    Schwab::FakeClient.instance.enqueue(:price_history, sticky: true) { raise Schwab::RateLimited.new("budget spent", retry_after: 30) }
+    get trade_review_path(trade)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("No collar today: Schwab unavailable", "No chart: history unavailable")
+  end
+
   it "links a trade to the proposal that opened it" do
     proposal = create(:order_proposal, account: account, instrument: xyz, status: "filled", origin: "agent")
     trade = trade_with_entry(order_proposal: proposal, needs_review: false, review_reason: nil)

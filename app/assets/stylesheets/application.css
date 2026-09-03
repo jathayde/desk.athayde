@@ -95,6 +95,13 @@ form input[type="submit"].danger { background: var(--danger); }
 .choice .button, .choice form { margin: 0; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 1rem 0; }
 .choice { display: flex; gap: 1rem; margin: 0.75rem 0; flex-wrap: wrap; }
+.candles { margin: 0.5rem 0 1rem; }
+.candles svg { width: 100%; max-width: 640px; height: auto; display: block; font-size: 11px; }
+.candles .bar line { stroke: var(--ink); stroke-width: 1; }
+.candles .bar.up rect { fill: #2e8b57; } .candles .bar.down rect { fill: #c0392b; }
+.candles .mark { stroke-width: 1; } .candles .mark.stop { stroke: #c0392b; stroke-dasharray: 4 3; }
+.candles .mark.entry { stroke: var(--ink); stroke-dasharray: 1 3; } .candles .mark.collar { stroke: #888; stroke-dasharray: 2 4; }
+.candles .mark-label, .candles .axis { fill: var(--ink); } .candles .mark-label.collar { fill: #666; } .candles .mark-label.stop { fill: #c0392b; }
 .rule { margin: 1rem 0 1.5rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
 .account-form .fields { display: grid; gap: 0.5rem; grid-template-columns: 1fr 1fr; margin: 0.5rem 0 1rem; }
 .account-form .fields label { grid-column: span 2; margin: 0; }

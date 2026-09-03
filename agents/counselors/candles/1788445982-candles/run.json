@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-09-03T14:34:51.653Z",
+  "slug": "1788445982-candles",
+  "prompt": "file:prompt.md",
+  "promptSource": "file",
+  "readOnlyPolicy": "bestEffort",
+  "tools": [
+    {
+      "toolId": "codex-5.5-high",
+      "status": "success",
+      "exitCode": 0,
+      "durationMs": 109341,
+      "wordCount": 339,
+      "outputFile": "/Users/jathayde/Development/Personal/desk.athayde/agents/counselors/candles/1788445982-candles/codex-5.5-high.md",
+      "stderrFile": "/Users/jathayde/Development/Personal/desk.athayde/agents/counselors/candles/1788445982-candles/codex-5.5-high.stderr"
+    }
+  ]
+}

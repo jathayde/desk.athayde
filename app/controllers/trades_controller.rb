@@ -15,6 +15,7 @@ class TradesController < ApplicationController
   def show
     @trade = Trade.find(params[:id])
     @position = @trade.open? ? @trade.account.positions.find_by(instrument: @trade.instrument) : nil
+    @chart = PriceChart.for(@trade.instrument, stop: @position&.stop_price || @trade.current_planned_stop, entry: @trade.avg_entry)
   end
 
   # The 30-second post-mortem: one line plus followed or improvised.

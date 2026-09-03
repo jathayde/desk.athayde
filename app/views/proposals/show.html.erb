@@ -4,6 +4,7 @@
 <p class="callout"><%= proposal.kind.humanize %> · <%= proposal.origin %><% if proposal.setup %> · <%= proposal.setup.name %><% end %><% if proposal.stop_price %> · stop <%= money(proposal.stop_price) %><% end %><% if proposal.shadow? %> · shadow<% end %></p>
 <% if proposal.thesis.present? %><p class="thesis"><%= proposal.thesis %></p><% end %>
 
+<%= render "shared/candles", chart: @chart %>
 <%= render "proposals/evaluation", proposal: proposal, results: proposal.guardrail_results, sizing: proposal.sizing, collar: proposal.collar %>
 <% if proposal.kind_exit? %>
   <h2 class="sec">Lots this sale takes, <%= proposal.tax_lot_method %> <small class="muted">(as the journal knows them, split-adjusted and net of earlier sales, frozen when proposed; Schwab's method names are unverified)</small></h2>

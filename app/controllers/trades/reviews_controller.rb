@@ -22,6 +22,9 @@ class Trades::ReviewsController < ApplicationController
       @queue = Trade.review_queue.excluding(@trade)
       @setups = Setup.active.order(:name)
       @position = @trade.account.positions.find_by(instrument: @trade.instrument)
+      @collar_from = @position&.last_price || @trade.avg_entry
+      @collar = StopCollar.today(@trade.instrument, from: @collar_from, setup: @trade.setup)
+      @chart = PriceChart.for(@trade.instrument, stop: @position&.stop_price || @trade.planned_stop, entry: @trade.avg_entry, collar: @collar)
     end
     def chosen_setup = Setup.find_by(id: params[:setup_id]) || Setup.named(params[:new_setup])
     # Garbage is nil, never zero: a zero stop would manufacture a fake R.

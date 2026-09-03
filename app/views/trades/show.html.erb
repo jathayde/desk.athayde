@@ -11,6 +11,7 @@
   <div class="kv"><dt>Initial risk</dt><dd><%= money(@trade.initial_risk) %></dd></div>
 </dl>
 <% if @trade.thesis.present? %><p class="thesis"><%= @trade.thesis %></p><% end %>
+<%= render "shared/candles", chart: @chart %>
 
 <section>
   <h2 class="sec">Legs</h2>

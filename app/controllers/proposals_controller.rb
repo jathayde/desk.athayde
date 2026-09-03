@@ -10,6 +10,8 @@ class ProposalsController < ApplicationController
   def show
     @proposal = OrderProposal.find(params[:id])
     @position = @proposal.account.positions.find_by(instrument: @proposal.instrument)
+    collar = @proposal.collar.present? ? StopCollar::Collar.load(@proposal.collar) : nil
+    @chart = PriceChart.for(@proposal.instrument, stop: @proposal.stop_price || @position&.stop_price, entry: @proposal.limit_price, collar: collar)
   end
 
   def new

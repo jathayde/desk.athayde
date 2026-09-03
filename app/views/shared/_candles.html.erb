@@ -1,0 +1,24 @@
+<%# locals: (chart:) %>
+<section class="candles">
+  <% if chart.drawable? %>
+    <svg viewBox="0 0 <%= chart.width %> <%= chart.height %>" role="img" aria-label="<%= chart.symbol %> daily candles, <%= chart.first_date.strftime('%b %-d') %> to <%= chart.last_date.strftime('%b %-d') %>">
+      <% chart.lines.each do |line| %>
+        <line class="mark <%= line.kind %>" x1="0" x2="<%= chart.plot_right %>" y1="<%= line.y %>" y2="<%= line.y %>" />
+        <text class="mark-label <%= line.kind %>" x="<%= chart.plot_right + 4 %>" y="<%= line.y + 4 %>"><%= line.label %> <%= money(line.price) %><%= line.pinned ? (line.price < chart.low ? " ↓" : " ↑") : "" %></text>
+      <% end %>
+      <% chart.bars.each do |bar| %>
+        <g class="bar <%= bar.up? ? "up" : "down" %>">
+          <line x1="<%= bar.x %>" x2="<%= bar.x %>" y1="<%= bar.y_high %>" y2="<%= bar.y_low %>" />
+          <rect x="<%= bar.x - chart.bar_width / 2 %>" y="<%= [ bar.y_open, bar.y_close ].min %>" width="<%= chart.bar_width %>" height="<%= [ (bar.y_open - bar.y_close).abs, 1 ].max %>" />
+        </g>
+      <% end %>
+      <% if chart.high_label? %><text class="axis" x="<%= chart.plot_right + 4 %>" y="<%= chart.plot_top + 4 %>"><%= money(chart.high) %></text><% end %>
+      <% if chart.low_label? %><text class="axis" x="<%= chart.plot_right + 4 %>" y="<%= chart.plot_bottom %>"><%= money(chart.low) %></text><% end %>
+      <text class="axis" x="0" y="<%= chart.height - 6 %>"><%= chart.first_date.strftime("%b %-d") %></text>
+      <text class="axis" x="<%= chart.plot_right %>" y="<%= chart.height - 6 %>" text-anchor="end"><%= chart.last_date.strftime("%b %-d") %> · close <%= money(chart.last_close) %></text>
+    </svg>
+    <% if chart.stale %><p class="muted">Schwab is unavailable; these bars were fetched <%= as_of(chart.as_of) %>.</p><% end %>
+  <% else %>
+    <p class="muted">No chart: <%= chart.reason %>.</p>
+  <% end %>
+</section>

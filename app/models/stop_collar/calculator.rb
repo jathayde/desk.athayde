@@ -38,5 +38,5 @@ class StopCollar::Calculator
 
   private
     def param(name) = BigDecimal(@params.fetch(name.to_s).to_s)
-    def refuse(reason) = StopCollar::Collar.new(methods: {}, tight: nil, wide: nil, floor: nil, floor_dominates: false, quality: :refused, refusal: reason)
+    def refuse(reason) = StopCollar::Collar.refuse(reason)
 end

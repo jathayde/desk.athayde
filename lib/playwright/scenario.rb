@@ -161,6 +161,7 @@ module Playwright::Scenario
     def account! = Account.create!(schwab_hash: ACCOUNT_HASH, account_type: :taxable, trading_enabled: true, nickname: "Taxable")
 
     def populate(account, synced_at: Time.current)
+      %w[ XYZ DEF LBAS SLV ].each { |symbol| Schwab::FakeClient.instance.script_daily_history(symbol: symbol, close: 50) }
       account.balances.create!(as_of: synced_at, equity: 10_240, settled_cash: 2_110, unsettled_cash: 980, cash_available_for_trading: 3_090)
       account.snapshots.create!(as_of: MarketDay.today.prev_weekday, equity: 10_180, index_value: 1, high_water_index: 1)
       { "XYZ" => [ 40, 51.18, 53.0, 48.9 ], "DEF" => [ 15, 88.02, 86.57, 85.6 ] }.each do |symbol, (qty, avg, last, stop)|
