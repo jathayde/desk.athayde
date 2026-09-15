@@ -63,7 +63,8 @@ RSpec.describe Schwab::TokenHealthJob do
     expect(mail).to be_empty
   end
 
-  it "addresses every user with a re-auth link and never a token value" do
+  it "addresses only notified users with a re-auth link and never a token value" do
+    create(:user, email_address: "whitney@athayde.com", notify: false)
     token = create(:schwab_token, :revoked)
     run("2026-09-09 08:00 EDT")
     expect(mail.last.to).to eq([ "john@athayde.com" ])
