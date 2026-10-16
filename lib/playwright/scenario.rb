@@ -5,7 +5,8 @@ module Playwright::Scenario
 
   ACCOUNT_HASH = Schwab::FakeClient::ACCOUNT_HASH
   SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade
-                  proposal proposal_warn proposal_blocked proposal_override submission_unknown rule_halted rebalance rebalance_skipped ].freeze
+                  proposal proposal_warn proposal_blocked proposal_override submission_unknown rule_halted rebalance rebalance_skipped
+                  allocation_desk thesis_review deposit_ask ].freeze
 
   # Guarded here as well as at the route: reset! empties the database.
   def load!(name)
@@ -104,6 +105,33 @@ module Playwright::Scenario
   def rebalance_skipped
     overweight_xyz(action: "existing_proposal")
     Proposals::Create.call(account: Account.first, kind: :exit, side: :sell, symbol: "XYZ", limit_price: BigDecimal("54"), quantity: 5, thesis: "Trimming into strength.", origin: :human, user: User.first)
+  end
+
+  # A healthy desk with the book rules and an ask-each-time policy, no targets yet: the targets screen from empty.
+  def allocation_desk
+    proposal_desk
+  end
+
+  # TQQQ, tagged amplified and held, drifted past its target: a thesis review with the journal's thesis.
+  def thesis_review
+    proposal_desk
+    account = Account.first
+    tqqq = Instrument.create!(symbol: "TQQQ", cusip: "74347X831", asset_type: "EQUITY")
+    tqqq.classify!(asset_class: nil, tags: %w[ amplified ], user: User.first)
+    account.positions.create!(instrument: tqqq, quantity: 30, average_price: 60, cost_basis: 1800, market_value: 2100, last_price: 70, synced_at: Time.current)
+    account.trades.create!(instrument: tqqq, status: :open, thesis: "Levered Nasdaq into the cutting cycle.")
+    target = Allocation::Target.add!(symbol: "TQQQ", target_percent: "10", user: User.first)
+    drift = target.drifts.create!(as_of: MarketDay.today.prev_weekday, weight: BigDecimal("0.205"), target_weight: BigDecimal("0.1"), band: BigDecimal("0.05"), close: 70,
+                                  drift: BigDecimal("0.105"), notional: BigDecimal("-1075.2"), quantity: 15, action: "thesis_review")
+    drift.update!(thesis_review: ThesisReview.raise_for!(account: account, drift: drift))
+  end
+
+  # A deposit under the ask-each-time policy, waiting for the operator's answer.
+  def deposit_ask
+    proposal_desk
+    Allocation::Target.add!(symbol: "XYZ", target_percent: "30", user: User.first)
+    activity = Account.first.activities.create!(broker_activity_id: "deposit-1", kind: :deposit, status: Schwab::Activity::VALID, net_amount: 2500, trade_date: MarketDay.today, executed_at: Time.current)
+    CashInflow.create_from!(Account.first, activity, DeploymentPolicy.current)
   end
 
   # An approve that got no answer from Schwab, still being looked for: through the state machine, never by hand.

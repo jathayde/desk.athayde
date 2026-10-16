@@ -381,6 +381,7 @@ CREATE TABLE public.cash_inflows (
     detail jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT cash_inflows_amount_positive CHECK ((amount > (0)::numeric)),
     CONSTRAINT cash_inflows_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'proposed'::character varying, 'staged'::character varying, 'asked'::character varying, 'held'::character varying, 'done'::character varying])::text[])))
 );
 
@@ -455,7 +456,7 @@ CREATE TABLE public.deployment_policies (
     note text,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY (ARRAY[('immediate'::character varying)::text, ('staged'::character varying)::text, ('ask'::character varying)::text]))),
+    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY ((ARRAY['immediate'::character varying, 'staged'::character varying, 'ask'::character varying])::text[]))),
     CONSTRAINT deployment_policies_staged_has_weeks CHECK ((((mode)::text <> 'staged'::text) OR (weeks > 0)))
 );
 
@@ -486,12 +487,14 @@ ALTER SEQUENCE public.deployment_policies_id_seq OWNED BY public.deployment_poli
 CREATE TABLE public.deployment_tranches (
     id bigint NOT NULL,
     cash_inflow_id bigint NOT NULL,
+    week integer NOT NULL,
     due_on date NOT NULL,
     amount numeric(18,4) NOT NULL,
     status character varying DEFAULT 'scheduled'::character varying NOT NULL,
     detail jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT deployment_tranches_amount_positive CHECK ((amount > (0)::numeric)),
     CONSTRAINT deployment_tranches_status CHECK (((status)::text = ANY ((ARRAY['scheduled'::character varying, 'proposed'::character varying, 'rolled'::character varying, 'done'::character varying])::text[])))
 );
 
@@ -594,7 +597,7 @@ CREATE TABLE public.instrument_tags (
     tag character varying NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY (ARRAY[('leveraged'::character varying)::text, ('amplified'::character varying)::text, ('diversifier'::character varying)::text])))
+    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY ((ARRAY['leveraged'::character varying, 'amplified'::character varying, 'diversifier'::character varying])::text[])))
 );
 
 
@@ -2931,6 +2934,13 @@ CREATE UNIQUE INDEX index_deployment_policies_one_active ON public.deployment_po
 --
 
 CREATE INDEX index_deployment_tranches_on_cash_inflow_id ON public.deployment_tranches USING btree (cash_inflow_id);
+
+
+--
+-- Name: index_deployment_tranches_on_cash_inflow_id_and_week; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_deployment_tranches_on_cash_inflow_id_and_week ON public.deployment_tranches USING btree (cash_inflow_id, week);
 
 
 --
