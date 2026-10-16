@@ -1,0 +1,21 @@
+<section id="allocation">
+  <h2 class="sec">Allocation</h2>
+  <dl class="kv-list">
+    <div class="kv"><dt>Drift check</dt><dd><%= drift_check_summary(allocation.last_drift_check) %></dd></div>
+    <div class="kv"><dt>Correlations</dt><dd><%= correlation_check_summary(allocation.last_correlation_check) %></dd></div>
+    <div class="kv"><dt>Fund flow</dt><dd><%= fund_flow_summary(allocation.fund_flow) %></dd></div>
+  </dl>
+  <% if Current.user&.approver? %>
+    <%= form_with url: fund_flows_path, method: :post, class: "account-form" do |f| %>
+      <div class="fields">
+        <%= f.label :as_of, "Week of" %>
+        <%= f.date_field :as_of, value: MarketDay.today.beginning_of_week, required: true %>
+        <%= f.label :amount, "Net long-term fund flow, $ billions (negative for outflows)" %>
+        <%= f.text_field :amount, inputmode: "decimal", required: true %>
+        <%= f.label :source, "Source" %>
+        <%= f.text_field :source, placeholder: FundFlow::DEFAULT_SOURCE %>
+        <%= f.submit "Save fund flow" %>
+      </div>
+    <% end %>
+  <% end %>
+</section>

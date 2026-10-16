@@ -15,5 +15,6 @@
   <% @setups.each do |setup| %><li><%= setup.name %><%= " (inactive)" unless setup.active? %>: n=<%= setup.sample_size %>, win rate <%= setup.win_rate ? percent(setup.win_rate) : "n/a" %>, avg R <%= setup.avg_r ? number_with_precision(setup.avg_r, precision: 2) : "n/a" %>, expectancy <%= setup.expectancy ? number_with_precision(setup.expectancy, precision: 2) : "n/a" %></li><% end %>
   <% if @setups.empty? %><li>none defined yet</li><% end %>
 </ul>
-<p>The edge review itself (flagging negative-expectancy setups) arrives in Phase 2; the numbers above are the stored stats.</p>
+<p>The numbers above are the stored stats.</p>
+<%= render "brief_mailer/allocation", allocation: @allocation %>
 <p><%= link_to "System", system_url %></p>

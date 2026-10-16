@@ -61,11 +61,15 @@ class RiskRule < ApplicationRecord
 
   private
     # A book rule's every parameter is a positive number, and a band a percent: an unreadable one would stop the nightly check.
+    WHOLE_PARAMS = { "weeks" => 1..52, "window_days" => 3..200 }.freeze # a year of daily history holds about 250 closes
+
     def book_params_positive
       params.to_h.slice(*REQUIRED_PARAMS[rule_type]).each do |key, value|
         number = BigDecimal(value.to_s, exception: false)
         errors.add(:params, "#{key} must be a positive number") unless number&.positive?
         errors.add(:params, "#{key} cannot exceed 100") if rule_type == "rebalance_band" && number && number > 100
+        range = WHOLE_PARAMS[key] or next
+        errors.add(:params, "#{key} must be a whole number from #{range.first} to #{range.last}") unless number && number.frac.zero? && range.cover?(number.to_i)
       end
     end
 

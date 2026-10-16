@@ -22,6 +22,8 @@ RSpec.describe "config/recurring.yml" do
     expect(Fugit::Cron.parse(tasks.dig("agent_sunday_review", "schedule")).weekdays.flatten).to eq([ 0 ])
     expect(Fugit::Cron.parse(tasks.dig("failure_digest", "schedule")).hours).to eq([ 17 ])
     expect(Fugit::Cron.parse(tasks.dig("stop_collar_trails", "schedule"))).to have_attributes(hours: [ 16 ], minutes: [ 10 ]) # before the 16:30 end-of-day
+    diagnostics = Fugit::Cron.parse(tasks.dig("allocation_diagnostics", "schedule"))
+    expect([ diagnostics.hours, diagnostics.minutes, diagnostics.weekdays.flatten ]).to eq([ [ 8 ], [ 0 ], [ 6 ] ]) # Saturday, before Sunday's review
     drift = Fugit::Cron.parse(tasks.dig("allocation_drift", "schedule"))
     expect([ drift.hours, drift.minutes, drift.weekdays.flatten ]).to eq([ [ 17 ], [ 10 ], [ 1, 2, 3, 4, 5 ] ]) # past the first off-hours positions sync after the close
   end

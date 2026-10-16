@@ -35,6 +35,8 @@
     <dd><% if status.memory_repo.present? %><%= pluralize(status.memory_repo.paths.size, "file") %>, changed <%= as_of(status.memory_repo.last_modified_at) %><% else %>missing<% end %><% if status.memory_run %> · pull <%= status.memory_run.status %> <%= as_of(status.memory_run.finished_at || status.memory_run.started_at) %><% if status.memory_run.error %> <small><%= status.memory_run.error.truncate(80) %></small><% end %><% end %></dd></div>
 </dl>
 
+<%= render "system/allocation", allocation: @allocation %>
+
 <dl class="kv-list">
   <h2 class="sec">Briefs</h2>
   <% status.agent_runs.each do |run| %>

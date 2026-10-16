@@ -329,6 +329,44 @@ ALTER SEQUENCE public.balances_id_seq OWNED BY public.balances.id;
 
 
 --
+-- Name: cash_drag_diagnostics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cash_drag_diagnostics (
+    id bigint NOT NULL,
+    as_of date NOT NULL,
+    deployment_policy_id bigint,
+    cash_percent numeric(9,6),
+    intended_cash_percent numeric(9,6),
+    weeks_in_cash integer DEFAULT 0 NOT NULL,
+    threshold_weeks integer NOT NULL,
+    flagged boolean DEFAULT false NOT NULL,
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: cash_drag_diagnostics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.cash_drag_diagnostics_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: cash_drag_diagnostics_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.cash_drag_diagnostics_id_seq OWNED BY public.cash_drag_diagnostics.id;
+
+
+--
 -- Name: cash_inflows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -343,7 +381,6 @@ CREATE TABLE public.cash_inflows (
     detail jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT cash_inflows_amount_positive CHECK ((amount > (0)::numeric)),
     CONSTRAINT cash_inflows_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'proposed'::character varying, 'staged'::character varying, 'asked'::character varying, 'held'::character varying, 'done'::character varying])::text[])))
 );
 
@@ -368,6 +405,42 @@ ALTER SEQUENCE public.cash_inflows_id_seq OWNED BY public.cash_inflows.id;
 
 
 --
+-- Name: correlations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.correlations (
+    id bigint NOT NULL,
+    instrument_id bigint NOT NULL,
+    as_of date NOT NULL,
+    window_days integer NOT NULL,
+    value numeric(7,6) NOT NULL,
+    last_close_on date NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT correlations_value_range CHECK (((value >= ('-1'::integer)::numeric) AND (value <= (1)::numeric)))
+);
+
+
+--
+-- Name: correlations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.correlations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: correlations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.correlations_id_seq OWNED BY public.correlations.id;
+
+
+--
 -- Name: deployment_policies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -382,7 +455,7 @@ CREATE TABLE public.deployment_policies (
     note text,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY ((ARRAY['immediate'::character varying, 'staged'::character varying, 'ask'::character varying])::text[]))),
+    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY (ARRAY[('immediate'::character varying)::text, ('staged'::character varying)::text, ('ask'::character varying)::text]))),
     CONSTRAINT deployment_policies_staged_has_weeks CHECK ((((mode)::text <> 'staged'::text) OR (weeks > 0)))
 );
 
@@ -413,14 +486,12 @@ ALTER SEQUENCE public.deployment_policies_id_seq OWNED BY public.deployment_poli
 CREATE TABLE public.deployment_tranches (
     id bigint NOT NULL,
     cash_inflow_id bigint NOT NULL,
-    week integer NOT NULL,
     due_on date NOT NULL,
     amount numeric(18,4) NOT NULL,
     status character varying DEFAULT 'scheduled'::character varying NOT NULL,
     detail jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT deployment_tranches_amount_positive CHECK ((amount > (0)::numeric)),
     CONSTRAINT deployment_tranches_status CHECK (((status)::text = ANY ((ARRAY['scheduled'::character varying, 'proposed'::character varying, 'rolled'::character varying, 'done'::character varying])::text[])))
 );
 
@@ -480,6 +551,40 @@ ALTER SEQUENCE public.devices_id_seq OWNED BY public.devices.id;
 
 
 --
+-- Name: fund_flows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fund_flows (
+    id bigint NOT NULL,
+    as_of date NOT NULL,
+    amount numeric(18,2) NOT NULL,
+    source character varying NOT NULL,
+    fetched_at timestamp with time zone NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: fund_flows_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fund_flows_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fund_flows_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fund_flows_id_seq OWNED BY public.fund_flows.id;
+
+
+--
 -- Name: instrument_tags; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -489,7 +594,7 @@ CREATE TABLE public.instrument_tags (
     tag character varying NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY ((ARRAY['leveraged'::character varying, 'amplified'::character varying, 'diversifier'::character varying])::text[])))
+    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY (ARRAY[('leveraged'::character varying)::text, ('amplified'::character varying)::text, ('diversifier'::character varying)::text])))
 );
 
 
@@ -1889,10 +1994,24 @@ ALTER TABLE ONLY public.balances ALTER COLUMN id SET DEFAULT nextval('public.bal
 
 
 --
+-- Name: cash_drag_diagnostics id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_drag_diagnostics ALTER COLUMN id SET DEFAULT nextval('public.cash_drag_diagnostics_id_seq'::regclass);
+
+
+--
 -- Name: cash_inflows id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cash_inflows ALTER COLUMN id SET DEFAULT nextval('public.cash_inflows_id_seq'::regclass);
+
+
+--
+-- Name: correlations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correlations ALTER COLUMN id SET DEFAULT nextval('public.correlations_id_seq'::regclass);
 
 
 --
@@ -1914,6 +2033,13 @@ ALTER TABLE ONLY public.deployment_tranches ALTER COLUMN id SET DEFAULT nextval(
 --
 
 ALTER TABLE ONLY public.devices ALTER COLUMN id SET DEFAULT nextval('public.devices_id_seq'::regclass);
+
+
+--
+-- Name: fund_flows id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fund_flows ALTER COLUMN id SET DEFAULT nextval('public.fund_flows_id_seq'::regclass);
 
 
 --
@@ -2226,11 +2352,27 @@ ALTER TABLE ONLY public.balances
 
 
 --
+-- Name: cash_drag_diagnostics cash_drag_diagnostics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_drag_diagnostics
+    ADD CONSTRAINT cash_drag_diagnostics_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cash_inflows cash_inflows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cash_inflows
     ADD CONSTRAINT cash_inflows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: correlations correlations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correlations
+    ADD CONSTRAINT correlations_pkey PRIMARY KEY (id);
 
 
 --
@@ -2255,6 +2397,14 @@ ALTER TABLE ONLY public.deployment_tranches
 
 ALTER TABLE ONLY public.devices
     ADD CONSTRAINT devices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fund_flows fund_flows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fund_flows
+    ADD CONSTRAINT fund_flows_pkey PRIMARY KEY (id);
 
 
 --
@@ -2707,6 +2857,20 @@ CREATE INDEX index_balances_on_account_id_and_as_of ON public.balances USING btr
 
 
 --
+-- Name: index_cash_drag_diagnostics_on_as_of; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cash_drag_diagnostics_on_as_of ON public.cash_drag_diagnostics USING btree (as_of);
+
+
+--
+-- Name: index_cash_drag_diagnostics_on_deployment_policy_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cash_drag_diagnostics_on_deployment_policy_id ON public.cash_drag_diagnostics USING btree (deployment_policy_id);
+
+
+--
 -- Name: index_cash_inflows_on_account_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2725,6 +2889,20 @@ CREATE UNIQUE INDEX index_cash_inflows_on_activity_id ON public.cash_inflows USI
 --
 
 CREATE INDEX index_cash_inflows_on_deployment_policy_id ON public.cash_inflows USING btree (deployment_policy_id);
+
+
+--
+-- Name: index_correlations_on_as_of; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_correlations_on_as_of ON public.correlations USING btree (as_of);
+
+
+--
+-- Name: index_correlations_on_instrument_id_and_as_of_and_window_days; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_correlations_on_instrument_id_and_as_of_and_window_days ON public.correlations USING btree (instrument_id, as_of, window_days);
 
 
 --
@@ -2756,13 +2934,6 @@ CREATE INDEX index_deployment_tranches_on_cash_inflow_id ON public.deployment_tr
 
 
 --
--- Name: index_deployment_tranches_on_cash_inflow_id_and_week; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_deployment_tranches_on_cash_inflow_id_and_week ON public.deployment_tranches USING btree (cash_inflow_id, week);
-
-
---
 -- Name: index_devices_on_token; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2774,6 +2945,13 @@ CREATE UNIQUE INDEX index_devices_on_token ON public.devices USING btree (token)
 --
 
 CREATE INDEX index_devices_on_user_id ON public.devices USING btree (user_id);
+
+
+--
+-- Name: index_fund_flows_on_as_of; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_fund_flows_on_as_of ON public.fund_flows USING btree (as_of);
 
 
 --
@@ -3631,6 +3809,14 @@ ALTER TABLE ONLY public.risk_rules
 
 
 --
+-- Name: cash_drag_diagnostics fk_rails_4b282cfe34; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_drag_diagnostics
+    ADD CONSTRAINT fk_rails_4b282cfe34 FOREIGN KEY (deployment_policy_id) REFERENCES public.deployment_policies(id);
+
+
+--
 -- Name: snapshots fk_rails_4c1abcd194; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3748,6 +3934,14 @@ ALTER TABLE ONLY public.orders
 
 ALTER TABLE ONLY public.instrument_tags
     ADD CONSTRAINT fk_rails_83ef093a24 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+
+
+--
+-- Name: correlations fk_rails_858525cc68; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correlations
+    ADD CONSTRAINT fk_rails_858525cc68 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
 
 
 --
@@ -4021,6 +4215,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261016140001'),
 ('20261016130001'),
 ('20261016120001'),
 ('20261016110001'),

@@ -20,6 +20,8 @@ Setups:
 <% if @setups.empty? -%>
   none defined yet
 <% end -%>
-The edge review itself (flagging negative-expectancy setups) arrives in Phase 2; the numbers above are the stored stats.
+The numbers above are the stored stats.
+
+<%= render "brief_mailer/allocation", allocation: @allocation %>
 
 System: <%= system_url %>

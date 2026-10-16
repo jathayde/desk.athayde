@@ -89,7 +89,7 @@ RSpec.describe BriefMailer do
     create(:setup, name: "Breakout", sample_size: 3, win_rate: 0.67)
     mail = described_class.sunday_review(AgentRun.create!(kind: :sunday_review, status: :succeeded, started_at: Time.current, finished_at: Time.current))
     expect(mail.subject).to eq("Athayde Desk: Sunday review, re-authenticate Schwab")
-    expect(mail.text_part.body.to_s).to include("/schwab/authorize", "Token: healthy", "Breakout: n=3, win rate 67.0%", "arrives in Phase 2")
+    expect(mail.text_part.body.to_s).to include("/schwab/authorize", "Token: healthy", "Breakout: n=3, win rate 67.0%", "Allocation:", "Cash drag: not checked yet.", "Fund flow: none entered")
   end
 
   it "sends the failure digest grouped by feed, kind, and job class" do

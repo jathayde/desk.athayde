@@ -29,6 +29,9 @@ shared: &shared
   allocation_drift:
     class: Allocation::DriftJob
     schedule: "10 17 * * 1-5 America/New_York" # after the first off-hours positions and balance sync past the close
+  allocation_diagnostics:
+    class: Allocation::DiagnosticsJob
+    schedule: "0 8 * * 6 America/New_York" # Saturday, read by Sunday's review
   memory_check_repo:
     class: Memory::CheckRepoJob
     schedule: "*/30 * * * * America/New_York"

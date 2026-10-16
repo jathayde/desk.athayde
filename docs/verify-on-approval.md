@@ -91,3 +91,5 @@ Added by the Phase 2.5 plan (docs/phase-2.5-plan.md §6):
 61. SPY daily price history availability and the candles rate limit at the weekly volume of the correlation job.
 62. A stable source for ICI weekly long-term fund flows; until then the number is entered by hand.
 63. The Hotwire Native bridge contract for a signed approve confirmation (Phase 2 §10); until then the shell submits the web's typed confirmation.
+
+Phase 2.5 step 5: whether `pricehistory` daily candles are split- and dividend-adjusted. Correlations skip any series with a one-day move past 35% as a possible split; confirm against a symbol that split in the past year.

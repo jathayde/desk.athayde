@@ -36,6 +36,9 @@ RSpec.describe RiskRule do
     expect(described_class.new(rule_type: "rebalance_band", params: { "percent" => "five" })).not_to be_valid # an unreadable band would stop the nightly check
     expect(described_class.new(rule_type: "rebalance_band", params: { "percent" => "-5" })).not_to be_valid
     expect(described_class.new(rule_type: "rebalance_band", params: { "percent" => "101" })).not_to be_valid
+    expect(described_class.new(rule_type: "cash_drag_weeks", params: { "weeks" => "3.0" })).to be_valid
+    expect(described_class.new(rule_type: "cash_drag_weeks", params: { "weeks" => "2.5" })).not_to be_valid
+    expect(described_class.new(rule_type: "correlation_threshold", params: { "value" => "0.6", "window_days" => "300" })).not_to be_valid
     expect(described_class.create!(rule_type: "cash_drag_weeks", params: { "weeks" => "3" })).not_to be_previewable
     expect { described_class.create!(rule_type: "rebalance_band", params: { "percent" => "4" }) }.to raise_error(ActiveRecord::RecordNotUnique)
     expect(Guardrails::Evaluator.new(build(:order_proposal)).call.results.map(&:rule_type)).not_to include(*described_class::BOOK_TYPES)

@@ -5,6 +5,7 @@ class SystemController < ApplicationController
 
   def show
     @status = SystemStatus.new
+    @allocation = Allocation::Digest.new
   end
 
   # Halt: a reason is required. Resume: the operator types the word.

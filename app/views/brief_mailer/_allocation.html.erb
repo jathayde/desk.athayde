@@ -1,0 +1,10 @@
+<p><b>Allocation</b></p>
+<ul>
+  <% allocation.drifts.each do |drift| %><li><%= drift.target.label %>: <%= drift_summary(drift) %></li><% end %>
+  <% if allocation.drifts.empty? %><li>no targets measured</li><% end %>
+</ul>
+<p>Cash drag: <%= cash_drag_summary(allocation.cash_drag, current: allocation.cash_drag_current?) %><% if allocation.cash_drag_current? && allocation.cash_drag.flagged %>: <b>flagged</b>, <%= cash_drag_flag(allocation.cash_drag) %><% end %>.</p>
+<% if allocation.flagged.any? %><p><b>Diversifiers moving with SPY</b> (above <%= allocation.threshold %>): <%= correlation_list(allocation.flagged).to_sentence %>. The diversification assumption is failing for these right now.</p><% end %>
+<% if allocation.correlations.any? %><p>Correlation with SPY, <%= correlation_heading(allocation.correlations, current: allocation.correlations_current?) %>: <%= correlation_list(allocation.correlations).join(", ") %></p><% end %>
+<% if allocation.unmeasured.any? %><p>Not measured: <%= unmeasured_list(allocation.unmeasured) %></p><% end %>
+<p>Fund flow: <%= fund_flow_summary(allocation.fund_flow) %></p>

@@ -12,6 +12,7 @@ Rails.application.routes.draw do
     get :preview, on: :member
   end
   resource :deployment_policy, only: :update
+  resources :fund_flows, only: :create
   resources :allocation_targets, path: "allocation", only: %i[ index create update ] do
     resource :retirement, only: :create, module: :allocation_targets
     resource :rejection_clearance, only: :create, module: :allocation_targets
