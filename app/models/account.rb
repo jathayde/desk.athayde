@@ -7,6 +7,7 @@ class Account < ApplicationRecord
   has_many :trades, dependent: :restrict_with_exception
   has_many :snapshots, dependent: :restrict_with_exception
   has_many :order_proposals, dependent: :restrict_with_exception
+  has_many :thesis_reviews, dependent: :restrict_with_exception
 
   enum :account_type, { taxable: "taxable", ira: "ira" }
 

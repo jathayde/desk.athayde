@@ -32,7 +32,7 @@ module Allocation
       # run's end: the row is still written, as reported with the error, and the error is reported.
       def record(line, as_of, planner)
         drift = line.target.drifts.find_or_initialize_by(as_of: as_of)
-        return if drift.order_proposal_id || (drift.persisted? && !drift.action_unavailable? && line.action == "unavailable")
+        return if drift.order_proposal_id || drift.thesis_review&.decision.present? || (drift.persisted? && !drift.action_unavailable? && line.action == "unavailable")
         verdict = Allocation::Drift.transaction(requires_new: true) do
           drift.update!(line.to_h.except(:target).merge(target_weight: line.target.target_weight))
           planner.plan(line, drift)
@@ -40,7 +40,7 @@ module Allocation
       rescue StandardError => e
         Rails.error.report(e, handled: true, context: { job: self.class.name, target: line.target.id })
         drift = line.target.drifts.find_or_initialize_by(as_of: as_of) # the savepoint took a new row with it
-        verdict = Allocation::Planner::Verdict.new(action: "reported", detail: { "error" => e.message.truncate(200) }, proposal: nil)
+        verdict = Allocation::Planner::Verdict.new(action: "reported", detail: { "error" => e.message.truncate(200) }, proposal: nil, thesis_review: nil)
         write(drift, line, verdict)
       else
         write(drift, line, verdict)
@@ -49,10 +49,11 @@ module Allocation
       def write(drift, line, verdict)
         Allocation::Drift.transaction(requires_new: true) do
           drift.update!(line.to_h.except(:target, :action, :detail).merge(target_weight: line.target.target_weight, action: verdict.action,
-                                                                           detail: line.detail.merge(verdict.detail), order_proposal: verdict.proposal))
+                                                                           detail: line.detail.merge(verdict.detail), order_proposal: verdict.proposal,
+                                                                           thesis_review: verdict.thesis_review))
           AuditEvent.log("allocation_drift_recorded", actor: :system, subject: drift,
                          data: { target: line.target.label, action: drift.action, drift: drift.drift&.to_s, band: drift.band&.to_s, notional: drift.notional&.to_s,
-                                 proposal: verdict.proposal&.id }.compact)
+                                 proposal: verdict.proposal&.id, thesis_review: verdict.thesis_review&.id }.compact)
         end
         drift
       end

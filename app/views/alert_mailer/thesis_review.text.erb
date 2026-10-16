@@ -1,0 +1,6 @@
+<% if @review.weight -%>
+<%= @review.instrument.symbol %> is <%= percent(@review.weight) %> of equity against a <%= percent(@review.target_weight) %> target. <% end -%>It is tagged leveraged or amplified, so the desk does not rebalance it mechanically: deploy, hold, or exit is your call.
+
+Thesis: <%= @review.thesis.presence || "none on file" %>
+
+Review: <%= thesis_review_url(@review) %>

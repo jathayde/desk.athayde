@@ -22,6 +22,9 @@ Rails.application.routes.draw do
       resource :rejection, only: :create
     end
   end
+  resources :thesis_reviews, only: :show do
+    resource :decision, only: :create, module: :thesis_reviews
+  end
   resources :watchlist_items, path: "watchlist", only: %i[ index create ] do
     resource :drop, only: :create, module: :watchlist_items
   end

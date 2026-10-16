@@ -134,7 +134,7 @@ RSpec.describe "Allocation" do
     get allocation_targets_path
     expect(response.body).to include("Ask again")
     post allocation_target_rejection_clearance_path(target)
-    expect(flash[:notice]).to eq("XYZ may be proposed again at the next check.")
+    expect(flash[:notice]).to eq("XYZ may be proposed or asked about again at the next check.")
     expect(target.reload.rejection_cleared_at).to be_present
     get allocation_targets_path
     expect(response.body).not_to include("Ask again")

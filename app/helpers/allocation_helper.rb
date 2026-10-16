@@ -13,7 +13,8 @@ module AllocationHelper
     when "unavailable" then "unavailable: #{Array(drift.detail["reasons"]).to_sentence}"
     when "proposed" then "#{rebalance_phrase(drift)} proposed"
     when "existing_proposal" then "outside band; a proposal on it is already waiting"
-    when "rejected_standing" then "outside band; your last rejection stands"
+    when "rejected_standing" then "outside band; your last #{drift.detail["held"] ? "hold" : "rejection"} stands"
+    when "thesis_review" then "outside band; a thesis review is waiting for you"
     else drift.action.humanize(capitalize: false)
     end
   end
@@ -28,7 +29,6 @@ module AllocationHelper
   private
     def reported_note(detail)
       return "; a class has no single instrument to order" if detail["class_target"]
-      return "; held for a thesis review" if detail["held_for"]
       return "; under one whole share" if detail["sub_share"]
       return "; not proposed: #{detail["reason"]}" if detail["reason"]
       return "; under the #{money(BigDecimal(detail["below_minimum"]))} minimum" if detail["below_minimum"]

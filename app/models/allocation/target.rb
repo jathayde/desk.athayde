@@ -43,13 +43,22 @@ class Allocation::Target < ApplicationRecord
   # going back inside the band or changing side, or by the operator clearing it; an unmeasured night lifts nothing.
   def rejection_standing?(side, before:)
     rejected = OrderProposal.rejected.kind_rebalance.where(allocation_source: drifts).order(:decided_at).last
-    return false if rejected.nil? || rejected.side != side
-    return false if rejection_cleared_at && rejection_cleared_at > rejected.decided_at
-    drifts.where(as_of: rejected.allocation_source.as_of...before).where.not(drift: nil).none? { |drift| drift.action_none? || drift.side != side }
+    rejected && rejected.side == side && standing_since?(rejected.decided_at, rejected.allocation_source.as_of, side, before: before)
   end
 
-  # Whether the targets screen offers "Ask again": a rejection stands on either side as of today's check.
-  def rejection_standing_now? = %w[ buy sell ].any? { |side| rejection_standing?(side, before: MarketDay.today + 1) }
+  # The same for a drift review on this target the operator answered with hold; the review, when it stands.
+  def standing_hold(side, before:)
+    held = ThesisReview.reason_drift.decision_hold.where(id: drifts.select(:thesis_review_id)).order(:decided_at).last
+    held if held&.side == side && held.as_of && standing_since?(held.decided_at, held.as_of, side, before: before)
+  end
+
+  def hold_standing?(side, before:) = standing_hold(side, before: before).present?
+
+  # Whether the targets screen offers "Ask again": a rejection or a hold stands on either side as of today's check.
+  def rejection_standing_now?
+    tomorrow = MarketDay.today + 1
+    %w[ buy sell ].any? { |side| rejection_standing?(side, before: tomorrow) || hold_standing?(side, before: tomorrow) }
+  end
 
   def label = instrument ? instrument.symbol : asset_class
   def class_target? = asset_class.present?
@@ -60,6 +69,11 @@ class Allocation::Target < ApplicationRecord
   end
 
   private
+    def standing_since?(decided_at, as_of, side, before:)
+      return false if rejection_cleared_at && rejection_cleared_at > decided_at
+      drifts.where(as_of: as_of...before).where.not(drift: nil).none? { |drift| drift.action_none? || drift.side != side }
+    end
+
     # Under the set's lock, so the 100 percent check sees every other edit, and re-read under it, so the audit
     # row's before is current and a target retired in the meantime is refused rather than written to.
     def change!(user)

@@ -39,6 +39,7 @@ class Desk
   delegate :rule_halt_rule, :rule_halt_reason, :rule_halt_resets_at, to: :@settings
 
   def pending_proposal_count = @pending_proposal_count ||= account ? account.order_proposals.pending.count : 0
+  def open_review_count = @open_review_count ||= account ? account.thesis_reviews.open.count : 0
   def hand_placement_count = @hand_placement_count ||= account ? account.order_proposals.awaiting_hand_placement.count : 0
   def unresolved_submissions = @unresolved_submissions ||= account ? account.order_proposals.submission_unknown.includes(:instrument).order(:id).to_a : []
   def unprotected_rows = @unprotected_rows ||= ready? ? rows.select { |r| r.protection == :unprotected } : []

@@ -43,6 +43,7 @@ module ApplicationHelper
 
   def proposals_summary(desk)
     [ ("#{desk.pending_proposal_count} waiting" if desk.pending_proposal_count.positive?),
+      (pluralize(desk.open_review_count, "thesis review") if desk.open_review_count.positive?),
       ("#{desk.hand_placement_count} to place by hand" if desk.hand_placement_count.positive?) ].compact.to_sentence.presence || "none waiting"
   end
   def outcome_label(outcome) = OUTCOME_LABELS.fetch(outcome.to_s)

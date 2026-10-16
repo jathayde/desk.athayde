@@ -19,6 +19,11 @@ class AlertMailer < ApplicationMailer
     alert subject
   end
 
+  def thesis_review(review, subject:)
+    @review = review
+    alert subject
+  end
+
   def fill_or_cancel(proposal, subject:)
     @proposal = proposal
     alert subject

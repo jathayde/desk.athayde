@@ -36,8 +36,11 @@ class Instrument < ApplicationRecord
     self
   end
 
+  DISCRETIONARY_TAGS = %w[ leveraged amplified ].freeze # never rebalanced mechanically (docs/phase-2.5-plan.md §0.7)
+
   def tag_names = tags.map(&:tag).sort
   def tagged?(tag) = tag_names.include?(tag.to_s)
+  def discretionary? = (tag_names & DISCRETIONARY_TAGS).any?
 
   # The authored asset class and tags (docs/phase-2.5-plan.md §0.3), each change its own audit row; an unchanged
   # field writes nothing.

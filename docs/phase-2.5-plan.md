@@ -88,6 +88,15 @@ Auto-execution of any allocation action; options; FMP screening and fundamentals
 - A rebalance the rules block is written to its drift row as `reported` with the blocking rules named, the rejected proposal kept on the row. It is tried again the next night, since settled cash and the caps change; each attempt is one `rejected_by_rules` row and one alert.
 - Settled cash counts proposals at the broker, as in Phase 2 (§0.9), so two rebalance buys proposed the same night each pass on their own; approving the first makes the second's re-evaluation see it, so nothing is over-committed, but the second may then be refused at approval.
 
+**Step 3 decisions, recorded for the user:**
+- One open thesis review per instrument: a later night's drift on it refreshes the numbers on the review already waiting rather than opening another.
+- A hold stands like a rejected rebalance: not asked again while the drift stays outside the band on the same side, lifted by the drift coming back or changing side, or by "Ask again" on the targets screen.
+- Deploy and exit record the decision and open the manual proposal form prefilled with the symbol and the thesis; the proposal written there is the operator's and goes through every guardrail. Deploying is an entry with a stop, sized by the risk rule, not a stop-less rebalance.
+- A new review alerts by email and push, like an agent's proposal.
+- After deploy or exit, the planner steps aside while the proposal the operator wrote is waiting or unfilled; if the operator walks away from it (rejected, expired, never written) the next night's drift asks again. Only a hold stands without a proposal.
+- A review left open after the tag comes off is still answered before anything mechanical happens on that instrument, and a hold keeps standing whether or not the instrument is still tagged. Holds belong to the target whose drift raised them: a retired and re-added target starts fresh.
+- A decision posted from a page whose numbers the nightly refresh has since replaced is refused, so a hold always stands on what the operator saw.
+
 **Answered 2026-10-16, all as drafted:** rebalance buys are plain LIMIT orders with no bracket stop; rebalance notional counts toward the daily notional cap; one versioned `rebalance_band` rule, no per-target override; `allocation` origin, hand-entered fund flows, tags and authored asset class, and the drift job in shadow all accepted.
 
 The questions as asked:

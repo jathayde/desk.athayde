@@ -10,7 +10,14 @@
   </ul>
 <% end %>
 <h2 class="sec">Waiting for you</h2>
-<% if @queue.empty? %>
+<% if @reviews.any? %>
+  <ul class="trades">
+    <% @reviews.each do |review| %>
+      <li class="kv"><span><%= link_to "Thesis review: #{review.instrument.symbol}", thesis_review_path(review) %></span><b>deploy, hold, or exit</b></li>
+    <% end %>
+  </ul>
+<% end %>
+<% if @queue.empty? && @reviews.empty? %>
   <p class="empty">Nothing waiting on you.</p>
 <% else %>
   <ul class="trades">
@@ -22,9 +29,12 @@
     <% end %>
   </ul>
 <% end %>
-<% if @decided.any? %>
+<% if @decided.any? || @decided_reviews.any? %>
   <h2 class="sec">Decided</h2>
   <ul class="trades">
+    <% @decided_reviews.each do |review| %>
+      <li class="kv"><span><%= link_to "Thesis review: #{review.instrument.symbol}", thesis_review_path(review) %></span><b><%= review.decision %></b></li>
+    <% end %>
     <% @decided.each do |proposal| %>
       <li class="kv"><span><%= link_to proposal.label, proposal_path(proposal) %></span><b><%= proposal.status_label %></b></li>
     <% end %>

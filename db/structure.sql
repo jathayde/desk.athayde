@@ -181,7 +181,8 @@ CREATE TABLE public.allocation_drifts (
     detail jsonb DEFAULT '{}'::jsonb NOT NULL,
     order_proposal_id bigint,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    thesis_review_id bigint
 );
 
 
@@ -1508,6 +1509,49 @@ ALTER SEQUENCE public.system_settings_id_seq OWNED BY public.system_settings.id;
 
 
 --
+-- Name: thesis_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.thesis_reviews (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    instrument_id bigint NOT NULL,
+    reason character varying NOT NULL,
+    thesis text,
+    context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    decision character varying,
+    decision_reason text,
+    decided_at timestamp with time zone,
+    decided_by_id bigint,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT thesis_reviews_decided_together CHECK (((decision IS NULL) = (decided_at IS NULL))),
+    CONSTRAINT thesis_reviews_decision CHECK (((decision IS NULL) OR ((decision)::text = ANY ((ARRAY['deploy'::character varying, 'hold'::character varying, 'exit'::character varying])::text[])))),
+    CONSTRAINT thesis_reviews_hold_has_reason CHECK ((((decision)::text IS DISTINCT FROM 'hold'::text) OR (decision_reason IS NOT NULL))),
+    CONSTRAINT thesis_reviews_reason CHECK (((reason)::text = ANY ((ARRAY['drift'::character varying, 'deployment_ask'::character varying])::text[])))
+);
+
+
+--
+-- Name: thesis_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.thesis_reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: thesis_reviews_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.thesis_reviews_id_seq OWNED BY public.thesis_reviews.id;
+
+
+--
 -- Name: tool_calls; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1981,6 +2025,13 @@ ALTER TABLE ONLY public.system_settings ALTER COLUMN id SET DEFAULT nextval('pub
 
 
 --
+-- Name: thesis_reviews id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_reviews ALTER COLUMN id SET DEFAULT nextval('public.thesis_reviews_id_seq'::regclass);
+
+
+--
 -- Name: tool_calls id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2336,6 +2387,14 @@ ALTER TABLE ONLY public.system_settings
 
 
 --
+-- Name: thesis_reviews thesis_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_reviews
+    ADD CONSTRAINT thesis_reviews_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: tool_calls tool_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2471,6 +2530,13 @@ CREATE INDEX index_allocation_drifts_on_as_of ON public.allocation_drifts USING 
 --
 
 CREATE INDEX index_allocation_drifts_on_order_proposal_id ON public.allocation_drifts USING btree (order_proposal_id);
+
+
+--
+-- Name: index_allocation_drifts_on_thesis_review_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_allocation_drifts_on_thesis_review_id ON public.allocation_drifts USING btree (thesis_review_id);
 
 
 --
@@ -3146,6 +3212,34 @@ CREATE INDEX index_sync_runs_on_feed_and_started_at ON public.sync_runs USING bt
 
 
 --
+-- Name: index_thesis_reviews_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_thesis_reviews_on_account_id ON public.thesis_reviews USING btree (account_id);
+
+
+--
+-- Name: index_thesis_reviews_on_decided_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_thesis_reviews_on_decided_by_id ON public.thesis_reviews USING btree (decided_by_id);
+
+
+--
+-- Name: index_thesis_reviews_on_instrument_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_thesis_reviews_on_instrument_id ON public.thesis_reviews USING btree (instrument_id);
+
+
+--
+-- Name: index_thesis_reviews_one_open_per_instrument; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_thesis_reviews_one_open_per_instrument ON public.thesis_reviews USING btree (instrument_id) WHERE (decision IS NULL);
+
+
+--
 -- Name: index_tool_calls_on_agent_run_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3504,11 +3598,27 @@ ALTER TABLE ONLY public.solid_queue_claimed_executions
 
 
 --
+-- Name: thesis_reviews fk_rails_a66ebfb105; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_reviews
+    ADD CONSTRAINT fk_rails_a66ebfb105 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+
+
+--
 -- Name: activities fk_rails_a922258fa9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.activities
     ADD CONSTRAINT fk_rails_a922258fa9 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+
+
+--
+-- Name: allocation_drifts fk_rails_a9bf9d7bb1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocation_drifts
+    ADD CONSTRAINT fk_rails_a9bf9d7bb1 FOREIGN KEY (thesis_review_id) REFERENCES public.thesis_reviews(id);
 
 
 --
@@ -3549,6 +3659,14 @@ ALTER TABLE ONLY public.trade_legs
 
 ALTER TABLE ONLY public.risk_rules
     ADD CONSTRAINT fk_rails_b90282de46 FOREIGN KEY (setup_id) REFERENCES public.setups(id);
+
+
+--
+-- Name: thesis_reviews fk_rails_bb236dfe2a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_reviews
+    ADD CONSTRAINT fk_rails_bb236dfe2a FOREIGN KEY (decided_by_id) REFERENCES public.users(id);
 
 
 --
@@ -3632,6 +3750,14 @@ ALTER TABLE ONLY public.submission_attempts
 
 
 --
+-- Name: thesis_reviews fk_rails_e182473e94; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_reviews
+    ADD CONSTRAINT fk_rails_e182473e94 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
 -- Name: activities fk_rails_e53101708c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3702,6 +3828,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261016120001'),
 ('20261016110001'),
 ('20261016100001'),
 ('20260902200001'),

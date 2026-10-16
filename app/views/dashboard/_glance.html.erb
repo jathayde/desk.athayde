@@ -19,7 +19,7 @@
   <% if desk.review_count.positive? %>
     <div class="kv callout"><dt><%= pluralize(desk.review_count, "trade") %> <%= desk.review_count == 1 ? "needs" : "need" %> review</dt><dd><%= link_to "Review now", trades_path(filter: "needs_review") %></dd></div>
   <% end %>
-  <div class="kv <%= "callout" if (desk.pending_proposal_count + desk.hand_placement_count).positive? %>"><dt>Proposals</dt><dd><%= link_to proposals_summary(desk), proposals_path %></dd></div>
+  <div class="kv <%= "callout" if (desk.pending_proposal_count + desk.hand_placement_count + desk.open_review_count).positive? %>"><dt>Proposals</dt><dd><%= link_to proposals_summary(desk), proposals_path %></dd></div>
 </dl>
 
 <section>

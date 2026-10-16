@@ -10,6 +10,12 @@ module Alert
     end
   end
 
+  def self.thesis_review(review)
+    announce("#{review.instrument.symbol} #{review.reason_drift? ? "drifted" : "has new cash to place"}: thesis review", review.thesis.presence&.truncate(BODY_LIMIT) || "No thesis on file. Open the review to decide.", routes.thesis_review_path(review)) do |subject|
+      AlertMailer.thesis_review(review, subject: subject)
+    end
+  end
+
   def self.fill_or_cancel(proposal)
     announce("#{proposal.label} #{proposal.status}", "At Schwab. Open the proposal for the order.", routes.proposal_path(proposal)) do |subject|
       AlertMailer.fill_or_cancel(proposal, subject: subject)

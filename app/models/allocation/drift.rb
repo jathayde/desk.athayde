@@ -6,6 +6,7 @@ class Allocation::Drift < ApplicationRecord
 
   belongs_to :target, class_name: "Allocation::Target", foreign_key: :allocation_target_id, inverse_of: :drifts
   belongs_to :order_proposal, optional: true
+  belongs_to :thesis_review, optional: true
 
   enum :action, ACTIONS.index_by(&:itself), prefix: true, validate: true
 

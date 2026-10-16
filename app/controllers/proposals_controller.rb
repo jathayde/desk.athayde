@@ -4,6 +4,9 @@ class ProposalsController < ApplicationController
   def index
     @awaiting = OrderProposal.awaiting_hand_placement.includes(:instrument).order(:id)
     @queue = OrderProposal.queue.includes(:instrument, :setup)
+    account = Account.trading.order(:id).first
+    @reviews = account ? account.thesis_reviews.open.includes(:instrument).order(:created_at) : ThesisReview.none
+    @decided_reviews = account ? account.thesis_reviews.where.not(decision: nil).includes(:instrument).order(decided_at: :desc).limit(5) : ThesisReview.none
     @decided = OrderProposal.decided.where.not(id: @awaiting).order(id: :desc).limit(10).includes(:instrument)
   end
 
@@ -37,7 +40,7 @@ class ProposalsController < ApplicationController
     end
 
     def proposal_arguments
-      kind = params[:kind].presence_in(%w[ entry exit ]) || "entry"
+      kind = params[:kind].presence_in(%w[ entry exit ]) || "entry" # a thesis review's deploy and exit arrive here too
       { account: Account.trading.order(:id).first, kind: kind, side: kind == "entry" ? :buy : :sell, symbol: params[:symbol].to_s,
         limit_price: decimal(params[:limit_price]), stop_price: decimal(params[:stop_price]), setup: Setup.find_by(id: params[:setup_id]),
         thesis: params[:thesis].presence, quantity: params[:quantity].presence&.to_i, tax_lot_method: params[:tax_lot_method].presence }

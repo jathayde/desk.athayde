@@ -64,7 +64,7 @@ RSpec.describe Allocation::Planner do
     expect(approved.latest_attempt.payload).not_to have_key("childOrderStrategies")
   end
 
-  it "holds a class, a leveraged or amplified instrument, a sub-minimum order, and a halted desk at reported, saying why" do
+  it "holds a class, a sub-minimum order, and a halted desk at reported, saying why, and asks about a leveraged instrument instead of proposing" do
     bonds = Allocation::Target.add!(asset_class: "bonds", target_percent: "20", user: john)
     def_.classify!(asset_class: nil, tags: %w[ leveraged ], user: john)
     leveraged = Allocation::Target.add!(symbol: "DEF", target_percent: "10", user: john)
@@ -72,7 +72,7 @@ RSpec.describe Allocation::Planner do
     RiskRule.active_for("min_rebalance_notional").supersede!(params: { "amount" => "1000" }, user: john)
     run
     expect(drift(bonds)).to have_attributes(action: "reported", order_proposal: nil)
-    expect(drift(leveraged)).to have_attributes(action: "reported", detail: hash_including("held_for" => "thesis review"))
+    expect(drift(leveraged)).to have_attributes(action: "thesis_review", order_proposal: nil, thesis_review: ThesisReview.sole)
     expect(drift(small)).to have_attributes(action: "reported", detail: hash_including("below_minimum" => "1000.0"))
     expect(OrderProposal.count).to eq(0)
 
@@ -185,7 +185,7 @@ RSpec.describe Allocation::Planner do
   it "goes on to the next target when planning one raises, writing that row with the error" do
     broken = Allocation::Target.add!(symbol: "XYZ", target_percent: "15", user: john)
     fine = Allocation::Target.add!(symbol: "DEF", target_percent: "10", user: john)
-    allow_any_instance_of(Instrument).to receive(:tagged?).and_wrap_original { |original, *args| original.receiver.symbol == "XYZ" ? raise("tags unreadable") : original.call(*args) }
+    allow_any_instance_of(Instrument).to receive(:discretionary?).and_wrap_original { |original| original.receiver.symbol == "XYZ" ? raise("tags unreadable") : original.call }
     run
     expect(drift(broken)).to have_attributes(action: "reported", weight: BigDecimal("0.212"), detail: hash_including("error" => "tags unreadable"))
     expect(drift(fine)).to have_attributes(action: "proposed")

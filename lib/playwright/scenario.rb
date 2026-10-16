@@ -19,7 +19,7 @@ module Playwright::Scenario
   def reset!
     Schwab::FakeClient.instance.reset!
     Rails.cache.clear
-    [ Allocation::Drift, Allocation::Target, InstrumentTag, TradeLeg, Trade, Snapshot, Position, Balance, Activity, SubmissionAttempt, Order, OrderProposal, WatchlistItem, RiskRule, SyncRun, MarketDay, SchwabToken, Session, Account, Instrument, Setup ].each(&:delete_all)
+    [ Allocation::Drift, ThesisReview, Allocation::Target, InstrumentTag, TradeLeg, Trade, Snapshot, Position, Balance, Activity, SubmissionAttempt, Order, OrderProposal, WatchlistItem, RiskRule, SyncRun, MarketDay, SchwabToken, Session, Account, Instrument, Setup ].each(&:delete_all)
     SystemSettings.instance.update!(shadow_mode: true, manual_halt: false, manual_halt_reason: nil, manual_halt_at: nil, sync_paused_reason: nil,
                                     rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
     Rails.application.load_seed
