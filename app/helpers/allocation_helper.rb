@@ -9,8 +9,11 @@ module AllocationHelper
   def drift_action_label(drift)
     case drift.action
     when "none" then "within band"
-    when "reported" then "outside band, #{rebalance_phrase(drift)}"
+    when "reported" then "outside band, #{rebalance_phrase(drift)}#{reported_note(drift.detail)}"
     when "unavailable" then "unavailable: #{Array(drift.detail["reasons"]).to_sentence}"
+    when "proposed" then "#{rebalance_phrase(drift)} proposed"
+    when "existing_proposal" then "outside band; a proposal on it is already waiting"
+    when "rejected_standing" then "outside band; your last rejection stands"
     else drift.action.humanize(capitalize: false)
     end
   end
@@ -23,9 +26,19 @@ module AllocationHelper
   end
 
   private
+    def reported_note(detail)
+      return "; a class has no single instrument to order" if detail["class_target"]
+      return "; held for a thesis review" if detail["held_for"]
+      return "; under one whole share" if detail["sub_share"]
+      return "; not proposed: #{detail["reason"]}" if detail["reason"]
+      return "; under the #{money(BigDecimal(detail["below_minimum"]))} minimum" if detail["below_minimum"]
+      return "; not proposed: #{detail["refused"]}" if detail["refused"]
+      return "; not proposed: #{detail["error"]}" if detail["error"]
+      ""
+    end
+
     # "sell 11 sh · $620.00"; a class target has dollars but no shares.
     def rebalance_phrase(drift)
-      side = drift.notional.positive? ? "buy" : "sell"
-      [ drift.quantity ? "#{side} #{drift.quantity} sh" : side, money(drift.notional.abs) ].join(" · ")
+      [ drift.quantity ? "#{drift.side} #{drift.quantity} sh" : drift.side, money(drift.notional.abs) ].join(" · ")
     end
 end

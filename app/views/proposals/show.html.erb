@@ -5,8 +5,9 @@
 <% if proposal.thesis.present? %><p class="thesis"><%= proposal.thesis %></p><% end %>
 
 <%= render "shared/candles", chart: @chart %>
+<% if proposal.allocation_source.is_a?(Allocation::Drift) %><%= render "proposals/drift", drift: proposal.allocation_source %><% end %>
 <%= render "proposals/evaluation", proposal: proposal, results: proposal.guardrail_results, sizing: proposal.sizing, collar: proposal.collar %>
-<% if proposal.kind_exit? %>
+<% if proposal.reduces_position? %>
   <h2 class="sec">Lots this sale takes, <%= proposal.tax_lot_method %> <small class="muted">(as the journal knows them, split-adjusted and net of earlier sales, frozen when proposed; Schwab's method names are unverified)</small></h2>
   <dl class="kv-list">
     <% proposal.lots.each do |lot| %>
@@ -22,7 +23,7 @@
 <% elsif proposal.submission_failed? %>
   <p class="warn">Not placed: <%= proposal.failure_reason %></p>
 <% elsif proposal.awaiting_hand_placement? %>
-  <p class="warn">Shadow approval: place this order at Schwab by hand. The next orders sync matches it and records the payload check.<% if proposal.kind_exit? && @position&.working_stop_order %> Adjust the working stop by hand too; a real submission would <%= @position.working_stop_order.remaining.to_d <= proposal.quantity.to_d ? "cancel" : "shrink" %> it first.<% end %></p>
+  <p class="warn">Shadow approval: place this order at Schwab by hand. The next orders sync matches it and records the payload check.<% if proposal.reduces_position? && @position&.working_stop_order %> Adjust the working stop by hand too; a real submission would <%= @position.working_stop_order.remaining.to_d <= proposal.quantity.to_d ? "cancel" : "shrink" %> it first.<% end %></p>
 <% end %>
 
 <% if proposal.approvable? %>

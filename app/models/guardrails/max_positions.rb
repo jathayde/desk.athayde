@@ -3,7 +3,7 @@ class Guardrails::MaxPositions < Guardrails::Rule
   def self.fatal_when_missing? = true
 
   def evaluate
-    return skipped unless entry?
+    return skipped unless opens_exposure?
     held = context.positions.count
     pending = context.pending_new_positions(except: proposal)
     detail = { held: held, pending: pending, cap: param(:count) }

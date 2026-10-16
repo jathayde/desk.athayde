@@ -86,7 +86,7 @@ class Journal::Linker
       trade = Trade.transaction(requires_new: true) { @account.trades.create!(instrument: activity.instrument, status: :open) }
       if activity.buy?
         proposal = activity.order&.order_proposal
-        trade.flag!(:missing_setup) if proposal.nil?
+        trade.flag!(:missing_setup) unless proposal&.requires_bracket? # a rebalance buy brings no setup or stop of its own
       else
         position = @account.positions.find_by(instrument: activity.instrument)
         trade.reconcile_plug!(broker_quantity: (position&.quantity || 0) + activity.quantity, average_price: position&.average_price)
@@ -96,10 +96,11 @@ class Journal::Linker
       open_trade_for(activity.instrument)
     end
 
-    # The originating proposal's plan, taken whenever it becomes known (the order may sync after the fill).
+    # The originating entry's plan, taken whenever it becomes known (the order may sync after the fill). Only an
+    # entry carries a plan: a rebalance fill joins whatever trade is open without replacing its setup or stop.
     def adopt_proposal(trade, activity)
       proposal = activity.order&.order_proposal
-      return if proposal.nil? || trade.order_proposal_id
+      return if proposal.nil? || !proposal.requires_bracket? || trade.order_proposal_id
       trade.update!(order_proposal: proposal, setup: proposal.setup, thesis: proposal.thesis, planned_stop: proposal.planned_stop, planned_target: proposal.target_price)
       trade.flag!(:missing_stop) if trade.planned_stop.nil?
       trade.clear_flag!(:missing_setup)

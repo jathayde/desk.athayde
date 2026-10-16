@@ -123,4 +123,20 @@ RSpec.describe "Allocation" do
     get preview_risk_rule_path(band, "rule_#{band.id}" => { params: { percent: "five" } })
     expect(response.body).to include("Params percent must be a positive number")
   end
+
+  it "offers Ask again on a standing rejection and clears it, audited" do
+    seed_rule_set
+    target = Allocation::Target.add!(symbol: xyz.symbol, target_percent: "15", user: john)
+    drift = target.drifts.create!(as_of: Date.current - 1, target_weight: target.target_weight, drift: BigDecimal("0.06"), band: BigDecimal("0.05"), close: 53, notional: -600, quantity: 11, action: "proposed")
+    proposal = create(:order_proposal, account: account, instrument: xyz, kind: "rebalance", origin: "allocation", side: "sell", quantity: 11, limit_price: 53, allocation_source: drift)
+    proposal.reject!(user: john, reason: "not now")
+    sign_in john
+    get allocation_targets_path
+    expect(response.body).to include("Ask again")
+    post allocation_target_rejection_clearance_path(target)
+    expect(flash[:notice]).to eq("XYZ may be proposed again at the next check.")
+    expect(target.reload.rejection_cleared_at).to be_present
+    get allocation_targets_path
+    expect(response.body).not_to include("Ask again")
+  end
 end

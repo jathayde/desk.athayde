@@ -21,13 +21,14 @@ class Guardrails::Rule
   def rule_type = self.class.name.demodulize.underscore
   def param(name) = BigDecimal(rule.param(name).to_s)
   def entry? = proposal.kind_entry?
+  delegate :opens_exposure?, :reduces_position?, :requires_bracket?, to: :proposal
   def cost = proposal.cost
 
   def pass(**detail) = [ :pass, detail ]
   def caution(overridable: false, **detail) = [ :caution, detail, overridable ]
   def block(**detail) = [ :block, detail ]
   def unavailable(reason, **detail) = [ :unavailable, detail.merge(reason: reason) ]
-  def skipped = [ :skipped, { reason: "does not apply to #{proposal.kind_exit? ? "an exit" : "a #{proposal.kind.humanize.downcase}"}" } ]
+  def skipped = [ :skipped, { reason: "does not apply to #{proposal.kind_phrase}" } ]
 
   private
     def build(outcome, detail, overridable = false, trip = nil)

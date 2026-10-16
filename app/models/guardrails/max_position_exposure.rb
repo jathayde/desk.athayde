@@ -4,7 +4,7 @@ class Guardrails::MaxPositionExposure < Guardrails::Rule
   def self.fatal_when_missing? = true
 
   def evaluate
-    return skipped unless entry?
+    return skipped unless opens_exposure?
     equity = context.fresh_equity or return block(reason: "no fresh equity to measure exposure against")
     existing = context.position_for(proposal.instrument)&.market_value.to_d
     committed = context.pending_cost_for(proposal.instrument, except: proposal)

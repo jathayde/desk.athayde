@@ -5,7 +5,7 @@ class Guardrails::StopCollar < Guardrails::Rule
   def self.fatal_when_missing? = true
 
   def evaluate
-    return skipped unless entry?
+    return skipped unless requires_bracket?
     return block(reason: "no collar computed") if proposal.collar.blank?
     collar = ::StopCollar::Collar.load(proposal.collar)
     return block(reason: collar.refusal) unless collar.ok?

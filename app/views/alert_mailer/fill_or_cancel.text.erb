@@ -2,6 +2,9 @@
 <% if @proposal.filled? && @proposal.kind_entry? -%>
 
 The bracket's stop should now be working; the next orders sync confirms it, and the dashboard says if it is not.
+<% elsif @proposal.filled? && @proposal.kind_rebalance? && @proposal.buy? -%>
+
+A rebalance buy carries no stop, so the dashboard counts these shares as unprotected until you place one.
 <% end -%>
 
 Proposal: <%= proposal_url(@proposal) %>

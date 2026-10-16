@@ -11,12 +11,13 @@ class OrderProposal < ApplicationRecord
   belongs_to :decided_by, class_name: "User", optional: true
   belongs_to :setup, optional: true
   belongs_to :parent_proposal, class_name: "OrderProposal", optional: true
+  belongs_to :allocation_source, polymorphic: true, optional: true # the drift row (later the inflow or tranche) an allocation proposal came from
   has_many :orders, dependent: :restrict_with_exception
   has_many :submission_attempts, dependent: :restrict_with_exception
   has_one :trade, dependent: :restrict_with_exception
 
-  enum :kind, { entry: "entry", exit: "exit", stop_adjustment: "stop_adjustment" }, prefix: true
-  enum :origin, { agent: "agent", human: "human" }
+  enum :kind, { entry: "entry", exit: "exit", stop_adjustment: "stop_adjustment", rebalance: "rebalance" }, prefix: true
+  enum :origin, { agent: "agent", human: "human", allocation: "allocation" }
   enum :side, { buy: Schwab::Order::BUY, sell: Schwab::Order::SELL }
   enum :child_action, { cancel_stop: "cancel_stop", replace_stop: "replace_stop" }, prefix: true
   enum :status, {
@@ -41,6 +42,9 @@ class OrderProposal < ApplicationRecord
 
   scope :pending, -> { where(status: %w[ proposed validated ]) }
   scope :unresolved, -> { where(status: UNRESOLVED) }
+  # Waiting, or approved and not yet filled or cancelled (a shadow approval awaiting hand placement included): the
+  # instrument is spoken for, and the allocation planner steps aside.
+  scope :occupying, -> { where(status: %w[ proposed ] + COMMITTED) }
   scope :committed, -> { where(status: COMMITTED) }
   scope :at_broker, -> { where(status: AT_BROKER) }
   scope :decided, -> { where.not(status: QUEUE) }
@@ -77,6 +81,20 @@ class OrderProposal < ApplicationRecord
       Submission::ReconcileJob.perform_later(proposal)
     end
   end
+
+  # One writer at a time per account and instrument, held until the caller's transaction ends: Proposals::Create
+  # and the allocation planner both take it before checking that nothing else is waiting on the instrument.
+  def self.lock_instrument!(account, instrument) = connection.execute(sanitize_sql_array([ "SELECT pg_advisory_xact_lock(?, ?)", account.id, instrument.id ]))
+
+  # What a proposal does, not what it is called (docs/phase-2.5-plan.md §0.5): a rebalance buy opens exposure like
+  # an entry but carries no stop; a rebalance sell reduces a position like an exit. The class form lets
+  # Proposals::Create refuse a halted desk before its draft reads candles.
+  def self.opens_exposure?(kind, side) = kind.to_s == "entry" || (kind.to_s == "rebalance" && side.to_s == "buy")
+  def opens_exposure? = self.class.opens_exposure?(kind, side)
+  def reduces_position? = kind_exit? || (kind_rebalance? && sell?)
+  def requires_bracket? = kind_entry?
+  def kind_phrase = kind_exit? ? "an exit" : kind_rebalance? ? "a rebalance #{side}" : "a #{kind.humanize.downcase}"
+  def audit_actor = allocation? ? :system : origin.to_sym
 
   def approvable? = APPROVABLE.include?(status)
   # The stored evaluation, read through the same object the evaluator produced: one implementation of what

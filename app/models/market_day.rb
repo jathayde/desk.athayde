@@ -41,6 +41,17 @@ class MarketDay < ApplicationRecord
     find_by!(date: date)
   end
 
+  # The first trading day after a date, from the stored calendar where Schwab has answered, else fetched; nil
+  # when Schwab's word is missing on the way, since a fallback row calls every weekday a session.
+  def self.next_trading_day_after(date)
+    ((date.to_date + 1)..(date.to_date + 14)).each do |d|
+      day = self.for(d)
+      return nil if day.fallback?
+      return day if day.trading?
+    end
+    nil
+  end
+
   def self.session_open?(now = Time.current) = self.for(now.in_time_zone(ZONE).to_date).session_open_at?(now)
 
   # For requests: reads the calendar the tick maintains and never fetches. Unknown means closed.

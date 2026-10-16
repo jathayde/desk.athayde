@@ -18,6 +18,11 @@ module Schwab
       )
     end
 
+    # A plain LIMIT buy with no child: a rebalance toward a target, which carries no stop.
+    def self.buy(symbol:, quantity:, limit_price:)
+      leg(BUY, symbol, quantity).merge("orderType" => Order::LIMIT, "price" => price(limit_price), "orderStrategyType" => SINGLE)
+    end
+
     def self.sell(symbol:, quantity:, limit_price:, tax_lot_method: nil)
       leg(SELL, symbol, quantity).merge("orderType" => Order::LIMIT, "price" => price(limit_price), "orderStrategyType" => SINGLE)
                                  .merge(tax_lot_method ? { "taxLotMethod" => tax_lot_method } : {})

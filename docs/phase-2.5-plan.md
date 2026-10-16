@@ -55,6 +55,8 @@ Source of truth: `docs/artifacts/investment-copilot-prd.md` §5.12 and §6. Phas
 
 `Guardrails::Rule` gains `opens_exposure?`, `reduces_position?`, and `requires_bracket?`, and every rule that branched on `entry?` or `exit?` is re-read against them: `stop_collar` and `max_risk_per_trade` judge only what requires a bracket; `position_coverage`, `wash_sale`'s sell branch, the child action, and the tax lots apply to anything that reduces a position; `settled_cash`, `notional_cap`, `max_positions`, `max_position_exposure`, `pending_new_positions`, and the entry halt apply to anything that opens exposure. Book rules never appear in `guardrail_results`.
 
+**Built in step 2:** `earnings_blackout` and `max_sector_exposure` stay on entries only; on a rebalance they would only add a "not checked" acknowledgement to every order. `Proposals::Create` drafts outside the lock (an entry's draft reads Schwab) and then checks and writes under a transaction-scoped advisory lock on (account, instrument), the same lock the planner takes before its any-side check, so a human proposal and the planner cannot both pass. An allocation proposal is audited with the system as its actor and alerts like an agent's.
+
 ## 5. Build order (green `bin/ci`, DHH and counselors review, commit per step)
 
 0. Counselors plan review of this document; fold the findings in.
@@ -67,7 +69,7 @@ Source of truth: `docs/artifacts/investment-copilot-prd.md` §5.12 and §6. Phas
 
 ## 6. Verify on approval (added to `docs/verify-on-approval.md`)
 
-The deposit activity type and its fields; whether a LIMIT order with no child is accepted as the plain shape the payload builds; fractional-share support (already open); SPY daily history availability and the candles rate limit at the weekly volume; an ICI fund-flow source.
+Whether a quote's `lastPrice` read at 17:10 is an after-hours print (the limit for an unheld rebalance buy); if so, use the regular-session close field. The deposit activity type and its fields; whether a LIMIT order with no child is accepted as the plain shape the payload builds; fractional-share support (already open); SPY daily history availability and the candles rate limit at the weekly volume; an ICI fund-flow source.
 
 ## 7. Not built in Phase 2.5
 
@@ -76,6 +78,15 @@ Auto-execution of any allocation action; options; FMP screening and fundamentals
 ## 8. For the user to confirm (recorded, not blocking the build)
 
 **Seeded default (step 1):** the deployment policy starts at `ask`, the one mode under which a deposit causes no mechanical action.
+
+**Step 2 decisions, recorded for the user:**
+- A rebalance proposal created at 17:10 expires at the next session's regular close, not at midnight, so it is there to decide in the morning.
+- The limit is the close the drift row used and is not editable: no proposal has an edit path. To trade at another price, reject it and propose by hand. The rejection then stands on that target (`rejected_standing`) until the drift returns inside the band, changes side, or the operator presses "Ask again" on the targets screen.
+- Class targets and leveraged or amplified instruments stay `reported` in step 2: a class has no instrument to order, and tagged instruments wait for step 3's thesis review.
+- **Consequence of the no-stop answer, for the user to weigh:** a rebalance buy that opens a new position lands in the journal's review queue (no setup, no stop), and its position reads unprotected on the dashboard (the fourth banner) until a stop is placed by hand; the fill alert says so, though the hard unprotected alert (`Orders::ProtectionWatch`) watches entries only. A rebalance fill on an existing trade joins it without replacing its setup or stop. The Phase 2 protection model and the allocation module disagree here by design; a core-holding marker that exempts a position from the protection banner would be a later decision.
+- The planner steps aside while anything on the instrument is waiting or approved and not yet filled or cancelled, a shadow approval awaiting hand placement included, so an unplaced rebalance is not proposed again the next night.
+- A rebalance the rules block is written to its drift row as `reported` with the blocking rules named, the rejected proposal kept on the row. It is tried again the next night, since settled cash and the caps change; each attempt is one `rejected_by_rules` row and one alert.
+- Settled cash counts proposals at the broker, as in Phase 2 (§0.9), so two rebalance buys proposed the same night each pass on their own; approving the first makes the second's re-evaluation see it, so nothing is over-committed, but the second may then be refused at approval.
 
 **Answered 2026-10-16, all as drafted:** rebalance buys are plain LIMIT orders with no bracket stop; rebalance notional counts toward the daily notional cap; one versioned `rebalance_band` rule, no per-target override; `allocation` origin, hand-entered fund flows, tags and authored asset class, and the drift job in shadow all accepted.
 

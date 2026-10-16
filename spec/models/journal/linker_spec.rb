@@ -104,6 +104,21 @@ RSpec.describe Journal::Linker do
     expect(trade).to have_attributes(setup: proposal.setup, planned_stop: 48, planned_target: 56, initial_risk: 80, needs_review: false)
   end
 
+  it "lets a rebalance fill join the open trade without replacing its plan, and asks for one on a trade a rebalance opened" do
+    entry = OrderProposal.create!(account: account, instrument: xyz, origin: :agent, side: "BUY", status: "filled", setup: create(:setup, name: "breakout-A"), thesis: "t", planned_stop: 48)
+    fill(account, xyz, "BUY", 40, 50, at: t0, order: create(:order, account: account, instrument: xyz, order_proposal: entry))
+    rebalance = OrderProposal.create!(account: account, instrument: xyz, kind: :rebalance, origin: :allocation, side: "BUY", quantity: 5, limit_price: 51, thesis: "Rebalance XYZ")
+    fill(account, xyz, "BUY", 5, 51, at: t0 + 1.day, order: create(:order, account: account, instrument: xyz, order_proposal: rebalance))
+    link!(account)
+    expect(account.trades.sole).to have_attributes(order_proposal: entry, planned_stop: 48, thesis: "t", needs_review: false, peak_quantity: 45)
+
+    def_ = create(:instrument, symbol: "DEF", cusip: "594918104")
+    buy = OrderProposal.create!(account: account, instrument: def_, kind: :rebalance, origin: :allocation, side: "BUY", quantity: 3, limit_price: 86)
+    fill(account, def_, "BUY", 3, 86, at: t0 + 2.days, order: create(:order, account: account, instrument: def_, order_proposal: buy))
+    link!(account)
+    expect(account.trades.find_by!(instrument: def_)).to have_attributes(needs_review: true, review_reason: "missing_setup", order_proposal: nil)
+  end
+
   it "records a stop-out when the closing exit came from a stop order, and recomputes it from the legs" do
     stop = create(:order, :working_stop, account: account, instrument: xyz, status: "FILLED")
     fill(account, xyz, "BUY", 40, 50, at: t0)

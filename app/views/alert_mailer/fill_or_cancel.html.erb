@@ -1,3 +1,4 @@
 <p><b><%= @proposal.priced_label %> is <%= @proposal.status %> at Schwab</b><% if @proposal.broker_order_id %> (order <%= @proposal.broker_order_id %>)<% end %>.</p>
-<% if @proposal.filled? && @proposal.kind_entry? %><p>The bracket's stop should now be working; the next orders sync confirms it, and the dashboard says if it is not.</p><% end %>
+<% if @proposal.filled? && @proposal.kind_entry? %><p>The bracket's stop should now be working; the next orders sync confirms it, and the dashboard says if it is not.</p>
+<% elsif @proposal.filled? && @proposal.kind_rebalance? && @proposal.buy? %><p>A rebalance buy carries no stop, so the dashboard counts these shares as unprotected until you place one.</p><% end %>
 <p><%= link_to "Proposal", proposal_url(@proposal) %></p>

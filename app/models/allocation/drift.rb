@@ -9,6 +9,8 @@ class Allocation::Drift < ApplicationRecord
 
   enum :action, ACTIONS.index_by(&:itself), prefix: true, validate: true
 
+  def side = notional.positive? ? "buy" : "sell"
+
   # The latest check's row for each active target: what every reader shows.
   scope :current, -> { where(as_of: unscoped.select("max(as_of)"), target: Allocation::Target.active).includes(target: :instrument).order(:id) }
 end

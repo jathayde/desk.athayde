@@ -1,0 +1,6 @@
+<h2 class="sec">Drift <small class="muted">(the <%= drift.as_of.strftime("%a %b %-d") %> close, frozen; a plain limit with no stop)</small></h2>
+<dl class="kv-list">
+  <div class="kv"><dt><%= drift.target.label %></dt><dd><%= percent(drift.weight) %> of equity against a <%= percent(drift.target_weight) %> target · drift <%= points(drift.drift, signed: true) %> · band <%= points(drift.band) %></dd></div>
+  <div class="kv"><dt>Back to target</dt><dd><%= money(drift.notional.abs) %> · <%= drift.quantity %> whole shares at the close of <%= money(drift.close) %></dd></div>
+  <div class="kv"><dt>Limit</dt><dd>that close; to trade at another price, reject this and propose it by hand</dd></div>
+</dl>

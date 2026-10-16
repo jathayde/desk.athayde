@@ -2,7 +2,7 @@
 # reset time; the operator clears it by hand. Read from the latest snapshot, so an intraday collapse is seen tonight.
 class Guardrails::MaxDrawdownHalt < Guardrails::Rule
   def evaluate
-    return skipped unless entry?
+    return skipped unless opens_exposure?
     return unavailable("no snapshot yet") if context.drawdown.nil?
     drawdown = context.drawdown * 100
     detail = { drawdown_percent: drawdown.round(2), cap: param(:percent) }

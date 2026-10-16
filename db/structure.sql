@@ -216,6 +216,7 @@ CREATE TABLE public.allocation_targets (
     active boolean DEFAULT true NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
+    rejection_cleared_at timestamp with time zone,
     CONSTRAINT allocation_targets_instrument_or_class CHECK (((instrument_id IS NULL) <> (asset_class IS NULL))),
     CONSTRAINT allocation_targets_weight_range CHECK (((target_weight > (0)::numeric) AND (target_weight <= (1)::numeric)))
 );
@@ -341,7 +342,7 @@ CREATE TABLE public.deployment_policies (
     note text,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY ((ARRAY['immediate'::character varying, 'staged'::character varying, 'ask'::character varying])::text[]))),
+    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY (ARRAY[('immediate'::character varying)::text, ('staged'::character varying)::text, ('ask'::character varying)::text]))),
     CONSTRAINT deployment_policies_staged_has_weeks CHECK ((((mode)::text <> 'staged'::text) OR (weeks > 0)))
 );
 
@@ -410,7 +411,7 @@ CREATE TABLE public.instrument_tags (
     tag character varying NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY ((ARRAY['leveraged'::character varying, 'amplified'::character varying, 'diversifier'::character varying])::text[])))
+    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY (ARRAY[('leveraged'::character varying)::text, ('amplified'::character varying)::text, ('diversifier'::character varying)::text])))
 );
 
 
@@ -555,7 +556,9 @@ CREATE TABLE public.order_proposals (
     broker_order_id character varying,
     parent_proposal_id bigint,
     child_action character varying,
-    lots jsonb DEFAULT '[]'::jsonb NOT NULL
+    lots jsonb DEFAULT '[]'::jsonb NOT NULL,
+    allocation_source_type character varying,
+    allocation_source_id bigint
 );
 
 
@@ -2681,6 +2684,13 @@ CREATE UNIQUE INDEX index_order_proposals_one_open_per_instrument_and_side ON pu
 
 
 --
+-- Name: index_order_proposals_one_per_allocation_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_order_proposals_one_per_allocation_source ON public.order_proposals USING btree (account_id, instrument_id, side, allocation_source_type, allocation_source_id) WHERE (allocation_source_id IS NOT NULL);
+
+
+--
 -- Name: index_order_proposals_one_unresolved_per_instrument; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3692,6 +3702,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261016110001'),
 ('20261016100001'),
 ('20260902200001'),
 ('20260902190001'),

@@ -5,7 +5,7 @@ module Playwright::Scenario
 
   ACCOUNT_HASH = Schwab::FakeClient::ACCOUNT_HASH
   SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade
-                  proposal proposal_warn proposal_blocked proposal_override submission_unknown rule_halted ].freeze
+                  proposal proposal_warn proposal_blocked proposal_override submission_unknown rule_halted rebalance rebalance_skipped ].freeze
 
   # Guarded here as well as at the route: reset! empties the database.
   def load!(name)
@@ -19,7 +19,7 @@ module Playwright::Scenario
   def reset!
     Schwab::FakeClient.instance.reset!
     Rails.cache.clear
-    [ TradeLeg, Trade, Snapshot, Position, Balance, Activity, SubmissionAttempt, Order, OrderProposal, WatchlistItem, RiskRule, SyncRun, MarketDay, SchwabToken, Session, Account, Instrument, Setup ].each(&:delete_all)
+    [ Allocation::Drift, Allocation::Target, InstrumentTag, TradeLeg, Trade, Snapshot, Position, Balance, Activity, SubmissionAttempt, Order, OrderProposal, WatchlistItem, RiskRule, SyncRun, MarketDay, SchwabToken, Session, Account, Instrument, Setup ].each(&:delete_all)
     SystemSettings.instance.update!(shadow_mode: true, manual_halt: false, manual_halt_reason: nil, manual_halt_at: nil, sync_paused_reason: nil,
                                     rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
     Rails.application.load_seed
@@ -92,6 +92,20 @@ module Playwright::Scenario
     propose(stop_price: BigDecimal("30"))
   end
 
+  # Last night's check found XYZ overweight against a 15 percent target and proposed trimming it.
+  def rebalance
+    drift = overweight_xyz(action: "reported")
+    proposal = Proposals::Create.call(account: Account.first, kind: :rebalance, side: :sell, instrument: drift.target.instrument, quantity: 11, limit_price: drift.close,
+                                      origin: :allocation, allocation_source: drift, expires_at: 1.day.from_now, thesis: "Rebalance XYZ toward 15.0% of equity.")
+    drift.update!(action: "proposed", order_proposal: proposal)
+  end
+
+  # The same overweight, but a human sell on XYZ was already waiting, so the check stepped aside.
+  def rebalance_skipped
+    overweight_xyz(action: "existing_proposal")
+    Proposals::Create.call(account: Account.first, kind: :exit, side: :sell, symbol: "XYZ", limit_price: BigDecimal("54"), quantity: 5, thesis: "Trimming into strength.", origin: :human, user: User.first)
+  end
+
   # An approve that got no answer from Schwab, still being looked for: through the state machine, never by hand.
   def submission_unknown
     proposal_desk
@@ -147,6 +161,13 @@ module Playwright::Scenario
       RiskRule.active_for("max_position_exposure").supersede!(params: { "percent" => "60" }, user: User.first, note: "a scale-in on a held name") # the seeds carry the rest
       Account.first.balances.create!(as_of: Time.current, equity: 10_240, settled_cash: 5000, unsettled_cash: 0, cash_available_for_trading: 5000)
       Schwab::FakeClient.instance.script_daily_history(symbol: "XYZ", close: 50) # the fake's quote fixture already knows XYZ
+    end
+
+    def overweight_xyz(action:)
+      proposal_desk
+      target = Allocation::Target.add!(symbol: "XYZ", target_percent: "15", user: User.first)
+      target.drifts.create!(as_of: MarketDay.today.prev_weekday, weight: BigDecimal("0.207"), target_weight: BigDecimal("0.15"), band: BigDecimal("0.05"), close: 53,
+                            drift: BigDecimal("0.057"), notional: BigDecimal("-583.68"), quantity: 11, action: action, detail: { "one_share" => "0.005176" })
     end
 
     def propose(stop_price: BigDecimal("47"))

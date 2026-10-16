@@ -4,7 +4,7 @@ class Guardrails::MaxRiskPerTrade < Guardrails::Rule
   def self.fatal_when_missing? = true
 
   def evaluate
-    return skipped unless entry?
+    return skipped unless requires_bracket?
     sizing = Sizing.load(proposal.sizing)
     return block(reason: sizing.reason || "not sized") unless sizing.sized?
     equity = context.fresh_equity or return block(reason: "no fresh equity to measure risk against")

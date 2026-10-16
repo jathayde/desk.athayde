@@ -1,7 +1,7 @@
 <% content_for :title, "Allocation" %>
 <% approver = Current.user&.approver? %>
 <h1>Allocation</h1>
-<p class="muted">What the book should hold. The drift check measures against these after the close on trading days and, for now, only reports. The band is the <%= link_to "rebalance band rule", risk_rules_path(anchor: "book") %><% if @band_rule %> (<%= @band_rule.param(:percent) %> points, v<%= @band_rule.version %>)<% else %> <span class="warn">(not configured)</span><% end %>, widened to one share wherever one share is a bigger slice of equity than that.</p>
+<p class="muted">What the book should hold. The drift check measures against these after the close on trading days and proposes a rebalance, in the queue like any proposal, for an instrument outside its band. The band is the <%= link_to "rebalance band rule", risk_rules_path(anchor: "book") %><% if @band_rule %> (<%= @band_rule.param(:percent) %> points, v<%= @band_rule.version %>)<% else %> <span class="warn">(not configured)</span><% end %>, widened to one share wherever one share is a bigger slice of equity than that.</p>
 
 <h2 class="sec">Targets · <%= percent(@targets.sum(&:target_weight), precision: 2) %> of equity</h2>
 <% if @targets.empty? %>
@@ -20,6 +20,7 @@
               <%= f.text_field :target_percent, id: "target_percent_#{target.id}", value: (target.target_weight * 100).round(2).to_s("F"), inputmode: "decimal", size: 6 %>
               <%= f.submit "Reweigh", class: "secondary" %>
             <% end %>
+            <% if target.instrument && target.rejection_standing_now? %><%= button_to "Ask again", allocation_target_rejection_clearance_path(target), method: :post, class: "link-button" %><% end %>
             <%= button_to "Retire", allocation_target_retirement_path(target), method: :post, class: "link-button" %>
           </span>
         <% else %>

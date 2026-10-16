@@ -18,17 +18,17 @@ class Guardrails::Context
   def position_for(instrument) = positions.find { |p| p.instrument_id == instrument.id }
   def open_trade_for(instrument) = account.trades.open.find_by(instrument: instrument)
 
-  # Entries not yet filled on instruments not yet held: they count as positions the desk has committed to. The
-  # proposal being judged is left out, so its own validated row is not counted twice at approval.
+  # Entries and rebalance buys not yet filled on instruments not yet held: they count as positions the desk has
+  # committed to. The proposal being judged is left out, so its own validated row is not counted twice at approval.
   def pending_new_positions(except: nil)
-    scope = account.order_proposals.committed.where(kind: :entry).where.not(instrument_id: positions.map(&:instrument_id))
+    scope = opening(account.order_proposals.committed).where.not(instrument_id: positions.map(&:instrument_id))
     scope = scope.where.not(id: except.id) if except&.persisted?
     scope.distinct.count(:instrument_id)
   end
 
-  # What unfilled entries on this instrument have already committed, so a second entry sees the first.
+  # What unfilled entries and rebalance buys on this instrument have already committed, so a second one sees the first.
   def pending_cost_for(instrument, except: nil)
-    account.order_proposals.committed.where(instrument: instrument, kind: :entry).where.not(id: except&.id).sum(&:cost)
+    opening(account.order_proposals.committed.where(instrument: instrument)).where.not(id: except&.id).sum(&:cost)
   end
 
   # Cash the broker reports as settled, minus every buy that already claims it (docs/phase-2-plan.md §0.9).
@@ -66,5 +66,6 @@ class Guardrails::Context
   end
 
   private
+    def opening(proposals) = proposals.where(kind: :entry).or(proposals.where(kind: :rebalance, side: :buy))
     def today_range = MarketDay.today.in_time_zone(MarketDay::ZONE).all_day
 end

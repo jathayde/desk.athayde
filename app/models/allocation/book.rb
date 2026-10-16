@@ -3,7 +3,9 @@
 # for every instrument any target covers; short of that, every line is unavailable with the reasons named, never
 # a partial book, since a class weight depends on every member. Weight, band, and drift are fractions of equity.
 class Allocation::Book
-  Line = Data.define(:target, :weight, :close, :band, :drift, :notional, :quantity, :action, :detail)
+  Line = Data.define(:target, :weight, :close, :band, :drift, :notional, :quantity, :action, :detail) do
+    def side = notional.positive? ? "buy" : "sell"
+  end
 
   # Positions no active target covers, by instrument or by class: shown, never proposed against. A membership
   # read over targets and positions, not a drift, so a page may ask it.
@@ -108,6 +110,7 @@ class Allocation::Book
       band = band.round(6)
       notional = ((target.target_weight - weight) * equity).round(2)
       quantity = close && (notional.abs / close).floor
+      quantity = [ quantity, positions[target.instrument_id]&.quantity.to_i ].min if quantity && notional.negative? # never sell more than is held
       outside = drift.abs > band # never under one whole share for an instrument: the band is at least one share wide
       Line.new(target: target, weight: weight, close: close, band: band, drift: drift, notional: notional, quantity: quantity,
                action: outside ? "reported" : "none", detail: detail)

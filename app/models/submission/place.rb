@@ -23,7 +23,7 @@ class Submission::Place
   # late-answer transitions on the proposal cover that.
   def call
     return swept unless @proposal.reload.submitting?
-    adjust_stop if @proposal.kind_exit?
+    adjust_stop if @proposal.reduces_position?
     order_id = client.place_order(@account.schwab_hash, @attempt.payload)
     record { @proposal.record_submitted!(@attempt, broker_order_id: order_id) }
   rescue StopNotAdjusted => e

@@ -14,6 +14,7 @@ Rails.application.routes.draw do
   resource :deployment_policy, only: :update
   resources :allocation_targets, path: "allocation", only: %i[ index create update ] do
     resource :retirement, only: :create, module: :allocation_targets
+    resource :rejection_clearance, only: :create, module: :allocation_targets
   end
   resources :proposals, only: %i[ index show new create ] do
     scope module: :proposals do

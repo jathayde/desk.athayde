@@ -2,7 +2,7 @@
 # no other reading of a larger number.
 class Guardrails::PositionCoverage < Guardrails::Rule
   def evaluate
-    return skipped if entry?
+    return skipped unless reduces_position?
     held = context.position_for(proposal.instrument)&.quantity.to_d
     return block(reason: "no position in #{proposal.instrument.symbol} to sell") unless held.positive?
     return block(reason: "no quantity to sell") unless proposal.quantity.to_d.positive?

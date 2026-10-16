@@ -30,11 +30,26 @@ class Allocation::Target < ApplicationRecord
 
   def reweigh!(target_percent, user:) = change!(user) { update!(target_percent: target_percent) }
   def retire!(user:) = change!(user) { update!(active: false) }
+  # The operator wants the planner to ask again although the last rebalance here was rejected.
+  def clear_rejection!(user:) = change!(user) { update!(rejection_cleared_at: Time.current) }
 
   # Typed as a percent; unreadable input is zero, which the weight validation refuses.
   def target_percent=(percent)
     self.target_weight = ((BigDecimal(percent.to_s.strip, exception: false) || 0) / 100).round(6) # validated as it will be stored
   end
+
+  # The operator rejected the last rebalance here on this side, and every measured check since has still seen
+  # this side outside the band, so asking again each night at a new price would be noise. Lifted by the drift
+  # going back inside the band or changing side, or by the operator clearing it; an unmeasured night lifts nothing.
+  def rejection_standing?(side, before:)
+    rejected = OrderProposal.rejected.kind_rebalance.where(allocation_source: drifts).order(:decided_at).last
+    return false if rejected.nil? || rejected.side != side
+    return false if rejection_cleared_at && rejection_cleared_at > rejected.decided_at
+    drifts.where(as_of: rejected.allocation_source.as_of...before).where.not(drift: nil).none? { |drift| drift.action_none? || drift.side != side }
+  end
+
+  # Whether the targets screen offers "Ask again": a rejection stands on either side as of today's check.
+  def rejection_standing_now? = %w[ buy sell ].any? { |side| rejection_standing?(side, before: MarketDay.today + 1) }
 
   def label = instrument ? instrument.symbol : asset_class
   def class_target? = asset_class.present?
@@ -59,7 +74,7 @@ class Allocation::Target < ApplicationRecord
       self
     end
 
-    def audit_state = { target_weight: target_weight.to_s, active: active }
+    def audit_state = { target_weight: target_weight.to_s, active: active, rejection_cleared_at: rejection_cleared_at&.iso8601 }.compact
 
     def instrument_or_class
       errors.add(:base, "Name an instrument or an asset class, not both") if instrument_id.present? == asset_class.present?

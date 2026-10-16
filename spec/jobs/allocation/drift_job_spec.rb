@@ -13,8 +13,10 @@ RSpec.describe Allocation::DriftJob do
   around { |example| travel_to(closed_at + 70.minutes) { example.run } }
 
   before do
+    seed_rule_set
     RiskRule.create!(rule_type: "rebalance_band", params: { "percent" => "5" })
-    create(:balance, account: account, equity: 10_000, as_of: closed_at + 45.minutes)
+    RiskRule.create!(rule_type: "min_rebalance_notional", params: { "amount" => "100" })
+    create(:balance, account: account, equity: 10_000, settled_cash: 3000, as_of: closed_at + 45.minutes)
     create(:sync_run, feed: "positions", account: account, started_at: closed_at + 50.minutes, finished_at: closed_at + 50.minutes)
     create(:position, account: account, instrument: xyz, quantity: 40, last_price: 53, market_value: 2120)
     create(:position, account: account, instrument: bnd, quantity: 20, last_price: 75, market_value: 1500)
@@ -23,7 +25,7 @@ RSpec.describe Allocation::DriftJob do
 
   def drift_for(target) = target.drifts.find_by!(as_of: closed_at.to_date)
 
-  it "writes one row per active target from the post-close book: held, unheld by quote, and a class by its members" do
+  it "writes one row per active target from the post-close book (held, unheld by quote, a class by its members) and proposes on the instruments outside their bands" do
     held = Allocation::Target.add!(symbol: xyz.symbol, target_percent: "15", user: john)
     unheld = Allocation::Target.add!(symbol: def_.symbol, target_percent: "10", user: john)
     bonds = Allocation::Target.add!(asset_class: "bonds", target_percent: "18", user: john)
@@ -32,15 +34,19 @@ RSpec.describe Allocation::DriftJob do
     described_class.perform_now
 
     expect(drift_for(held)).to have_attributes(weight: BigDecimal("0.212"), target_weight: BigDecimal("0.15"), drift: BigDecimal("0.062"), band: BigDecimal("0.05"),
-                                               close: 53, notional: BigDecimal("-620"), quantity: 11, action: "reported")
+                                               close: 53, notional: BigDecimal("-620"), quantity: 11, action: "proposed")
+    expect(drift_for(held).order_proposal).to have_attributes(kind: "rebalance", origin: "allocation", side: "sell", quantity: 11, limit_price: 53, instrument: xyz,
+                                                              allocation_source: drift_for(held), tax_lot_method: Schwab::Order::DEFAULT_TAX_LOT_METHOD)
     expect(drift_for(held).detail).to eq("one_share" => "0.0053")
-    expect(drift_for(unheld)).to have_attributes(weight: 0, close: BigDecimal("86.57"), notional: 1000, quantity: 11, action: "reported") # DEF's fixture lastPrice
+    expect(AuditEvent.where(kind: "allocation_drift_recorded", subject: drift_for(held)).sole.data["proposal"]).to eq(drift_for(held).order_proposal_id)
+    expect(drift_for(unheld)).to have_attributes(weight: 0, close: BigDecimal("86.57"), notional: 1000, quantity: 11, action: "proposed") # DEF's fixture lastPrice
+    expect(drift_for(unheld).order_proposal).to have_attributes(side: "buy", quantity: 11, limit_price: BigDecimal("86.57"))
     expect(drift_for(bonds)).to have_attributes(weight: BigDecimal("0.15"), drift: BigDecimal("-0.03"), band: BigDecimal("0.05"), close: nil, quantity: nil, action: "none")
     expect(drift_for(bonds).detail).to eq("members" => [ "BND" ])
     expect(Allocation::Drift.count).to eq(3) # the retired target is not measured
     expect(AuditEvent.where(kind: "allocation_drift_recorded").count).to eq(3)
-    expect(AuditEvent.where(kind: "allocation_drift_checked").sole.data).to include("as_of" => "2026-10-14", "actions" => { "reported" => 2, "none" => 1 })
-    expect(OrderProposal.count).to eq(0) # step 1 reports; nothing proposes
+    expect(AuditEvent.where(kind: "allocation_drift_checked").sole.data).to include("as_of" => "2026-10-14", "actions" => { "proposed" => 2, "none" => 1 })
+    expect(OrderProposal.count).to eq(2) # the class has no instrument to order
     expect(Allocation::Book.unallocated(account).map { |p| p.instrument.symbol }).to eq([ "ABC" ])
   end
 
@@ -78,11 +84,11 @@ RSpec.describe Allocation::DriftJob do
   end
 
   it "keeps a measured row when a same-day rerun cannot measure, recording why on the run" do
-    target = Allocation::Target.add!(symbol: xyz.symbol, target_percent: "15", user: john)
+    target = Allocation::Target.add!(symbol: xyz.symbol, target_percent: "20", user: john)
     described_class.perform_now
     Position.where(instrument: xyz).update_all(last_price: nil)
     described_class.perform_now
-    expect(drift_for(target)).to have_attributes(action: "reported", drift: BigDecimal("0.062"))
+    expect(drift_for(target)).to have_attributes(action: "none", drift: BigDecimal("0.012"))
     expect(AuditEvent.where(kind: "allocation_drift_checked").order(:id).last.data).to include("reasons" => [ "XYZ unpriced" ], "actions" => {})
   end
 

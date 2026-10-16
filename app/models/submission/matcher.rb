@@ -31,7 +31,7 @@ class Submission::Matcher
     def close?(a, b) = (a.to_d - b.to_d).abs <= PRICE_TOLERANCE
 
     def shape_matches?(order)
-      return order.child_orders.none? unless @proposal.kind_entry?
+      return order.child_orders.none? unless @proposal.requires_bracket?
       child = order.child_orders.one? ? order.child_orders.first : nil
       child.present? && child.side == Schwab::Order::SELL && child.stop? && child.quantity.to_d == @proposal.quantity.to_d && close?(child.stop_price, @proposal.stop_price)
     end

@@ -47,7 +47,7 @@ class Submission::Submit
     def check_gates!
       settings = SystemSettings.instance
       raise Submission::Refused, "halted: #{settings.manual_halt_reason}" if settings.manual_halt?
-      raise Submission::Refused, "entries are halted by #{settings.rule_halt_rule}" if @proposal.kind_entry? && !settings.entries_allowed?
+      raise Submission::Refused, "entries are halted by #{settings.rule_halt_rule}" if @proposal.opens_exposure? && !settings.entries_allowed?
     end
 
     # A changed quantity or a new warning since the operator read the page is a refusal, never a silent recompute (§0.4).
@@ -76,6 +76,9 @@ class Submission::Submit
       case @proposal.kind
       when "entry" then Schwab::OrderPayload.bracket(symbol: symbol, quantity: @proposal.quantity, limit_price: @proposal.limit_price, stop_price: @proposal.stop_price)
       when "exit" then Schwab::OrderPayload.sell(symbol: symbol, quantity: @proposal.quantity, limit_price: @proposal.limit_price, tax_lot_method: @proposal.tax_lot_method)
+      when "rebalance" # a plain LIMIT, no bracket stop (docs/phase-2.5-plan.md §8)
+        @proposal.buy? ? Schwab::OrderPayload.buy(symbol: symbol, quantity: @proposal.quantity, limit_price: @proposal.limit_price)
+                       : Schwab::OrderPayload.sell(symbol: symbol, quantity: @proposal.quantity, limit_price: @proposal.limit_price, tax_lot_method: @proposal.tax_lot_method)
       else raise Submission::Refused, "#{@proposal.kind.humanize.downcase} proposals cannot be submitted yet"
       end
     end
