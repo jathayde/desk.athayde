@@ -7,10 +7,12 @@ class Allocation::Drift < ApplicationRecord
   belongs_to :target, class_name: "Allocation::Target", foreign_key: :allocation_target_id, inverse_of: :drifts
   belongs_to :order_proposal, optional: true
   belongs_to :thesis_review, optional: true
+  has_many :order_proposals, as: :allocation_source, dependent: :restrict_with_exception
 
   enum :action, ACTIONS.index_by(&:itself), prefix: true, validate: true
 
   def side = notional.positive? ? "buy" : "sell"
+  def outside_band? = drift.abs > band
 
   # The latest check's row for each active target: what every reader shows.
   scope :current, -> { where(as_of: unscoped.select("max(as_of)"), target: Allocation::Target.active).includes(target: :instrument).order(:id) }

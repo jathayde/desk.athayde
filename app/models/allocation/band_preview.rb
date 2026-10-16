@@ -12,10 +12,10 @@ class Allocation::BandPreview
 
   def valid? = candidate.valid?
 
-  # Only rows the band decided; a proposed or unavailable row was not the band's verdict to re-judge.
+  # Every measured row: whether the band would have put it outside, whatever was then done about it.
   def rows
     return [] unless valid?
-    @rows ||= Allocation::Drift.current.where(action: %w[ none reported ]).map do |drift|
+    @rows ||= Allocation::Drift.current.not_action_unavailable.where.not(drift: nil).map do |drift|
       band = [ candidate_band, BigDecimal(drift.detail["one_share"] || "0") ].max
       Row.new(drift: drift, band: band, before: drift.action, after: drift.drift.abs > band ? "reported" : "none")
     end

@@ -69,12 +69,13 @@ test("a thesis review deployed opens the entry form prefilled", async ({ page })
   await page.getByRole("button", { name: /Deploy/ }).click();
   await expect(page.getByText("Deploy TQQQ: write the entry.")).toBeVisible();
   await expect(page.getByLabel("Symbol")).toHaveValue("TQQQ");
+  await expect(page.getByLabel("Limit price")).toHaveValue("70.0");
   await expect(page.getByLabel("Thesis")).toHaveValue("Levered Nasdaq into the cutting cycle.");
 });
 
 test("a deposit under ask-each-time is staged over weeks and the dashboard says so", async ({ page }) => {
   await page.goto("/playwright/scenarios/deposit_ask?then=%2Fproposals");
-  await page.getByRole("link", { name: /Thesis review: \$2,500\.00 deposited/ }).click();
+  await page.getByRole("link", { name: /Deposit: \$2,500\.00 deposited/ }).click();
   await expect(page.getByRole("button", { name: "Deploy at the next check" })).toBeVisible();
   await page.getByLabel("Stage over this many weeks").fill("3");
   await page.getByRole("button", { name: "Stage" }).click();

@@ -219,4 +219,23 @@ RSpec.describe Allocation::Planner do
     inside.update!(drift: BigDecimal("-0.07"), notional: 700, action: "reported")
     expect(target.rejection_standing?("sell", before: later)).to be(false)
   end
+
+  it "frees an instrument once a shadow approval nobody placed has expired, and refuses a live allocation order until it is verified" do
+    target = Allocation::Target.add!(symbol: "XYZ", target_percent: "15", user: john)
+    run
+    proposal = drift(target).order_proposal
+    proposal.approve_and_submit!(user: john, acknowledged: proposal.warnings)
+    travel_to zone.local(2026, 10, 15, 16, 5) # past its expiry, never placed
+    Sync::TickJob.perform_now
+    expect(proposal.reload).to be_expired
+    expect(AuditEvent.where(kind: "proposal_expired", subject: proposal).sole.reason).to eq("shadow approval never placed at Schwab before it expired")
+
+    synced_after_close(zone.local(2026, 10, 15, 16))
+    travel_to zone.local(2026, 10, 15, 17, 10)
+    run
+    live = drift(target).order_proposal
+    SystemSettings.instance.update!(shadow_mode: false)
+    expect { live.approve_and_submit!(user: john, acknowledged: live.warnings) }.to raise_error(Submission::Refused, /stay in shadow until the plain-limit and after-hours price checks/)
+    expect(live.reload).to be_validated
+  end
 end

@@ -36,7 +36,7 @@ class Allocation::Book
     def positions = @positions ||= account.positions.includes(:instrument).index_by(&:instrument_id)
     def balance = @balance ||= account.current_balance
     def equity = balance.equity
-    def band_rule = @band_rule ||= RiskRule.active_for("rebalance_band")
+    def rule_band = defined?(@rule_band) ? @rule_band : (@rule_band = RiskRule.rebalance_band)
 
     # The latest positions run must have started after the close and succeeded whole: a partial run keeps
     # yesterday's rows for what it could not map, and one begun before the close read the session's prices.
@@ -44,7 +44,7 @@ class Allocation::Book
       closed_at = day.regular_closes_at
       run = SyncRun.for(:positions, account).where(started_at: closed_at..).recent_first.first
       problems = []
-      problems << "no rebalance_band rule" unless band_rule
+      problems << "no rebalance_band rule" unless rule_band
       problems << "balance not synced since the close" unless balance && balance.as_of >= closed_at
       problems << "no positive equity" unless balance&.equity&.positive?
       problems << "positions not synced since the close" if run.nil?
@@ -91,7 +91,6 @@ class Allocation::Book
     end
 
     def judge(target)
-      rule_band = BigDecimal(band_rule.param(:percent).to_s) / 100
       if target.instrument
         close = closes.fetch(target.instrument_id)
         market_value = positions[target.instrument_id]&.market_value || 0

@@ -11,7 +11,7 @@ class OrderProposal < ApplicationRecord
   belongs_to :decided_by, class_name: "User", optional: true
   belongs_to :setup, optional: true
   belongs_to :parent_proposal, class_name: "OrderProposal", optional: true
-  belongs_to :allocation_source, polymorphic: true, optional: true # the drift row (later the inflow or tranche) an allocation proposal came from
+  belongs_to :allocation_source, polymorphic: true, optional: true # the drift row, cash inflow, or tranche an allocation proposal came from
   has_many :orders, dependent: :restrict_with_exception
   has_many :submission_attempts, dependent: :restrict_with_exception
   has_one :trade, dependent: :restrict_with_exception
@@ -53,6 +53,9 @@ class OrderProposal < ApplicationRecord
   # A shadow approval the operator still has to place by hand: the phase's central concept, named once.
   scope :awaiting_hand_placement, -> { submitted.where(shadow: true, broker_order_id: nil) }
   scope :stale_submitting, ->(older_than) { submitting.where(updated_at: ..older_than.ago) }
+  # An allocation proposal approved in shadow and never placed by hand before it would have expired: it stops
+  # holding its instrument, so the planner is not kept aside forever (docs/phase-2.5-plan.md §8).
+  scope :unplaced_past_expiry, -> { awaiting_hand_placement.allocation.where(expires_at: ..Time.current) }
 
   validates :quantity, numericality: { greater_than: 0 }, allow_nil: true
   validates :quantity, presence: true, unless: :kind_entry? # an entry may be unsized (and blocked); a sell of nothing is not a proposal
@@ -130,6 +133,11 @@ class OrderProposal < ApplicationRecord
 
   def expire!
     transition!(from: %w[ proposed validated ], to: :expired, event: "proposal_expired")
+  end
+
+  def expire_unplaced!
+    raise IllegalTransition, "proposal #{id} is not a shadow approval awaiting hand placement" unless awaiting_hand_placement?
+    transition!(from: %w[ submitted ], to: :expired, event: "proposal_expired", reason: "shadow approval never placed at Schwab before it expired")
   end
 
   # The one way a proposal is named in prose: emails, banners, the recap, the journal. An unsized entry has no number to show.

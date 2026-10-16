@@ -92,7 +92,7 @@ RSpec.describe "Allocation" do
 
     band = RiskRule.active_for("rebalance_band")
     get preview_risk_rule_path(band, "rule_#{band.id}" => { params: { percent: "7" } })
-    expect(response.body).to include("Preview: Rebalance band v2", "XYZ", "drift +6.2 pts · band 7.0 pts", "reported → <b class=\"warn\">within band</b>")
+    expect(response.body).to include("Preview: Rebalance band v2", "XYZ", "drift +6.2 pts · band 7.0 pts", "outside band (reported) → <b class=\"warn\">within band</b>")
     expect(band.reload).to be_active
     get preview_risk_rule_path(RiskRule.active_for("cash_drag_weeks"))
     expect(flash[:alert]).to include("has no preview")

@@ -32,6 +32,8 @@ class RiskRule < ApplicationRecord
 
   def self.active_for(rule_type, setup: nil) = active_set_for(setup, scope: scope_for(rule_type))[rule_type.to_s]
   def self.params_for(rule_type, setup: nil) = active_for(rule_type, setup: setup)&.params || {}
+  # The allocation band as a fraction of equity, or nil when there is no rule (and then nothing is measured).
+  def self.rebalance_band = active_for("rebalance_band")&.then { |rule| BigDecimal(rule.param(:percent).to_s) / 100 }
   # The floor under any allocation order, or nil when there is no rule (and then nothing is proposed).
   def self.min_rebalance_notional = active_for("min_rebalance_notional")&.then { |rule| BigDecimal(rule.param(:amount).to_s) }
 

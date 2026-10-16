@@ -48,6 +48,9 @@ class Submission::Submit
       settings = SystemSettings.instance
       raise Submission::Refused, "halted: #{settings.manual_halt_reason}" if settings.manual_halt?
       raise Submission::Refused, "entries are halted by #{settings.rule_halt_rule}" if @proposal.opens_exposure? && !settings.entries_allowed?
+      if @proposal.allocation? && !settings.shadow_mode? && !Allocation::ORDERS_VERIFIED
+        raise Submission::Refused, "allocation orders stay in shadow until the plain-limit and after-hours price checks are verified (verify items 60 and 64); place it by hand if you want it now"
+      end
     end
 
     # A changed quantity or a new warning since the operator read the page is a refusal, never a silent recompute (§0.4).

@@ -1,0 +1,8 @@
+Phase-level review of Phase 2.5 (the allocation module) in AthaydeDesk (Rails 8.1), built in six commits: run `git log --oneline 748fa1f..HEAD` and `git diff 748fa1f..HEAD --stat`, and read docs/phase-2.5-plan.md (all of it, especially §0 and §8, which records every decision and deviation) and docs/artifacts/investment-copilot-prd.md §5.12 and §6.
+This is not a line review: each step was reviewed already. Read across the steps for what only shows when they are seen together:
+(1) Paths through the whole module that no single step tested: a deposit arriving while a drift rebalance is waiting; a thesis review held, then the instrument untagged, then a deposit deployed into it; a target retired with a deployment tranche scheduled; the rule editor changing rebalance_band or min_rebalance_notional between a drift row and its deployment; a halt engaged mid-week of a staged deposit; shadow mode off for the first time with allocation proposals in the queue.
+(2) Invariants across the phase: nothing auto-executes and no allocation path reaches a Schwab order endpoint; every allocation proposal is judged by the same guardrails as a human one; book rules never judge an order; one writer for buys at a time; every state change audited; nothing on a page render calls Schwab.
+(3) Contradictions between the plan's §8 decisions and the code as it now stands, and between the PRD §5.12 and the plan.
+(4) What the operator will find confusing on the dashboard, the queue, the targets screen, and the Sunday email when several of these things are live at once.
+(5) Anything that should block calling Phase 2.5 done.
+Report concrete defects with file:line and a fix, ordered by severity. Do not restyle.

@@ -24,6 +24,8 @@ class Allocation::Digest
   def threshold = @threshold ||= RiskRule.active_for("correlation_threshold")&.then { |rule| BigDecimal(rule.param(:value).to_s) }
   def flagged = threshold && correlations_current? ? correlations.select { |row| row.diversifier? && row.value > threshold } : []
   def fund_flow = @fund_flow ||= FundFlow.latest
+  def deployments = @deployments ||= CashInflow.committing.includes(:tranches, :activity).order(:id).to_a
+  def open_reviews = @open_reviews ||= ThesisReview.open.includes(:instrument, cash_inflow: :activity).order(:created_at).to_a
   def last_drift_check = @last_drift_check ||= AuditEvent.where(kind: "allocation_drift_checked").order(:created_at).last
   def last_correlation_check = @last_correlation_check ||= AuditEvent.where(kind: "correlation_checked").order(:created_at).last
 

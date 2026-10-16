@@ -229,6 +229,8 @@ The 7-day refresh token becomes a scheduled habit instead of a surprise:
 
 ### 5.12 Allocation Module (cycle-pattern mechanics)
 
+*As built in Phase 2.5, see `docs/phase-2.5-plan.md` §8: one versioned rebalance band rather than per-target bands, tags audited but not versioned, a deterministic planner rather than the agent proposing, and thesis reviews in the queue rather than thesis-review proposals.*
+
 A second rule set alongside the trading guardrails, covering the book-level behaviors from post-crash market research (concentration of best days, lump-sum vs staged deployment, threshold rebalancing, correlation breakdown, leveraged-proxy discipline). Kept structurally separate from per-trade guardrails: trading rules judge one order, allocation rules judge the whole book. Both feed the same proposal → approval pipeline; nothing here auto-executes.
 
 **Data model additions:** `allocation_targets` (asset or class, target weight, drift band), `instrument_tags` (leveraged/amplified flag per symbol), `deployment_policies` (per cash-inflow handling).

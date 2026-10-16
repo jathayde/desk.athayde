@@ -1,0 +1,4 @@
+<p><b><%= money(@amount) %> of <%= @inflow.label %> could not be placed and is left as cash.</b></p>
+<% if @inflow.detail["outcomes"].present? %><p>Last night: <%= @inflow.detail["outcomes"].map { |target, result| "#{target} #{result}" }.join("; ") %>.</p><% end %>
+<p>Propose it by hand, or change the targets and the next deposit will follow them.</p>
+<p><%= link_to "Allocation", allocation_targets_url %></p>

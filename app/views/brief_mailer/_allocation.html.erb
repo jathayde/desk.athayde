@@ -7,4 +7,6 @@
 <% if allocation.flagged.any? %><p><b>Diversifiers moving with SPY</b> (above <%= allocation.threshold %>): <%= correlation_list(allocation.flagged).to_sentence %>. The diversification assumption is failing for these right now.</p><% end %>
 <% if allocation.correlations.any? %><p>Correlation with SPY, <%= correlation_heading(allocation.correlations, current: allocation.correlations_current?) %>: <%= correlation_list(allocation.correlations).join(", ") %></p><% end %>
 <% if allocation.unmeasured.any? %><p>Not measured: <%= unmeasured_list(allocation.unmeasured) %></p><% end %>
+<% allocation.deployments.each do |inflow| %><p>Deploying <%= inflow.label %>: <%= inflow.progress %>; drift buys wait until it is done.</p><% end %>
+<% if allocation.open_reviews.any? %><p>Waiting on you: <%= allocation.open_reviews.map(&:queue_label).to_sentence %>.</p><% end %>
 <p>Fund flow: <%= fund_flow_summary(allocation.fund_flow) %></p>

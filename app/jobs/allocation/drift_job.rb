@@ -16,15 +16,16 @@ module Allocation
       account = Account.trading.order(:id).first or return
       started_at = Time.current
       lines = Allocation::Book.new(account, day: day).lines
-      return if lines.empty?
 
       planner = Allocation::Planner.new(account, day: day, expires_at: MarketDay.next_trading_day_after(day.date)&.regular_closes_at) # before any lock: it may ask Schwab
-      Allocation::Drift.transaction do
-        recorded = lines.filter_map { |line| record(line, day.date, planner) }
-        AuditEvent.log("allocation_drift_checked", actor: :system, data: { as_of: day.date.iso8601, actions: recorded.map(&:action).tally,
-                                                                           reasons: lines.first.detail["reasons"] }.compact)
+      if lines.any? # with no targets there is nothing to measure, but new cash still waits or gives up below
+        Allocation::Drift.transaction do
+          recorded = lines.filter_map { |line| record(line, day.date, planner) }
+          AuditEvent.log("allocation_drift_checked", actor: :system, data: { as_of: day.date.iso8601, actions: recorded.map(&:action).tally,
+                                                                             reasons: lines.first.detail["reasons"] }.compact)
+        end
       end
-      deploy(account, day, planner, started_at) unless lines.first.action == "unavailable" # prices from tonight's rows, or wait for a night that has them
+      deploy(account, day, planner, started_at) unless lines.first&.action == "unavailable" # prices from tonight's rows, or wait for a night that has them
     end
 
     private
@@ -59,7 +60,7 @@ module Allocation
       rescue StandardError => e
         Rails.error.report(e, handled: true, context: { job: self.class.name, target: line.target.id })
         drift = line.target.drifts.find_or_initialize_by(as_of: as_of) # the savepoint took a new row with it
-        verdict = Allocation::Planner::Verdict.new(action: "reported", detail: { "error" => e.message.truncate(200) }, proposal: nil, thesis_review: nil)
+        verdict = Allocation::Planner.error_verdict(e)
         write(drift, line, verdict)
       else
         write(drift, line, verdict)

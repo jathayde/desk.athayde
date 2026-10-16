@@ -5,7 +5,7 @@
 <dl class="kv-list">
   <% @preview.rows.each do |row| %>
     <div class="kv"><dt><%= row.drift.target.label %> <small class="muted">drift <%= points(row.drift.drift, signed: true) %> · band <%= points(row.band) %></small></dt>
-      <dd><%= row.before.humanize(capitalize: false) %> → <b class="<%= "warn" if row.after != row.before %>"><%= row.after == "reported" ? "outside band" : "within band" %></b></dd></div>
+      <dd><%= row.drift.outside_band? ? "outside band" : "within band" %> (<%= row.before.humanize(capitalize: false) %>) → <b class="<%= "warn" if (row.after == "reported") != row.drift.outside_band? %>"><%= row.after == "reported" ? "outside band" : "within band" %></b></dd></div>
   <% end %>
   <% if @preview.valid? && @preview.rows.empty? %><div class="kv"><dt>Targets</dt><dd>no measured drift to re-judge yet</dd></div><% end %>
 </dl>

@@ -16,6 +16,11 @@ module Sync
       rescue OrderProposal::IllegalTransition
         next # a race with an approve is not the tick's problem
       end
+      OrderProposal.unplaced_past_expiry.find_each do |proposal|
+        proposal.expire_unplaced!
+      rescue OrderProposal::IllegalTransition
+        next # matched at Schwab between the query and the lock
+      end
       refresh_calendar
       return pause! unless SchwabToken.usable?
 

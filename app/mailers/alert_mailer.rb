@@ -24,6 +24,11 @@ class AlertMailer < ApplicationMailer
     alert subject
   end
 
+  def cash_left(inflow, amount, subject:)
+    @inflow, @amount = inflow, amount
+    alert subject
+  end
+
   def fill_or_cancel(proposal, subject:)
     @proposal = proposal
     alert subject

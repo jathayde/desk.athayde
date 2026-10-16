@@ -3,15 +3,17 @@
 # thesis review about the deposit). Only deposits from the day the desk first had a policy count, so a backfilled
 # history never deploys, and one under the minimum notional is recorded and left as cash.
 class CashInflow < ApplicationRecord
+  include Deploying
+
   STATUSES = %w[ pending proposed staged asked held done ].freeze
   DEFAULT_WEEKS = 4 # staging an asked deposit under a policy that names no weeks
-  DEFERRED_NIGHTS = 5 # nights new cash waits on unsettled cash, a halt, or a waiting proposal before it is left as cash
 
   belongs_to :account
   belongs_to :activity
   belongs_to :deployment_policy
   has_many :tranches, -> { order(:due_on, :week) }, class_name: "DeploymentTranche", dependent: :restrict_with_exception
   has_one :thesis_review, -> { order(:id) }, dependent: :restrict_with_exception
+  has_many :order_proposals, as: :allocation_source, dependent: :restrict_with_exception
 
   enum :status, STATUSES.index_by(&:itself), prefix: true, validate: true
 
@@ -69,9 +71,7 @@ class CashInflow < ApplicationRecord
 
   def ask!
     transaction do
-      review = account.thesis_reviews.create!(cash_inflow: self, reason: :deployment_ask, context: { "amount" => amount.to_s, "as_of" => activity.trade_date.iso8601 })
-      AuditEvent.log("thesis_review_created", actor: :system, subject: review, data: { reason: "deployment_ask", amount: amount.to_s })
-      ActiveRecord.after_all_transactions_commit { Alert.thesis_review(review) }
+      ThesisReview.ask_about!(self)
       change_status!(:asked)
     end
   end
@@ -87,21 +87,13 @@ class CashInflow < ApplicationRecord
     end
   end
 
-  # New cash this night's check can place: proposed once any target takes a share (the shares that could not wait
-  # as cash; proposing them again would double the rest), done when every share was too small to buy, and
-  # otherwise deferred to the next night, up to DEFERRED_NIGHTS. A deposit reversed since it was detected is done.
-  def deploy!(planner)
-    return change_status!(:done, reversed: true) unless still_deposited?
-    outcomes = planner.deploy(self, amount)
-    results = outcomes&.to_h { [ it.target, it.result ] }
-    return change_status!(:proposed, proposed: outcomes.count(&:proposed?), outcomes: results) if outcomes&.any?(&:proposed?)
-    return change_status!(:done, outcomes: results) if outcomes&.none?(&:deferred?)
-    defer!(results || { "tonight" => "no calendar or no target to place it" })
-  end
+  # Deployed at once: proposed once any target takes a share (the shares that could not wait stay cash; proposing
+  # them again would double the rest); a deposit reversed since it was detected is done and never deployed.
+  def deploy!(planner) = still_deposited? ? super : change_status!(:done, reversed: true)
+  def placed!(results) = change_status!(:proposed, proposed: results.values.count("proposed"), outcomes: results)
 
-  def defer!(results)
-    nights = detail["deferred_nights"].to_i + 1
-    nights >= DEFERRED_NIGHTS ? change_status!(:done, gave_up_after_nights: nights, outcomes: results) : change_status!(status, deferred_nights: nights, outcomes: results)
+  def give_up!(results, **detail)
+    change_status!(:done, outcomes: results, **detail).tap { Alert.cash_left(self, amount) unless results.value?("proposed") }
   end
 
   # Still a valid deposit of the amount detected: a later sync can return, cancel, or re-sign it.
@@ -114,6 +106,7 @@ class CashInflow < ApplicationRecord
 
   def progress
     return "waiting on your answer" if status_asked?
+    return "waiting since #{detail["deferred_nights"]} #{"night".pluralize(detail["deferred_nights"])} (#{detail["outcomes"].values.uniq.to_sentence})" if status_pending? && detail["deferred_nights"]
     return "at the next check" if status_pending?
     "#{tranches.count(&:scheduled?)} weekly tranches to go"
   end

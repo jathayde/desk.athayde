@@ -33,17 +33,22 @@ class Allocation::Target < ApplicationRecord
   # The operator wants the planner to ask again although the last rebalance here was rejected.
   def clear_rejection!(user:) = change!(user) { update!(rejection_cleared_at: Time.current) }
 
+  def target_percent = (target_weight * 100).round(2)
+  def target_percent_label = "#{target_percent.to_s("F")}%"
+
   # Typed as a percent; unreadable input is zero, which the weight validation refuses.
   def target_percent=(percent)
     self.target_weight = ((BigDecimal(percent.to_s.strip, exception: false) || 0) / 100).round(6) # validated as it will be stored
   end
 
-  # The operator rejected the last rebalance here on this side, and every measured check since has still seen
-  # this side outside the band, so asking again each night at a new price would be noise. Lifted by the drift
-  # going back inside the band or changing side, or by the operator clearing it; an unmeasured night lifts nothing.
+  # The operator rejected the last rebalance here on this side (a drift proposal, or a deployment buy on this
+  # target's instrument), and every measured check since has still seen this side outside the band, so asking again
+  # each night at a new price would be noise. Lifted by the drift going back inside the band or changing side, or by
+  # the operator clearing it; an unmeasured night lifts nothing.
   def rejection_standing?(side, before:)
-    rejected = OrderProposal.rejected.kind_rebalance.where(allocation_source: drifts).order(:decided_at).last
-    rejected && rejected.side == side && standing_since?(rejected.decided_at, rejected.allocation_source.as_of, side, before: before)
+    rejected = last_rejection or return false
+    since = rejected.allocation_source.is_a?(Allocation::Drift) ? rejected.allocation_source.as_of : rejected.decided_at.in_time_zone(MarketDay::ZONE).to_date
+    rejected.side == side && standing_since?(rejected.decided_at, since, side, before: before)
   end
 
   # The same for a drift review on this target the operator answered with hold; the review, when it stands.
@@ -55,7 +60,7 @@ class Allocation::Target < ApplicationRecord
   def hold_standing?(side, before:) = standing_hold(side, before: before).present?
 
   # Whether the targets screen offers "Ask again": a rejection or a hold stands on either side as of today's check.
-  def rejection_standing_now?
+  def ask_again?
     tomorrow = MarketDay.today + 1
     %w[ buy sell ].any? { |side| rejection_standing?(side, before: tomorrow) || hold_standing?(side, before: tomorrow) }
   end
@@ -69,6 +74,13 @@ class Allocation::Target < ApplicationRecord
   end
 
   private
+    def last_rejection
+      rebalances = OrderProposal.rejected.kind_rebalance
+      rebalances.where(allocation_source: drifts)
+                .or(rebalances.where(instrument_id: instrument_id, allocation_source_type: %w[ CashInflow DeploymentTranche ], created_at: created_at..))
+                .order(:decided_at).last
+    end
+
     def standing_since?(decided_at, as_of, side, before:)
       return false if rejection_cleared_at && rejection_cleared_at > decided_at
       drifts.where(as_of: as_of...before).where.not(drift: nil).none? { |drift| drift.action_none? || drift.side != side }
@@ -96,6 +108,6 @@ class Allocation::Target < ApplicationRecord
 
     def active_set_within_whole
       others = self.class.active.where.not(id: id).sum(:target_weight)
-      errors.add(:target_weight, "would bring the active targets to #{((others + target_weight.to_d) * 100).round(2).to_s("F")}%, past 100%") if others + target_weight.to_d > 1
+      errors.add(:target_weight, "would bring the active targets to #{((others + target_weight.to_d) * 100).round(2).to_s("F")}%, past 100%") if others + target_weight.to_d > 1 # the sum, not this target
     end
 end

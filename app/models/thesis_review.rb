@@ -34,11 +34,28 @@ class ThesisReview < ApplicationRecord
     context = drift.attributes.slice("as_of", "weight", "target_weight", "drift", "band", "close", "notional")
                    .merge("quantity" => position&.quantity, "unrealized_pnl" => position&.unrealized_pnl).compact.transform_values(&:to_s)
     waiting = account.thesis_reviews.open.lock.find_by(instrument: instrument)
-    return waiting.tap { it.update!(context: context, thesis: it.thesis.presence || thesis_for(account, instrument)) } if waiting
-    create!(account: account, instrument: instrument, reason: :drift, thesis: thesis_for(account, instrument), context: context).tap do |created|
-      AuditEvent.log("thesis_review_created", actor: :system, subject: created, data: { symbol: instrument.symbol, reason: created.reason, drift: context["drift"] })
-      ActiveRecord.after_all_transactions_commit { Alert.thesis_review(created) }
+    return waiting.refresh!(context, thesis: waiting.thesis.presence || thesis_for(account, instrument)) if waiting
+    ask!(account: account, instrument: instrument, reason: :drift, thesis: thesis_for(account, instrument), context: context)
+  end
+
+  # A deposit under the ask-each-time policy: one review about the cash.
+  def self.ask_about!(inflow) = ask!(account: inflow.account, cash_inflow: inflow, reason: :deployment_ask, context: { "amount" => inflow.amount.to_s, "as_of" => inflow.activity.trade_date.iso8601 })
+
+  # Every review is opened here: the row, its audit, and the alert once the night's work commits.
+  def self.ask!(**attributes)
+    create!(**attributes).tap do |review|
+      AuditEvent.log("thesis_review_created", actor: :system, subject: review, data: { subject: review.label, reason: review.reason, drift: review.context["drift"] }.compact)
+      ActiveRecord.after_all_transactions_commit { Alert.thesis_review(review) }
     end
+  end
+  private_class_method :ask!
+
+  # Tonight's numbers on a review still waiting, audited, since a decision posted against the old ones is refused.
+  def refresh!(context, thesis:)
+    before = self.context["as_of"]
+    update!(context: context, thesis: thesis)
+    AuditEvent.log("thesis_review_refreshed", actor: :system, subject: self, data: { subject: label, before_as_of: before, as_of: context["as_of"] }) if before != context["as_of"]
+    self
   end
 
   NUMBERS.each { |key| define_method(key) { context[key]&.then { BigDecimal(it) } } }
@@ -48,6 +65,15 @@ class ThesisReview < ApplicationRecord
   def proposal_kind = reason_drift? ? PROPOSAL_KINDS[decision] : nil
   def decisions = DECISIONS.fetch(reason)
   def label = reason_drift? ? instrument.symbol : cash_inflow.label
+  def queue_label = reason_drift? ? "Thesis review: #{label}" : "Deposit: #{label}"
+  def alert_subject = reason_drift? ? "#{label} drifted: thesis review" : "#{label}: deploy, stage, or hold?"
+  def alert_body = reason_drift? ? (thesis.presence&.truncate(Alert::BODY_LIMIT) || "No thesis on file. Open the review to decide.") : "The policy says ask each time: deploy, stage, or hold."
+
+  # What the operator is told after deciding, and where a deploy or exit goes next.
+  def decision_notice
+    return "#{label}: #{CashInflow::ANSWERS.fetch(decision)}." if reason_deployment_ask?
+    decision_hold? ? "Holding #{label}. The desk will not ask again while the drift stays on this side." : "#{decision.humanize} #{label}: write the #{proposal_kind}."
+  end
 
   # A hold needs a reason; deploy and exit lead to a proposal the operator writes, so the reason is optional. A form
   # shown numbers the nightly refresh has since replaced is refused, so a hold always stands on what was seen.

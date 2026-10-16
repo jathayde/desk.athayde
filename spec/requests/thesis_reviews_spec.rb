@@ -25,12 +25,12 @@ RSpec.describe "Thesis reviews" do
     get thesis_review_path(deploy)
     expect(response.body).to include("tagged leveraged", "No thesis on file", "21.2% against a 10.0% target", "sell $1,120.00", "+$520.00 unrealized")
     post thesis_review_decision_path(deploy), params: { decision: "deploy" }
-    expect(response).to redirect_to(new_proposal_path(kind: "entry", symbol: "TQQQ", thesis: nil))
+    expect(response).to redirect_to(new_proposal_path(kind: "entry", symbol: "TQQQ", limit_price: "53.0", thesis: nil))
     expect(deploy.reload.decision).to eq("deploy")
 
     exiting = review
     post thesis_review_decision_path(exiting), params: { decision: "exit" }
-    expect(response).to redirect_to(new_proposal_path(kind: "exit", symbol: "TQQQ", thesis: nil))
+    expect(response).to redirect_to(new_proposal_path(kind: "exit", symbol: "TQQQ", limit_price: "53.0", thesis: nil))
   end
 
   it "holds only with a reason, refuses a second decision, and keeps the second user to reading" do
@@ -80,7 +80,7 @@ RSpec.describe "Deposit reviews and deployment proposals" do
     inflow = CashInflow.create_from!(account, activity, policy)
     sign_in john
     get proposals_path
-    expect(response.body).to include("Thesis review: $2,000.00 deposited Oct 14", "deploy, stage, or hold")
+    expect(response.body).to include("Deposit: $2,000.00 deposited Oct 14", "deploy, stage, or hold")
     get thesis_review_path(inflow.thesis_review)
     expect(response.body).to include("New cash: $2,000.00 deposited Oct 14", "Deploy at the next check", "Stage over this many weeks", "Hold as cash, because")
     post thesis_review_decision_path(inflow.thesis_review), params: { decision: "deploy" }

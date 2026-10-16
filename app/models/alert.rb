@@ -11,8 +11,15 @@ module Alert
   end
 
   def self.thesis_review(review)
-    announce(review.reason_drift? ? "#{review.label} drifted: thesis review" : "#{review.label}: deploy, stage, or hold?", review.reason_deployment_ask? ? "The policy says ask each time: deploy, stage, or hold." : review.thesis.presence&.truncate(BODY_LIMIT) || "No thesis on file. Open the review to decide.", routes.thesis_review_path(review)) do |subject|
+    announce(review.alert_subject, review.alert_body, routes.thesis_review_path(review)) do |subject|
       AlertMailer.thesis_review(review, subject: subject)
+    end
+  end
+
+  # New cash the desk gave up placing: it stays cash until the operator acts.
+  def self.cash_left(inflow, amount)
+    announce("#{ActiveSupport::NumberHelper.number_to_currency(amount)} of #{inflow.label} left as cash", "The deployment could not place it. Open allocation to decide.", routes.allocation_targets_path) do |subject|
+      AlertMailer.cash_left(inflow, amount, subject: subject)
     end
   end
 

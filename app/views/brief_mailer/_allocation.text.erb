@@ -15,4 +15,10 @@ Correlation with SPY, <%= correlation_heading(allocation.correlations, current: 
 <% if allocation.unmeasured.any? -%>
 Not measured: <%= unmeasured_list(allocation.unmeasured) %>
 <% end -%>
+<% allocation.deployments.each do |inflow| -%>
+Deploying <%= inflow.label %>: <%= inflow.progress %>; drift buys wait until it is done.
+<% end -%>
+<% if allocation.open_reviews.any? -%>
+Waiting on you: <%= allocation.open_reviews.map(&:queue_label).to_sentence %>.
+<% end -%>
 Fund flow: <%= fund_flow_summary(allocation.fund_flow) %>

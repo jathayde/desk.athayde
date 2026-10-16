@@ -40,7 +40,7 @@ RSpec.describe ThesisReview do
     expect(review).to have_attributes(reason: "drift", thesis: "Leveraged Nasdaq into the cut cycle.", decision: nil, side: "sell")
     expect(review.context).to include("weight" => "0.212", "target_weight" => "0.1", "close" => "53.0", "quantity" => "40.0", "unrealized_pnl" => "520.0")
     expect(target.drifts.sole).to have_attributes(action: "thesis_review", thesis_review: review)
-    expect(AuditEvent.where(kind: "thesis_review_created").sole.data).to include("symbol" => "TQQQ")
+    expect(AuditEvent.where(kind: "thesis_review_created").sole.data).to include("subject" => "TQQQ")
     expect(ActionMailer::Base.deliveries.map(&:subject)).to include("Athayde Desk: TQQQ drifted: thesis review")
 
     Position.where(instrument: tqqq).update_all(market_value: 2300)
@@ -63,7 +63,7 @@ RSpec.describe ThesisReview do
 
     next_night(Date.new(2026, 10, 15))
     expect(target.drifts.order(:as_of).last).to have_attributes(action: "rejected_standing", detail: hash_including("held" => true))
-    expect(target.rejection_standing_now?).to be(true)
+    expect(target.ask_again?).to be(true)
 
     WatchlistItem.watch!(symbol: "TQQQ", trigger: "on a pullback", thesis: "Watch for the cut.", origin: :human, user: john)
     target.clear_rejection!(user: john)

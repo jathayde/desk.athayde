@@ -42,7 +42,7 @@ RSpec.describe CashInflow do
     expect(AuditEvent.where(kind: "cash_inflow_detected").count).to eq(2)
   end
 
-  it "deploys at once at tonight's check, pro-rata to the instrument targets by weight, with the notes frozen, and pauses drift buys until then" do
+  it "deploys at once at tonight's check, pro-rata over every target's weight with a class's share left as cash, the notes frozen, drift buys paused until then" do
     policy!("immediate")
     Allocation::Target.add!(symbol: "XYZ", target_percent: "40", user: john) # underweight by 18.8 points: a drift buy
     Allocation::Target.add!(symbol: "DEF", target_percent: "20", user: john)
@@ -56,9 +56,9 @@ RSpec.describe CashInflow do
     xyz_drift = Allocation::Drift.joins(:target).find_by!(allocation_targets: { instrument_id: xyz.id })
     expect(xyz_drift).to have_attributes(action: "reported", detail: hash_including("committed" => true))
     buys = OrderProposal.where(allocation_source: inflow).order(:id)
-    expect(buys.map { |p| [ p.instrument.symbol, p.quantity.to_i, p.limit_price ] }).to eq([ [ "XYZ", 25, 53 ], [ "DEF", 7, BigDecimal("86.57") ] ]) # $1,333.33 and $666.66
-    expect(buys.first.context).to include("source" => "$2,000.00 deposited Oct 14", "share" => "1333.33", "notes" => "Lump sum beats staging about two thirds of the time.")
-    expect(inflow.reload).to have_attributes(status: "proposed", detail: hash_including("proposed" => 2, "outcomes" => { "XYZ" => "proposed", "DEF" => "proposed" }))
+    expect(buys.map { |p| [ p.instrument.symbol, p.quantity.to_i, p.limit_price ] }).to eq([ [ "XYZ", 18, 53 ], [ "DEF", 5, BigDecimal("86.57") ] ]) # $1,000 and $500 of 40:20:20
+    expect(buys.first.context).to include("source" => "$2,000.00 deposited Oct 14", "share" => "1000.0", "notes" => "Lump sum beats staging about two thirds of the time.")
+    expect(inflow.reload).to have_attributes(status: "proposed", detail: hash_including("proposed" => 2, "outcomes" => { "XYZ" => "proposed", "DEF" => "proposed", "bonds" => "a class: its share stays cash" }))
   end
 
   it "stages over weeks, proposes each tranche on its day, rolls one that buys nothing, and is done when the last is" do
@@ -148,8 +148,9 @@ RSpec.describe CashInflow do
 
     later = described_class.create_from!(account, deposit(1500, on: Date.new(2026, 10, 16)), DeploymentPolicy.current)
     OrderProposal.update_all(status: "filled")
-    [ 16, 19, 20, 21, 22 ].each { |day| travel 1.minute; night(Date.new(2026, 10, day), settled: 0) }
-    expect(later.reload).to have_attributes(status: "done", detail: hash_including("gave_up_after_nights" => 5))
+    perform_enqueued_jobs(only: ActionMailer::MailDeliveryJob) { [ 16, 19, 20, 21, 22 ].each { |day| travel 1.minute; night(Date.new(2026, 10, day), settled: 0) } }
+    expect(later.reload).to have_attributes(status: "done", detail: hash_including("deferred_nights" => 5))
+    expect(ActionMailer::Base.deliveries.map(&:subject).last).to eq("Athayde Desk: $1,500.00 of $1,500.00 deposited Oct 16 left as cash")
   end
 
   it "defers through a halt rather than leaving the deposit as cash" do
@@ -160,7 +161,12 @@ RSpec.describe CashInflow do
     travel 1.minute
     SystemSettings.instance.update!(manual_halt: true, manual_halt_reason: "weird day")
     Allocation::DriftJob.perform_now
-    expect(inflow.reload).to have_attributes(status: "pending", detail: hash_including("outcomes" => { "DEF" => "not proposed: halted: weird day" }))
+    expect(inflow.reload).to have_attributes(status: "pending", detail: { "halted_on" => "2026-10-14" }) # waits, and the night does not count
+    SystemSettings.instance.update!(manual_halt: false)
+    travel 1.day
+    synced_after_close(zone.local(2026, 10, 15, 16))
+    Allocation::DriftJob.perform_now
+    expect(inflow.reload).to be_status_proposed
   end
 
   it "ignores a deposit that is not valid or not positive, and leaves one reversed after detection undeployed" do
@@ -189,9 +195,61 @@ RSpec.describe CashInflow do
     Allocation::DriftJob.perform_now
     expect(inflow.tranches.reload.map(&:status)).to eq(%w[ rolled scheduled scheduled ])
     expect(inflow.tranches.second.amount).to eq(BigDecimal("716.66"))
-    expect(AuditEvent.where(kind: "deployment_tranche_status_changed").sole.data).to include("after" => "rolled", "into_week" => 2)
+    expect(AuditEvent.where(kind: "deployment_tranche_status_changed").map(&:data)).to contain_exactly(
+      hash_including("after" => "rolled", "into_week" => 2), hash_including("amount_before" => "666.66", "amount" => "716.66", "rolled_from_week" => 1))
     night(Date.new(2026, 10, 15))
     expect(OrderProposal.where(allocation_source: inflow.tranches.second).sole.quantity).to eq(8) # $716.66 at $86.57
     expect { inflow.thesis_review.reload; inflow.answer!("hold", user: john, reason: "late") }.to raise_error(ActiveRecord::StaleObjectError)
+  end
+
+  it "never deploys into a held or reviewed instrument, even untagged, nor buys again what the operator rejected" do
+    policy!("immediate")
+    tqqq = create(:instrument, symbol: "TQQQ", cusip: "74347X831")
+    create(:position, account: account, instrument: tqqq, quantity: 10, last_price: 50, market_value: 500)
+    tqqq.classify!(asset_class: nil, tags: %w[ amplified ], user: john)
+    held = Allocation::Target.add!(symbol: "TQQQ", target_percent: "40", user: john)
+    Allocation::DriftJob.perform_now
+    ThesisReview.sole.decide!(decision: "hold", reason: "not adding here", user: john)
+    tqqq.classify!(asset_class: nil, tags: [], user: john)
+    def_target = Allocation::Target.add!(symbol: "DEF", target_percent: "20", user: john)
+    deposit(2000)
+    inflow = described_class.detect!(account).sole
+    night(Date.new(2026, 10, 15))
+    expect(inflow.reload.detail["outcomes"]).to include("TQQQ" => "your hold stands: its share stays cash", "DEF" => "proposed")
+    expect(OrderProposal.where(instrument: tqqq)).to be_empty
+
+    rejected = OrderProposal.find_by!(instrument: def_)
+    rejected.reject!(user: john, reason: "not this week")
+    night(Date.new(2026, 10, 16)) # the deposit is settled; tonight's drift still sees DEF short
+    expect(def_target.drifts.order(:as_of).last).to have_attributes(action: "rejected_standing")
+    expect(held.drifts.order(:as_of).last).to have_attributes(action: "rejected_standing", detail: hash_including("held" => true))
+  end
+
+  it "gives up on a deposit with no targets to place it after the deferral nights, rather than pausing buys for ever" do
+    policy!("immediate")
+    deposit(2000)
+    inflow = described_class.detect!(account).sole
+    travel 1.minute
+    [ 15, 16, 19, 20, 21 ].each { |day| night(Date.new(2026, 10, day)) }
+    expect(inflow.reload).to have_attributes(status: "done", detail: hash_including("deferred_nights" => 5, "outcomes" => { "tonight" => "no calendar or no target to place it" }))
+  end
+
+  it "counts scheduled tranches and held deposits as intended cash in the drag figure, and audits a refreshed review" do
+    policy!("staged", weeks: 4)
+    Allocation::Target.add!(symbol: "XYZ", target_percent: "60", user: john)
+    deposit(2000)
+    described_class.detect!(account)
+    RiskRule.create!(rule_type: "cash_drag_weeks", params: { "weeks" => "3" })
+    row = CashDragDiagnostic.record!(account, as_of: Date.new(2026, 10, 17))
+    expect(row.detail["committed_cash"]).to eq("2000.0")
+    expect(row.intended_cash_percent).to eq(BigDecimal("0.6")) # 40% the targets leave, plus $2,000 of $10,000 still staged
+
+    tqqq = create(:instrument, symbol: "TQQQ", cusip: "74347X831")
+    create(:position, account: account, instrument: tqqq, quantity: 10, last_price: 50, market_value: 500)
+    tqqq.classify!(asset_class: nil, tags: %w[ amplified ], user: john)
+    Allocation::Target.add!(symbol: "TQQQ", target_percent: "40", user: john)
+    Allocation::DriftJob.perform_now
+    night(Date.new(2026, 10, 15))
+    expect(AuditEvent.where(kind: "thesis_review_refreshed").sole.data).to include("before_as_of" => "2026-10-14", "as_of" => "2026-10-15")
   end
 end

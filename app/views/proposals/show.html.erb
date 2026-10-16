@@ -5,8 +5,10 @@
 <% if proposal.thesis.present? %><p class="thesis"><%= proposal.thesis %></p><% end %>
 
 <%= render "shared/candles", chart: @chart %>
-<% if proposal.allocation_source.is_a?(Allocation::Drift) %><%= render "proposals/drift", drift: proposal.allocation_source %><% end %>
-<% if proposal.context["source"] %><%= render "proposals/deployment", context: proposal.context %><% end %>
+<% case proposal.allocation_source
+   when Allocation::Drift %><%= render "proposals/drift", drift: proposal.allocation_source %>
+<% when CashInflow, DeploymentTranche %><%= render "proposals/deployment", context: proposal.context %>
+<% end %>
 <%= render "proposals/evaluation", proposal: proposal, results: proposal.guardrail_results, sizing: proposal.sizing, collar: proposal.collar %>
 <% if proposal.reduces_position? %>
   <h2 class="sec">Lots this sale takes, <%= proposal.tax_lot_method %> <small class="muted">(as the journal knows them, split-adjusted and net of earlier sales, frozen when proposed; Schwab's method names are unverified)</small></h2>

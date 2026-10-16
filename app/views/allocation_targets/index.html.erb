@@ -17,10 +17,10 @@
           <span class="choice">
             <%= form_with url: allocation_target_path(target), method: :patch, class: "inline-form" do |f| %>
               <%= f.label :target_percent, "Target %", for: "target_percent_#{target.id}" %>
-              <%= f.text_field :target_percent, id: "target_percent_#{target.id}", value: (target.target_weight * 100).round(2).to_s("F"), inputmode: "decimal", size: 6 %>
+              <%= f.text_field :target_percent, id: "target_percent_#{target.id}", value: target.target_percent.to_s("F"), inputmode: "decimal", size: 6 %>
               <%= f.submit "Reweigh", class: "secondary" %>
             <% end %>
-            <% if target.instrument && target.rejection_standing_now? %><%= button_to "Ask again", allocation_target_rejection_clearance_path(target), method: :post, class: "link-button" %><% end %>
+            <% if target.instrument && target.ask_again? %><%= button_to "Ask again", allocation_target_rejection_clearance_path(target), method: :post, class: "link-button" %><% end %>
             <%= button_to "Retire", allocation_target_retirement_path(target), method: :post, class: "link-button" %>
           </span>
         <% else %>
