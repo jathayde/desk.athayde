@@ -8,11 +8,11 @@ module Proposals
   # The allocation jobs pass the target's instrument row, never a symbol to re-resolve (CUSIP identity), and an
   # expiry past the next session, since they propose after the close.
   def self.draft(account:, kind:, side:, limit_price:, symbol: nil, instrument: nil, stop_price: nil, setup: nil, thesis: nil, origin:, user: nil, quantity: nil,
-                 tax_lot_method: nil, expires_at: nil, allocation_source: nil)
+                 tax_lot_method: nil, expires_at: nil, allocation_source: nil, context: {})
     instrument ||= Instrument.find_by(symbol: symbol.to_s.strip.upcase) or raise UnknownSymbol, "unknown symbol #{symbol}"
     proposal = OrderProposal.new(account: account, instrument: instrument, kind: kind, side: side, order_type: Schwab::Order::LIMIT, limit_price: limit_price, stop_price: stop_price,
                                  planned_stop: stop_price, setup: setup, thesis: thesis, origin: origin, user: user, quantity: quantity,
-                                 expires_at: expires_at || MarketDay.today.in_time_zone(MarketDay::ZONE).end_of_day, allocation_source: allocation_source)
+                                 expires_at: expires_at || MarketDay.today.in_time_zone(MarketDay::ZONE).end_of_day, allocation_source: allocation_source, context: context)
     method = proposal.tax_lot_method = tax_lot_method.presence || Schwab::Order::DEFAULT_TAX_LOT_METHOD if proposal.reduces_position?
     raise Error, "unknown lot method #{method}" if method && !Schwab::Order::TAX_LOT_METHODS.include?(method)
     if proposal.kind_entry?

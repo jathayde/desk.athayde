@@ -20,6 +20,9 @@
         </li>
       <% end %>
     </ul>
+    <% desk.deployments.each do |inflow| %>
+      <p class="muted">Deploying <%= inflow.label %>: <%= inflow.progress %>; drift buys wait until it is done.</p>
+    <% end %>
     <% if desk.unallocated_positions.any? %>
       <p class="muted">Unallocated: <%= desk.unallocated_positions.map { |position| position.instrument.symbol }.to_sentence %>. Shown, never proposed against.</p>
     <% end %>

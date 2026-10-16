@@ -9,7 +9,7 @@ class AuditEvent < ApplicationRecord
     would_have_submitted submission_unknown submission_reconciled submission_failed submission_skipped submission_answer_ignored proposal_expired proposal_filled
     proposal_cancelled stop_adjusted trade_annotated watchlist_changed rule_changed rule_halt_tripped rule_halt_cleared unprotected_alert_sent agent_tool_used
     deployment_policy_changed allocation_target_changed instrument_classified instrument_tagged allocation_drift_recorded allocation_drift_checked
-    thesis_review_created thesis_review_decided
+    thesis_review_created thesis_review_decided cash_inflow_detected cash_inflow_status_changed deployment_tranche_scheduled deployment_tranche_status_changed
   ].freeze
 
   belongs_to :user, optional: true

@@ -127,6 +127,7 @@ class Desk
     through = now >= now.change(Allocation::DriftJob::DUE_AT) ? now.to_date : now.to_date - 1
     @allocation_due_on = MarketDay.schwab.trading.where(date: ..through).maximum(:date)
   end
+  def deployments = @deployments ||= account ? account.cash_inflows.committing.includes(:tranches, :activity).order(:id).to_a : []
   def unallocated_positions = @unallocated_positions ||= account ? Allocation::Book.unallocated(account).to_a : []
   def balance_stale? = balance && stale?(balance.as_of, :positions)
   def orders_as_of = @orders_as_of ||= account&.last_sync(:orders)

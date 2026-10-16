@@ -13,7 +13,7 @@
 <% if @reviews.any? %>
   <ul class="trades">
     <% @reviews.each do |review| %>
-      <li class="kv"><span><%= link_to "Thesis review: #{review.instrument.symbol}", thesis_review_path(review) %></span><b>deploy, hold, or exit</b></li>
+      <li class="kv"><span><%= link_to "Thesis review: #{review.label}", thesis_review_path(review) %></span><b><%= review.decisions.to_sentence(last_word_connector: ", or ", two_words_connector: " or ") %></b></li>
     <% end %>
   </ul>
 <% end %>
@@ -33,7 +33,7 @@
   <h2 class="sec">Decided</h2>
   <ul class="trades">
     <% @decided_reviews.each do |review| %>
-      <li class="kv"><span><%= link_to "Thesis review: #{review.instrument.symbol}", thesis_review_path(review) %></span><b><%= review.decision %></b></li>
+      <li class="kv"><span><%= link_to "Thesis review: #{review.label}", thesis_review_path(review) %></span><b><%= review.decision %></b></li>
     <% end %>
     <% @decided.each do |proposal| %>
       <li class="kv"><span><%= link_to proposal.label, proposal_path(proposal) %></span><b><%= proposal.status_label %></b></li>

@@ -3,7 +3,7 @@
 # are snapshotted in one pass, capped, and scrubbed so a mid-pull read or a stray byte cannot break a run; a
 # missing or empty checkout or an unreadable file is a degraded reason, not an exception.
 class Memory::Repo
-  FILES = %w[ investor-profile.md strategy.md watchlist.md prompts.md instructions.md edge.md ].freeze
+  FILES = %w[ investor-profile.md strategy.md watchlist.md prompts.md instructions.md edge.md deployment.md ].freeze
   PER_FILE_LIMIT = 32.kilobytes
   TOTAL_LIMIT = 128.kilobytes
   GIT_TIMEOUT = 60 # seconds; a fetch waiting on a remote must not hold the worker thread
@@ -34,6 +34,7 @@ class Memory::Repo
   end
 
   def truncated = files.select(&:truncated).map(&:name)
+  def text(name) = files.find { |entry| entry.name == name }&.text
   def last_modified_at = paths.map(&:mtime).max
   def head_sha = git? ? git("rev-parse", "--short", "HEAD") : nil
 

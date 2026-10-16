@@ -1,0 +1,22 @@
+<h1>New cash: <%= review.cash_inflow.label %> <small><%= review.open? ? "waiting for you" : "#{review.decision}, #{stamp(review.decided_at)}" %></small></h1>
+<p class="callout">The deployment policy says ask each time. Deploy splits it over the targets by weight at the next check; stage spreads it over weekly tranches; hold leaves it as cash. Either way you approve each order.</p>
+<% if review.open? && Current.user&.approver? %>
+  <h2 class="sec">Decide</h2>
+  <div class="choice">
+    <%= button_to "Deploy at the next check", thesis_review_decision_path(review), params: { decision: "deploy" }, class: "button" %>
+  </div>
+  <%= form_with url: thesis_review_decision_path(review), method: :post do |f| %>
+    <%= f.hidden_field :decision, value: "stage" %>
+    <%= f.label :weeks, "Stage over this many weeks" %>
+    <%= f.text_field :weeks, value: review.cash_inflow.default_weeks, inputmode: "numeric" %>
+    <%= f.submit "Stage", class: "secondary" %>
+  <% end %>
+  <%= form_with url: thesis_review_decision_path(review), method: :post do |f| %>
+    <%= f.hidden_field :decision, value: "hold" %>
+    <%= f.label :reason, "Hold as cash, because" %>
+    <%= f.text_field :reason %>
+    <%= f.submit "Hold", class: "secondary" %>
+  <% end %>
+<% elsif review.decision_reason.present? %>
+  <p class="muted"><%= review.decision.humanize %>: <%= review.decision_reason %></p>
+<% end %>

@@ -32,6 +32,8 @@ class RiskRule < ApplicationRecord
 
   def self.active_for(rule_type, setup: nil) = active_set_for(setup, scope: scope_for(rule_type))[rule_type.to_s]
   def self.params_for(rule_type, setup: nil) = active_for(rule_type, setup: setup)&.params || {}
+  # The floor under any allocation order, or nil when there is no rule (and then nothing is proposed).
+  def self.min_rebalance_notional = active_for("min_rebalance_notional")&.then { |rule| BigDecimal(rule.param(:amount).to_s) }
 
   # The next version of this rule, superseding this one, in one transaction and one audit row.
   def supersede!(params:, user:, mode: nil, note: nil, override_reason: nil)

@@ -1,18 +1,21 @@
-# The operator's call on an instrument the desk will not rebalance mechanically (PRD §5.12.2, docs/phase-2.5-plan.md
-# §0.7): the original thesis next to the current numbers, and a decision to deploy, hold, or exit. Deploy and exit
-# open the manual proposal form prefilled; hold closes the review with a reason. Nothing here places or sizes an order.
+# The operator's call where the desk will not act mechanically (PRD §5.12, docs/phase-2.5-plan.md §0.7, §0.8). On
+# drift in a leveraged or amplified instrument: the original thesis next to the current numbers, and deploy, hold,
+# or exit, where deploy and exit open the manual proposal form prefilled. On a deposit under the "ask" policy:
+# deploy it now, stage it over weeks, or hold it as cash, after which the drift check does the deploying. A hold
+# needs a reason. Nothing here places or sizes an order.
 class ThesisReview < ApplicationRecord
-  DECISIONS = %w[ deploy hold exit ].freeze
+  DECISIONS = { "drift" => %w[ deploy hold exit ], "deployment_ask" => %w[ deploy stage hold ] }.freeze
   PROPOSAL_KINDS = { "deploy" => "entry", "exit" => "exit" }.freeze
   NUMBERS = %w[ weight target_weight drift band close notional quantity unrealized_pnl ].freeze
 
   belongs_to :account
-  belongs_to :instrument
+  belongs_to :instrument, optional: true # a deposit is not about one instrument
+  belongs_to :cash_inflow, optional: true
   belongs_to :decided_by, class_name: "User", optional: true
   has_many :drifts, class_name: "Allocation::Drift", dependent: :restrict_with_exception
 
   enum :reason, { drift: "drift", deployment_ask: "deployment_ask" }, prefix: true
-  enum :decision, DECISIONS.index_by(&:itself), prefix: true, validate: { allow_nil: true }
+  enum :decision, DECISIONS.values.flatten.uniq.index_by(&:itself), prefix: true, validate: { allow_nil: true }
 
   scope :open, -> { where(decision: nil) }
 
@@ -42,20 +45,23 @@ class ThesisReview < ApplicationRecord
   def as_of = context["as_of"]&.then { Date.parse(it) }
   def open? = decision.nil?
   def side = notional&.then { it.positive? ? "buy" : "sell" }
-  def proposal_kind = PROPOSAL_KINDS[decision]
+  def proposal_kind = reason_drift? ? PROPOSAL_KINDS[decision] : nil
+  def decisions = DECISIONS.fetch(reason)
+  def label = reason_drift? ? instrument.symbol : cash_inflow.label
 
   # A hold needs a reason; deploy and exit lead to a proposal the operator writes, so the reason is optional. A form
   # shown numbers the nightly refresh has since replaced is refused, so a hold always stands on what was seen.
-  def decide!(decision:, user:, reason: nil, seen_as_of: nil)
+  def decide!(decision:, user:, reason: nil, seen_as_of: nil, weeks: nil)
     decided = decision.to_s
-    raise ArgumentError, "choose deploy, hold, or exit" unless DECISIONS.include?(decided)
+    raise ArgumentError, "choose #{decisions.to_sentence(last_word_connector: ", or ", two_words_connector: " or ")}" unless decisions.include?(decided)
     raise ArgumentError, "a hold needs a reason" if decided == "hold" && reason.blank?
     transaction do
       lock!
       raise ActiveRecord::StaleObjectError.new(self, "decide") unless open?
       raise ActiveRecord::StaleObjectError.new(self, "refreshed") if seen_as_of.present? && seen_as_of.to_s != context["as_of"]
       update!(decision: decided, decision_reason: reason.presence, decided_at: Time.current, decided_by: user)
-      AuditEvent.log("thesis_review_decided", actor: :human, user: user, subject: self, reason: decision_reason, data: { symbol: instrument.symbol, decision: decided })
+      AuditEvent.log("thesis_review_decided", actor: :human, user: user, subject: self, reason: decision_reason, data: { subject: label, decision: decided })
+      cash_inflow.answer!(decided, user: user, weeks: weeks, reason: decision_reason) if reason_deployment_ask?
     end
     self
   end

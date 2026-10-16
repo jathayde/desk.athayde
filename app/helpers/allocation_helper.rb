@@ -31,6 +31,7 @@ module AllocationHelper
       return "; a class has no single instrument to order" if detail["class_target"]
       return "; under one whole share" if detail["sub_share"]
       return "; not proposed: #{detail["reason"]}" if detail["reason"]
+      return "; buys wait while new cash is deployed" if detail["committed"]
       return "; under the #{money(BigDecimal(detail["below_minimum"]))} minimum" if detail["below_minimum"]
       return "; not proposed: #{detail["refused"]}" if detail["refused"]
       return "; not proposed: #{detail["error"]}" if detail["error"]

@@ -14,6 +14,7 @@ module Allocation
       day = MarketDay.for(date)
       return unless day.schwab? && day.trading?
       account = Account.trading.order(:id).first or return
+      started_at = Time.current
       lines = Allocation::Book.new(account, day: day).lines
       return if lines.empty?
 
@@ -23,9 +24,27 @@ module Allocation
         AuditEvent.log("allocation_drift_checked", actor: :system, data: { as_of: day.date.iso8601, actions: recorded.map(&:action).tally,
                                                                            reasons: lines.first.detail["reasons"] }.compact)
       end
+      deploy(account, day, planner, started_at) unless lines.first.action == "unavailable" # prices from tonight's rows, or wait for a night that has them
     end
 
     private
+      # New cash after the drift rows: deposits to deploy at once, then tranches due today or earlier. Each in its own
+      # transaction, so one that fails leaves the rest, and a deposit or tranche that bought nothing says why.
+      # Only cash committed before the run began: a deposit detected mid-run waits a night, since drift buys were not
+      # paused for it. One tranche per deposit a night, re-read under its lock, so money rolled into it is the money spent.
+      def deploy(account, day, planner, started_at)
+        account.cash_inflows.status_pending.where(updated_at: ...started_at).order(:id).each { |inflow| settle(inflow) { inflow.lock!.deploy!(planner) } }
+        DeploymentTranche.where(cash_inflow: account.cash_inflows).due(day.date).group_by(&:cash_inflow_id).each_value do |due|
+          settle(due.first) { due.first.lock!.deploy!(planner) }
+        end
+      end
+
+      def settle(source)
+        ApplicationRecord.transaction { yield }
+      rescue StandardError => e
+        Rails.error.report(e, handled: true, context: { job: self.class.name, source: "#{source.class.name}##{source.id}" })
+      end
+
       # A rerun on the same day rewrites the row, except one that already proposed, which keeps the numbers it
       # proposed from, and a measured row a failed rerun would blank: the run's audit row still names the reasons.
       # Each line in its own savepoint, so whatever goes wrong planning one target is that row's verdict, not the

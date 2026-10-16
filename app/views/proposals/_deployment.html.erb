@@ -1,0 +1,9 @@
+<h2 class="sec">Deployment context <small class="muted">(frozen when proposed)</small></h2>
+<dl class="kv-list">
+  <div class="kv"><dt>New cash</dt><dd><%= context["source"] %> · <%= money(BigDecimal(context["share"])) %> of it to this target, by its weight</dd></div>
+</dl>
+<% if context["notes"].present? %>
+  <div class="thesis"><%= simple_format(context["notes"]) %></div>
+<% else %>
+  <p class="muted">No deployment.md in the memory repo yet: the lump-sum and staged base rates you write there show here.</p>
+<% end %>

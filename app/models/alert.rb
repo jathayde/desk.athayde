@@ -11,7 +11,7 @@ module Alert
   end
 
   def self.thesis_review(review)
-    announce("#{review.instrument.symbol} #{review.reason_drift? ? "drifted" : "has new cash to place"}: thesis review", review.thesis.presence&.truncate(BODY_LIMIT) || "No thesis on file. Open the review to decide.", routes.thesis_review_path(review)) do |subject|
+    announce(review.reason_drift? ? "#{review.label} drifted: thesis review" : "#{review.label}: deploy, stage, or hold?", review.reason_deployment_ask? ? "The policy says ask each time: deploy, stage, or hold." : review.thesis.presence&.truncate(BODY_LIMIT) || "No thesis on file. Open the review to decide.", routes.thesis_review_path(review)) do |subject|
       AlertMailer.thesis_review(review, subject: subject)
     end
   end

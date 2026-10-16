@@ -1,0 +1,45 @@
+<% symbol = @review.label %>
+<h1>Thesis review: <%= symbol %> <small><%= @review.open? ? "waiting for you" : "#{@review.decision}, #{stamp(@review.decided_at)}" %></small></h1>
+<% if @review.instrument.discretionary? %>
+  <p class="callout"><%= symbol %> is tagged <%= (@review.instrument.tag_names & Instrument::DISCRETIONARY_TAGS).to_sentence %>: the discipline is the same, the decision is not mechanical.</p>
+<% else %>
+  <p class="callout"><%= symbol %> is no longer tagged leveraged or amplified. Answer this review and the next check treats it like any other target.</p>
+<% end %>
+
+<h2 class="sec">Original thesis</h2>
+<% if @review.thesis.present? %>
+  <p class="thesis"><%= @review.thesis %></p>
+<% else %>
+  <p class="warn">No thesis on file, from the journal or the watchlist. Decide anyway, and write one on the proposal if you deploy.</p>
+<% end %>
+
+<h2 class="sec">Then <small class="muted">(<%= @review.as_of ? "the #{@review.as_of.strftime("%a %b %-d")} close" : "no close recorded" %>)</small></h2>
+<dl class="kv-list">
+  <div class="kv"><dt>Weight</dt><dd><%= percent(@review.weight) %> against a <%= percent(@review.target_weight) %> target · drift <%= points(@review.drift, signed: true) %> · band <%= points(@review.band) %></dd></div>
+  <div class="kv"><dt>Price</dt><dd><%= money(@review.close) %></dd></div>
+  <% if @review.side %><div class="kv"><dt>Back to target</dt><dd><%= @review.side %> <%= money(@review.notional.abs) %></dd></div><% end %>
+  <% if @review.quantity %><div class="kv"><dt>Held</dt><dd><%= quantity(@review.quantity) %> shares · <%= signed_money(@review.unrealized_pnl) %> unrealized</dd></div><% end %>
+</dl>
+<% if @target.nil? %>
+  <p class="muted">No active target on <%= symbol %> any more; these are the last numbers measured.</p>
+<% elsif @latest && @review.as_of && @latest.as_of > @review.as_of %>
+  <p class="muted">Latest check, <%= @latest.as_of.strftime("%a %b %-d") %>: <%= drift_action_label(@latest) %>.</p>
+<% end %>
+<%= render "shared/candles", chart: @chart %>
+
+<% if @review.open? && Current.user&.approver? %>
+  <h2 class="sec">Decide</h2>
+  <div class="choice">
+    <%= button_to "Deploy (buy, with a stop)", thesis_review_decision_path(@review), params: { decision: "deploy", as_of: @review.context["as_of"] }, class: "button" %>
+    <% if @review.quantity %><%= button_to "Exit (sell)", thesis_review_decision_path(@review), params: { decision: "exit", as_of: @review.context["as_of"] }, class: "button secondary" %><% end %>
+  </div>
+  <%= form_with url: thesis_review_decision_path(@review), method: :post do |f| %>
+    <%= f.hidden_field :decision, value: "hold" %>
+    <%= f.hidden_field :as_of, value: @review.context["as_of"] %>
+    <%= f.label :reason, "Hold, because" %>
+    <%= f.text_field :reason %>
+    <%= f.submit "Hold", class: "secondary" %>
+  <% end %>
+<% elsif @review.decision_reason.present? %>
+  <p class="muted"><%= @review.decision.humanize %>: <%= @review.decision_reason %></p>
+<% end %>

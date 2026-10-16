@@ -329,6 +329,45 @@ ALTER SEQUENCE public.balances_id_seq OWNED BY public.balances.id;
 
 
 --
+-- Name: cash_inflows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cash_inflows (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    activity_id bigint NOT NULL,
+    amount numeric(18,4) NOT NULL,
+    detected_at timestamp with time zone NOT NULL,
+    deployment_policy_id bigint NOT NULL,
+    status character varying NOT NULL,
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT cash_inflows_amount_positive CHECK ((amount > (0)::numeric)),
+    CONSTRAINT cash_inflows_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'proposed'::character varying, 'staged'::character varying, 'asked'::character varying, 'held'::character varying, 'done'::character varying])::text[])))
+);
+
+
+--
+-- Name: cash_inflows_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.cash_inflows_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: cash_inflows_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.cash_inflows_id_seq OWNED BY public.cash_inflows.id;
+
+
+--
 -- Name: deployment_policies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -343,7 +382,7 @@ CREATE TABLE public.deployment_policies (
     note text,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY (ARRAY[('immediate'::character varying)::text, ('staged'::character varying)::text, ('ask'::character varying)::text]))),
+    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY ((ARRAY['immediate'::character varying, 'staged'::character varying, 'ask'::character varying])::text[]))),
     CONSTRAINT deployment_policies_staged_has_weeks CHECK ((((mode)::text <> 'staged'::text) OR (weeks > 0)))
 );
 
@@ -365,6 +404,44 @@ CREATE SEQUENCE public.deployment_policies_id_seq
 --
 
 ALTER SEQUENCE public.deployment_policies_id_seq OWNED BY public.deployment_policies.id;
+
+
+--
+-- Name: deployment_tranches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deployment_tranches (
+    id bigint NOT NULL,
+    cash_inflow_id bigint NOT NULL,
+    week integer NOT NULL,
+    due_on date NOT NULL,
+    amount numeric(18,4) NOT NULL,
+    status character varying DEFAULT 'scheduled'::character varying NOT NULL,
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT deployment_tranches_amount_positive CHECK ((amount > (0)::numeric)),
+    CONSTRAINT deployment_tranches_status CHECK (((status)::text = ANY ((ARRAY['scheduled'::character varying, 'proposed'::character varying, 'rolled'::character varying, 'done'::character varying])::text[])))
+);
+
+
+--
+-- Name: deployment_tranches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.deployment_tranches_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: deployment_tranches_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.deployment_tranches_id_seq OWNED BY public.deployment_tranches.id;
 
 
 --
@@ -412,7 +489,7 @@ CREATE TABLE public.instrument_tags (
     tag character varying NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
-    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY (ARRAY[('leveraged'::character varying)::text, ('amplified'::character varying)::text, ('diversifier'::character varying)::text])))
+    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY ((ARRAY['leveraged'::character varying, 'amplified'::character varying, 'diversifier'::character varying])::text[])))
 );
 
 
@@ -559,7 +636,8 @@ CREATE TABLE public.order_proposals (
     child_action character varying,
     lots jsonb DEFAULT '[]'::jsonb NOT NULL,
     allocation_source_type character varying,
-    allocation_source_id bigint
+    allocation_source_id bigint,
+    context jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 
 
@@ -1515,7 +1593,7 @@ ALTER SEQUENCE public.system_settings_id_seq OWNED BY public.system_settings.id;
 CREATE TABLE public.thesis_reviews (
     id bigint NOT NULL,
     account_id bigint NOT NULL,
-    instrument_id bigint NOT NULL,
+    instrument_id bigint,
     reason character varying NOT NULL,
     thesis text,
     context jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -1525,8 +1603,11 @@ CREATE TABLE public.thesis_reviews (
     decided_by_id bigint,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
+    cash_inflow_id bigint,
+    CONSTRAINT thesis_reviews_ask_names_inflow CHECK ((((reason)::text <> 'deployment_ask'::text) OR (cash_inflow_id IS NOT NULL))),
     CONSTRAINT thesis_reviews_decided_together CHECK (((decision IS NULL) = (decided_at IS NULL))),
-    CONSTRAINT thesis_reviews_decision CHECK (((decision IS NULL) OR ((decision)::text = ANY ((ARRAY['deploy'::character varying, 'hold'::character varying, 'exit'::character varying])::text[])))),
+    CONSTRAINT thesis_reviews_decision CHECK (((decision IS NULL) OR ((decision)::text = ANY ((ARRAY['deploy'::character varying, 'stage'::character varying, 'hold'::character varying, 'exit'::character varying])::text[])))),
+    CONSTRAINT thesis_reviews_drift_names_instrument CHECK ((((reason)::text <> 'drift'::text) OR (instrument_id IS NOT NULL))),
     CONSTRAINT thesis_reviews_hold_has_reason CHECK ((((decision)::text IS DISTINCT FROM 'hold'::text) OR (decision_reason IS NOT NULL))),
     CONSTRAINT thesis_reviews_reason CHECK (((reason)::text = ANY ((ARRAY['drift'::character varying, 'deployment_ask'::character varying])::text[])))
 );
@@ -1808,10 +1889,24 @@ ALTER TABLE ONLY public.balances ALTER COLUMN id SET DEFAULT nextval('public.bal
 
 
 --
+-- Name: cash_inflows id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_inflows ALTER COLUMN id SET DEFAULT nextval('public.cash_inflows_id_seq'::regclass);
+
+
+--
 -- Name: deployment_policies id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deployment_policies ALTER COLUMN id SET DEFAULT nextval('public.deployment_policies_id_seq'::regclass);
+
+
+--
+-- Name: deployment_tranches id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_tranches ALTER COLUMN id SET DEFAULT nextval('public.deployment_tranches_id_seq'::regclass);
 
 
 --
@@ -2131,11 +2226,27 @@ ALTER TABLE ONLY public.balances
 
 
 --
+-- Name: cash_inflows cash_inflows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_inflows
+    ADD CONSTRAINT cash_inflows_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: deployment_policies deployment_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.deployment_policies
     ADD CONSTRAINT deployment_policies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: deployment_tranches deployment_tranches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_tranches
+    ADD CONSTRAINT deployment_tranches_pkey PRIMARY KEY (id);
 
 
 --
@@ -2596,6 +2707,27 @@ CREATE INDEX index_balances_on_account_id_and_as_of ON public.balances USING btr
 
 
 --
+-- Name: index_cash_inflows_on_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cash_inflows_on_account_id ON public.cash_inflows USING btree (account_id);
+
+
+--
+-- Name: index_cash_inflows_on_activity_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cash_inflows_on_activity_id ON public.cash_inflows USING btree (activity_id);
+
+
+--
+-- Name: index_cash_inflows_on_deployment_policy_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cash_inflows_on_deployment_policy_id ON public.cash_inflows USING btree (deployment_policy_id);
+
+
+--
 -- Name: index_deployment_policies_on_changed_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2614,6 +2746,20 @@ CREATE INDEX index_deployment_policies_on_superseded_by_id ON public.deployment_
 --
 
 CREATE UNIQUE INDEX index_deployment_policies_one_active ON public.deployment_policies USING btree (active) WHERE active;
+
+
+--
+-- Name: index_deployment_tranches_on_cash_inflow_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_deployment_tranches_on_cash_inflow_id ON public.deployment_tranches USING btree (cash_inflow_id);
+
+
+--
+-- Name: index_deployment_tranches_on_cash_inflow_id_and_week; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_deployment_tranches_on_cash_inflow_id_and_week ON public.deployment_tranches USING btree (cash_inflow_id, week);
 
 
 --
@@ -3233,6 +3379,13 @@ CREATE INDEX index_thesis_reviews_on_instrument_id ON public.thesis_reviews USIN
 
 
 --
+-- Name: index_thesis_reviews_one_open_per_inflow; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_thesis_reviews_one_open_per_inflow ON public.thesis_reviews USING btree (cash_inflow_id) WHERE (decision IS NULL);
+
+
+--
 -- Name: index_thesis_reviews_one_open_per_instrument; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3430,6 +3583,14 @@ ALTER TABLE ONLY public.positions
 
 
 --
+-- Name: cash_inflows fk_rails_2db14d98b6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_inflows
+    ADD CONSTRAINT fk_rails_2db14d98b6 FOREIGN KEY (activity_id) REFERENCES public.activities(id);
+
+
+--
 -- Name: solid_queue_recurring_executions fk_rails_318a5533ed; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3502,6 +3663,14 @@ ALTER TABLE ONLY public.submission_attempts
 
 
 --
+-- Name: cash_inflows fk_rails_608ec75816; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_inflows
+    ADD CONSTRAINT fk_rails_608ec75816 FOREIGN KEY (deployment_policy_id) REFERENCES public.deployment_policies(id);
+
+
+--
 -- Name: activities fk_rails_6886e9a52a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3531,6 +3700,14 @@ ALTER TABLE ONLY public.sessions
 
 ALTER TABLE ONLY public.trades
     ADD CONSTRAINT fk_rails_759807f5a3 FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+
+
+--
+-- Name: deployment_tranches fk_rails_75a5ab8843; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_tranches
+    ADD CONSTRAINT fk_rails_75a5ab8843 FOREIGN KEY (cash_inflow_id) REFERENCES public.cash_inflows(id);
 
 
 --
@@ -3750,6 +3927,14 @@ ALTER TABLE ONLY public.submission_attempts
 
 
 --
+-- Name: thesis_reviews fk_rails_de1dd0eb5b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_reviews
+    ADD CONSTRAINT fk_rails_de1dd0eb5b FOREIGN KEY (cash_inflow_id) REFERENCES public.cash_inflows(id);
+
+
+--
 -- Name: thesis_reviews fk_rails_e182473e94; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3787,6 +3972,14 @@ ALTER TABLE ONLY public.order_proposals
 
 ALTER TABLE ONLY public.orders
     ADD CONSTRAINT fk_rails_f5d8121a45 FOREIGN KEY (parent_order_id) REFERENCES public.orders(id);
+
+
+--
+-- Name: cash_inflows fk_rails_f9153bb3b3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_inflows
+    ADD CONSTRAINT fk_rails_f9153bb3b3 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -3828,6 +4021,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261016130001'),
 ('20261016120001'),
 ('20261016110001'),
 ('20261016100001'),

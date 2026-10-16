@@ -58,13 +58,38 @@ RSpec.describe "Thesis reviews" do
 
   it "renders the page and the mail for a review with no numbers, and says when the tag is gone" do
     tqqq.classify!(asset_class: nil, tags: [], user: john)
-    sparse = ThesisReview.create!(account: account, instrument: tqqq, reason: :deployment_ask, context: {})
+    sparse = ThesisReview.create!(account: account, instrument: tqqq, reason: :drift, context: {})
     sign_in john
     get thesis_review_path(sparse)
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("no longer tagged", "no close recorded", "No active target")
     expect(response.body).not_to include("Exit (sell)") # nothing held to sell
-    mail = AlertMailer.thesis_review(sparse, subject: "TQQQ has new cash to place: thesis review")
+    mail = AlertMailer.thesis_review(sparse, subject: "TQQQ drifted: thesis review")
     expect(mail.text_part.body.to_s).to include("Thesis: none on file")
+  end
+end
+
+RSpec.describe "Deposit reviews and deployment proposals" do
+  let!(:account) { create(:account, schwab_hash: Schwab::FakeClient::ACCOUNT_HASH) }
+  let!(:token) { create(:schwab_token) }
+  let(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
+
+  it "shows a deposit review with its three answers and deploys it tonight, and a deployment proposal shows its context" do
+    policy = DeploymentPolicy.create!(mode: "ask")
+    activity = create(:activity, account: account, instrument: nil, kind: "deposit", side: nil, quantity: nil, price: nil, net_amount: 2000, trade_date: Date.new(2026, 10, 14))
+    inflow = CashInflow.create_from!(account, activity, policy)
+    sign_in john
+    get proposals_path
+    expect(response.body).to include("Thesis review: $2,000.00 deposited Oct 14", "deploy, stage, or hold")
+    get thesis_review_path(inflow.thesis_review)
+    expect(response.body).to include("New cash: $2,000.00 deposited Oct 14", "Deploy at the next check", "Stage over this many weeks", "Hold as cash, because")
+    post thesis_review_decision_path(inflow.thesis_review), params: { decision: "deploy" }
+    expect(flash[:notice]).to eq("$2,000.00 deposited Oct 14: deploying at the next check.")
+    expect(inflow.reload).to be_status_pending
+
+    proposal = create(:order_proposal, account: account, kind: "rebalance", origin: "allocation", allocation_source: inflow, stop_price: nil,
+                                       context: { "source" => inflow.label, "share" => "1333.33", "notes" => nil })
+    get proposal_path(proposal)
+    expect(response.body).to include("Deployment context", "$1,333.33 of it to this target", "No deployment.md in the memory repo yet")
   end
 end

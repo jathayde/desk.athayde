@@ -35,7 +35,7 @@ Source of truth: `docs/artifacts/investment-copilot-prd.md` §5.12 and §6. Phas
 
 - `Allocation::DriftJob` 17:10 (built in step 1; 16:40 would often read positions synced before the close, since the off-hours cadence is an hour): weights, drift rows, then the planner (rebalance proposals or thesis reviews), one `allocation_drift_checked` audit per run with the counts. The run is `unavailable` unless the balance and the positions sync both postdate that day's regular close. A targeted instrument that is held is priced by its position's last price, so the close and the market value behind its weight agree; one that is not held is priced by its quote's last print, fetched once per run, and a failed fetch makes the whole run unavailable with that reason.
 - `Allocation::InflowJob` after each activities sync (enqueued by `Sync::ActivitiesJob` like the journal linker): new deposits → inflow rows and the policy's first action through the planner.
-- `Allocation::TrancheJob` 09:00 on the tranche's due date: hands the tranche to the planner.
+- ~~`Allocation::TrancheJob` 09:00 on the tranche's due date~~: built into the 17:10 check instead (§8, step 4).
 - `Allocation::DiagnosticsJob` Saturday 08:00: correlations for every held instrument and every diversifier against SPY, and the cash-drag row.
 - Sunday review reads `allocation_drifts`, `correlations`, `cash_drag_diagnostics`, and `fund_flows`; nothing is computed in the prompt.
 
@@ -96,6 +96,18 @@ Auto-execution of any allocation action; options; FMP screening and fundamentals
 - After deploy or exit, the planner steps aside while the proposal the operator wrote is waiting or unfilled; if the operator walks away from it (rejected, expired, never written) the next night's drift asks again. Only a hold stands without a proposal.
 - A review left open after the tag comes off is still answered before anything mechanical happens on that instrument, and a hold keeps standing whether or not the instrument is still tagged. Holds belong to the target whose drift raised them: a retired and re-added target starts fresh.
 - A decision posted from a page whose numbers the nightly refresh has since replaced is refused, so a hold always stands on what the operator saw.
+
+**Step 4 answers (2026-10-16) and what was built on them:**
+- New cash is split pro-rata to the active instrument targets' weights; classes and leveraged or amplified instruments are left out, each share buys whole shares at that night's measured close as a stop-less rebalance buy, a share under the minimum or beside a waiting proposal is skipped, and what buys nothing stays cash.
+- While a deposit is pending, asked, or has tranches still scheduled, the nightly check still proposes sells but records buys as `reported` ("buys wait while new cash is deployed"): one writer for buys at a time. The dashboard names the deployment in progress.
+- "Ask each time" raises a thesis review about the deposit (no instrument): deploy tonight, stage over N weeks (the policy's weeks, else 4, editable on the review), or hold as cash with a reason.
+- The Deployment context panel reads `deployment.md` from the memory repo, frozen into each deployment proposal; the panel says when the file does not exist yet.
+- Built, not asked: only deposits on or after the day the desk first had a deployment policy count, so a backfill never deploys history; a deposit under `min_rebalance_notional` is recorded as done and left as cash (this also keeps a cash-in-lieu print, verify item 45, from deploying).
+- A night either settles new cash or defers it. Buying, or a share too small to buy, settles it; unsettled cash, a halt, a proposal already waiting, a target with no price, a missing minimum rule, or an error defers it to the next night, up to five nights, after which a deposit is left as cash and a tranche rolls. Once any target takes a share the deposit or tranche is settled: the shares that deferred that night stay cash, since proposing them again would double the rest.
+- The planner spends only settled cash not already claimed, tonight's earlier buys included, so an ACH deposit waits until it settles rather than proposing buys the rules would block (and alerting) each night.
+- One tranche per deposit a night, the earliest due, read under its lock; tranches staged from an answered ask start the day of the answer. Weeks are 1 to 52.
+- Only valid deposits with a positive amount count, and each is re-read before deploying: one returned, cancelled, or re-signed since detection is done, marked reversed. A deposit detected while a check is running waits for the next night.
+- **Deviation from §2:** there is no 09:00 `TrancheJob`. Tranches due on or before a trading day are proposed by that evening's 17:10 check, priced from its fresh rows and expiring at the next session's close, like every other allocation proposal. A night whose check is unavailable deploys nothing and tries again the next night.
 
 **Answered 2026-10-16, all as drafted:** rebalance buys are plain LIMIT orders with no bracket stop; rebalance notional counts toward the daily notional cap; one versioned `rebalance_band` rule, no per-target override; `allocation` origin, hand-entered fund flows, tags and authored asset class, and the drift job in shadow all accepted.
 

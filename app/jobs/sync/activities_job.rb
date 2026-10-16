@@ -51,6 +51,7 @@ module Sync
 
       def hand_off_to_journal(account)
         Journal::LinkFillsJob.perform_later(account)
+        Allocation::InflowJob.perform_later(account)
         Snapshots::RebuildJob.perform_later(account, from: @earliest_flow) if @earliest_flow
       end
 

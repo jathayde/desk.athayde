@@ -16,7 +16,7 @@ RSpec.describe Schwab::TokenHealthJob do
     token = create(:schwab_token, :revoked)
     run("2026-09-09 20:00 EDT")
     expect(subjects).to eq([ subject_for(:missing), subject_for(:revoked) ])
-    expect(AuditEvent.where(kind: "token_nag_sent").pluck(:reason)).to eq(%w[ missing revoked ])
+    expect(AuditEvent.where(kind: "token_nag_sent").order(:id).pluck(:reason)).to eq(%w[ missing revoked ])
     expect(AuditEvent.where(kind: "token_nag_sent").last.subject).to eq(token)
   end
 

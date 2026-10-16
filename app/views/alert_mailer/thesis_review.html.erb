@@ -1,3 +1,7 @@
-<p><% if @review.weight %><b><%= @review.instrument.symbol %> is <%= percent(@review.weight) %> of equity against a <%= percent(@review.target_weight) %> target.</b> <% end %>It is tagged leveraged or amplified, so the desk does not rebalance it mechanically: deploy, hold, or exit is your call.</p>
+<% if @review.reason_deployment_ask? %>
+<p><b><%= @review.label %>.</b> The policy says ask each time: deploy it tonight, stage it over weeks, or hold it as cash.</p>
+<% else %>
+<p><% if @review.weight %><b><%= @review.label %> is <%= percent(@review.weight) %> of equity against a <%= percent(@review.target_weight) %> target.</b> <% end %>It is tagged leveraged or amplified, so the desk does not rebalance it mechanically: deploy, hold, or exit is your call.</p>
 <p>Thesis: <%= @review.thesis.presence || "none on file" %></p>
+<% end %>
 <p><%= link_to "Review", thesis_review_url(@review) %></p>
