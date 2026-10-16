@@ -1,0 +1,27 @@
+<section class="rule">
+  <h2 class="sec"><%= rule.rule_type.humanize %><% if rule.setup %> · <%= rule.setup.name %><% end %> <small>v<%= rule.version %><% if rule.note.present? %> · <%= rule.note %><% end %></small></h2>
+  <% if rule.param_keys.empty? %>
+    <p class="muted">No parameters; this rule answers "not checked" until a data source supplies it.</p>
+  <% else %>
+    <%= form_with scope: "rule_#{rule.id}", url: risk_rule_path(rule), method: :patch, class: "account-form" do |f| %>
+      <div class="fields">
+        <% rule.param_keys.each do |key| %>
+          <%= f.label "params_#{key}", key.humanize %>
+          <%= f.text_field "params_#{key}", name: f.field_name(:params, key), value: rule.params[key], inputmode: "decimal" %>
+        <% end %>
+        <% if rule.mode_choosable? %>
+          <%= f.label :mode, "Mode" %>
+          <%= f.select :mode, options_for_select(RiskRule.modes.keys, rule.mode) %>
+        <% end %>
+        <%= f.label :note, "Why" %>
+        <%= f.text_field :note %>
+        <% if settings.halted? %>
+          <%= f.label :override_reason, "Editing during a halt: why" %>
+          <%= f.text_field :override_reason %>
+        <% end %>
+        <%= f.submit "Save as v#{rule.version + 1}" %>
+        <% if rule.previewable? %><%= f.submit "Preview effect", formaction: preview_risk_rule_path(rule), formmethod: "get", class: "secondary" %><% end %>
+      </div>
+    <% end %>
+  <% end %>
+</section>

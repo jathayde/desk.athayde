@@ -4,11 +4,13 @@ class Instrument < ApplicationRecord
   has_many :orders, dependent: :restrict_with_exception
   has_many :activities, dependent: :restrict_with_exception
   has_many :trades, dependent: :restrict_with_exception
+  has_many :tags, class_name: "InstrumentTag", dependent: :destroy
 
   scope :delisted, -> { where.not(delisted_at: nil) }
 
   normalizes :cusip, with: ->(c) { c.strip.upcase.presence }
   normalizes :symbol, with: ->(s) { s.strip.upcase }
+  normalizes :asset_class, with: ->(name) { name.squish.downcase.presence }
 
   validates :symbol, presence: true
   validate :predecessor_is_another_instrument
@@ -31,6 +33,32 @@ class Instrument < ApplicationRecord
     return self unless delisted?
     update!(delisted_at: nil, delisted_price: nil)
     AuditEvent.log("instrument_relisted", actor: user ? :human : :system, user: user, subject: self, reason: reason, data: { symbol: symbol })
+    self
+  end
+
+  def tag_names = tags.map(&:tag).sort
+  def tagged?(tag) = tag_names.include?(tag.to_s)
+
+  # The authored asset class and tags (docs/phase-2.5-plan.md §0.3), each change its own audit row; an unchanged
+  # field writes nothing.
+  def classify!(asset_class:, tags:, user:)
+    asset_class = self.class.normalize_value_for(:asset_class, asset_class.to_s)
+    wanted = Array(tags).map(&:to_s).compact_blank.uniq.sort
+    transaction do
+      if asset_class != self.asset_class
+        AuditEvent.log("instrument_classified", actor: :human, user: user, subject: self, data: { symbol: symbol, before: self.asset_class, after: asset_class })
+        update!(asset_class: asset_class)
+      end
+      (wanted - tag_names).each do |tag|
+        self.tags.create!(tag: tag)
+        AuditEvent.log("instrument_tagged", actor: :human, user: user, subject: self, data: { symbol: symbol, tag: tag, tagged: true })
+      end
+      self.tags.where(tag: tag_names - wanted).find_each do |removed|
+        removed.destroy!
+        AuditEvent.log("instrument_tagged", actor: :human, user: user, subject: self, data: { symbol: symbol, tag: removed.tag, tagged: false })
+      end
+    end
+    self.tags.reset
     self
   end
 

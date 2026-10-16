@@ -11,7 +11,7 @@ class Guardrails::Evaluator
   def call
     active = RiskRule.active_set_for(@proposal.setup)
     results = BUILT_IN.map { |type| judge(type, nil) }
-    results += RiskRule::TYPES.map { |type| active[type] ? judge(type, active[type]) : missing(type) }
+    results += RiskRule::TRADE_TYPES.map { |type| active[type] ? judge(type, active[type]) : missing(type) }
     Guardrails::Report.new(results)
   end
 

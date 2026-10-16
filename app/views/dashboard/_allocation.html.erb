@@ -1,0 +1,30 @@
+<section>
+  <h2 class="sec">Allocation</h2>
+  <% if desk.allocation_targets.any? %>
+    <ul class="positions">
+      <% desk.allocation_targets.each do |target| %>
+        <% drift = desk.allocation_drifts[target.id] %>
+        <li class="pos <%= "at-risk" if drift&.action_reported? %>">
+          <div class="top">
+            <span><%= target.label %> · <%= drift.nil? || drift.action_unavailable? ? "unknown" : percent(drift.weight) %> of <%= percent(target.target_weight) %></span>
+            <span class="primary"><%= drift.nil? ? "not measured" : drift.action_unavailable? ? "unavailable" : points(drift.drift, signed: true) %></span>
+          </div>
+          <div class="sub">
+            <% if drift.nil? %>
+              <span>not measured yet; the check runs after the close on trading days</span>
+            <% else %>
+              <span><%= drift.action_unavailable? ? Array(drift.detail["reasons"]).to_sentence : "band #{points(drift.band)} · #{drift_action_label(drift)}" %></span>
+              <span class="as-of <%= "stale" if desk.allocation_stale?(drift) %>"><%= "stale · " if desk.allocation_stale?(drift) %><%= drift.as_of.strftime("%a %b %-d") %> close</span>
+            <% end %>
+          </div>
+        </li>
+      <% end %>
+    </ul>
+    <% if desk.unallocated_positions.any? %>
+      <p class="muted">Unallocated: <%= desk.unallocated_positions.map { |position| position.instrument.symbol }.to_sentence %>. Shown, never proposed against.</p>
+    <% end %>
+    <p><%= link_to "Targets", allocation_targets_path %></p>
+  <% else %>
+    <p class="empty">No targets. <%= link_to "Set targets", allocation_targets_path %> to have the book measured after each close.</p>
+  <% end %>
+</section>

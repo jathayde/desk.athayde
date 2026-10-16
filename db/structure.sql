@@ -163,6 +163,84 @@ ALTER SEQUENCE public.agent_runs_id_seq OWNED BY public.agent_runs.id;
 
 
 --
+-- Name: allocation_drifts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.allocation_drifts (
+    id bigint NOT NULL,
+    allocation_target_id bigint NOT NULL,
+    as_of date NOT NULL,
+    weight numeric(9,6),
+    target_weight numeric(7,6) NOT NULL,
+    band numeric(9,6),
+    close numeric(18,4),
+    drift numeric(9,6),
+    notional numeric(18,4),
+    quantity integer,
+    action character varying NOT NULL,
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    order_proposal_id bigint,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: allocation_drifts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.allocation_drifts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: allocation_drifts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.allocation_drifts_id_seq OWNED BY public.allocation_drifts.id;
+
+
+--
+-- Name: allocation_targets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.allocation_targets (
+    id bigint NOT NULL,
+    instrument_id bigint,
+    asset_class character varying,
+    target_weight numeric(7,6) NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT allocation_targets_instrument_or_class CHECK (((instrument_id IS NULL) <> (asset_class IS NULL))),
+    CONSTRAINT allocation_targets_weight_range CHECK (((target_weight > (0)::numeric) AND (target_weight <= (1)::numeric)))
+);
+
+
+--
+-- Name: allocation_targets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.allocation_targets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: allocation_targets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.allocation_targets_id_seq OWNED BY public.allocation_targets.id;
+
+
+--
 -- Name: ar_internal_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -249,6 +327,45 @@ ALTER SEQUENCE public.balances_id_seq OWNED BY public.balances.id;
 
 
 --
+-- Name: deployment_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deployment_policies (
+    id bigint NOT NULL,
+    mode character varying NOT NULL,
+    weeks integer,
+    active boolean DEFAULT true NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    superseded_by_id bigint,
+    changed_by_id bigint,
+    note text,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT deployment_policies_mode CHECK (((mode)::text = ANY ((ARRAY['immediate'::character varying, 'staged'::character varying, 'ask'::character varying])::text[]))),
+    CONSTRAINT deployment_policies_staged_has_weeks CHECK ((((mode)::text <> 'staged'::text) OR (weeks > 0)))
+);
+
+
+--
+-- Name: deployment_policies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.deployment_policies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: deployment_policies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.deployment_policies_id_seq OWNED BY public.deployment_policies.id;
+
+
+--
 -- Name: devices; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -284,6 +401,39 @@ ALTER SEQUENCE public.devices_id_seq OWNED BY public.devices.id;
 
 
 --
+-- Name: instrument_tags; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.instrument_tags (
+    id bigint NOT NULL,
+    instrument_id bigint NOT NULL,
+    tag character varying NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT instrument_tags_tag CHECK (((tag)::text = ANY ((ARRAY['leveraged'::character varying, 'amplified'::character varying, 'diversifier'::character varying])::text[])))
+);
+
+
+--
+-- Name: instrument_tags_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.instrument_tags_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: instrument_tags_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.instrument_tags_id_seq OWNED BY public.instrument_tags.id;
+
+
+--
 -- Name: instruments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -300,7 +450,8 @@ CREATE TABLE public.instruments (
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
     delisted_at timestamp with time zone,
-    delisted_price numeric(18,4)
+    delisted_price numeric(18,4),
+    asset_class character varying
 );
 
 
@@ -538,7 +689,8 @@ CREATE TABLE public.risk_rules (
     updated_at timestamp(6) with time zone NOT NULL,
     mode character varying DEFAULT 'block'::character varying NOT NULL,
     note text,
-    changed_by_id bigint
+    changed_by_id bigint,
+    scope character varying DEFAULT 'trade'::character varying NOT NULL
 );
 
 
@@ -1581,6 +1733,20 @@ ALTER TABLE ONLY public.agent_runs ALTER COLUMN id SET DEFAULT nextval('public.a
 
 
 --
+-- Name: allocation_drifts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocation_drifts ALTER COLUMN id SET DEFAULT nextval('public.allocation_drifts_id_seq'::regclass);
+
+
+--
+-- Name: allocation_targets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocation_targets ALTER COLUMN id SET DEFAULT nextval('public.allocation_targets_id_seq'::regclass);
+
+
+--
 -- Name: audit_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1595,10 +1761,24 @@ ALTER TABLE ONLY public.balances ALTER COLUMN id SET DEFAULT nextval('public.bal
 
 
 --
+-- Name: deployment_policies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_policies ALTER COLUMN id SET DEFAULT nextval('public.deployment_policies_id_seq'::regclass);
+
+
+--
 -- Name: devices id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.devices ALTER COLUMN id SET DEFAULT nextval('public.devices_id_seq'::regclass);
+
+
+--
+-- Name: instrument_tags id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.instrument_tags ALTER COLUMN id SET DEFAULT nextval('public.instrument_tags_id_seq'::regclass);
 
 
 --
@@ -1857,6 +2037,22 @@ ALTER TABLE ONLY public.agent_runs
 
 
 --
+-- Name: allocation_drifts allocation_drifts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocation_drifts
+    ADD CONSTRAINT allocation_drifts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: allocation_targets allocation_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocation_targets
+    ADD CONSTRAINT allocation_targets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1881,11 +2077,27 @@ ALTER TABLE ONLY public.balances
 
 
 --
+-- Name: deployment_policies deployment_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_policies
+    ADD CONSTRAINT deployment_policies_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: devices devices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.devices
     ADD CONSTRAINT devices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: instrument_tags instrument_tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.instrument_tags
+    ADD CONSTRAINT instrument_tags_pkey PRIMARY KEY (id);
 
 
 --
@@ -2238,6 +2450,41 @@ CREATE UNIQUE INDEX index_agent_runs_one_per_kind_and_day ON public.agent_runs U
 
 
 --
+-- Name: index_allocation_drifts_on_allocation_target_id_and_as_of; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_allocation_drifts_on_allocation_target_id_and_as_of ON public.allocation_drifts USING btree (allocation_target_id, as_of);
+
+
+--
+-- Name: index_allocation_drifts_on_as_of; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_allocation_drifts_on_as_of ON public.allocation_drifts USING btree (as_of);
+
+
+--
+-- Name: index_allocation_drifts_on_order_proposal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_allocation_drifts_on_order_proposal_id ON public.allocation_drifts USING btree (order_proposal_id);
+
+
+--
+-- Name: index_allocation_targets_one_active_per_class; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_allocation_targets_one_active_per_class ON public.allocation_targets USING btree (asset_class) WHERE (active AND (asset_class IS NOT NULL));
+
+
+--
+-- Name: index_allocation_targets_one_active_per_instrument; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_allocation_targets_one_active_per_instrument ON public.allocation_targets USING btree (instrument_id) WHERE (active AND (instrument_id IS NOT NULL));
+
+
+--
 -- Name: index_audit_events_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2280,6 +2527,27 @@ CREATE INDEX index_balances_on_account_id_and_as_of ON public.balances USING btr
 
 
 --
+-- Name: index_deployment_policies_on_changed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_deployment_policies_on_changed_by_id ON public.deployment_policies USING btree (changed_by_id);
+
+
+--
+-- Name: index_deployment_policies_on_superseded_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_deployment_policies_on_superseded_by_id ON public.deployment_policies USING btree (superseded_by_id);
+
+
+--
+-- Name: index_deployment_policies_one_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_deployment_policies_one_active ON public.deployment_policies USING btree (active) WHERE active;
+
+
+--
 -- Name: index_devices_on_token; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2291,6 +2559,13 @@ CREATE UNIQUE INDEX index_devices_on_token ON public.devices USING btree (token)
 --
 
 CREATE INDEX index_devices_on_user_id ON public.devices USING btree (user_id);
+
+
+--
+-- Name: index_instrument_tags_on_instrument_id_and_tag; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_instrument_tags_on_instrument_id_and_tag ON public.instrument_tags USING btree (instrument_id, tag);
 
 
 --
@@ -2518,10 +2793,10 @@ CREATE INDEX index_risk_rules_on_superseded_by_id ON public.risk_rules USING btr
 
 
 --
--- Name: index_risk_rules_one_active_per_type_and_setup; Type: INDEX; Schema: public; Owner: -
+-- Name: index_risk_rules_one_active_per_scope_type_and_setup; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_risk_rules_one_active_per_type_and_setup ON public.risk_rules USING btree (rule_type, setup_id) NULLS NOT DISTINCT WHERE active;
+CREATE UNIQUE INDEX index_risk_rules_one_active_per_scope_type_and_setup ON public.risk_rules USING btree (scope, rule_type, setup_id) NULLS NOT DISTINCT WHERE active;
 
 
 --
@@ -2987,6 +3262,14 @@ CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events F
 
 
 --
+-- Name: allocation_drifts fk_rails_026b13a78b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocation_drifts
+    ADD CONSTRAINT fk_rails_026b13a78b FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+
+
+--
 -- Name: watchlist_items fk_rails_077cf8f283; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3008,6 +3291,22 @@ ALTER TABLE ONLY public.instruments
 
 ALTER TABLE ONLY public.orders
     ADD CONSTRAINT fk_rails_0acd2a4d14 FOREIGN KEY (replaces_order_id) REFERENCES public.orders(id);
+
+
+--
+-- Name: allocation_targets fk_rails_130b9bde61; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocation_targets
+    ADD CONSTRAINT fk_rails_130b9bde61 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
+
+
+--
+-- Name: deployment_policies fk_rails_1371093a2e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_policies
+    ADD CONSTRAINT fk_rails_1371093a2e FOREIGN KEY (superseded_by_id) REFERENCES public.deployment_policies(id);
 
 
 --
@@ -3160,6 +3459,14 @@ ALTER TABLE ONLY public.solid_queue_ready_executions
 
 ALTER TABLE ONLY public.orders
     ADD CONSTRAINT fk_rails_830e3b7893 FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+
+
+--
+-- Name: instrument_tags fk_rails_83ef093a24; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.instrument_tags
+    ADD CONSTRAINT fk_rails_83ef093a24 FOREIGN KEY (instrument_id) REFERENCES public.instruments(id);
 
 
 --
@@ -3347,6 +3654,14 @@ ALTER TABLE ONLY public.orders
 
 
 --
+-- Name: deployment_policies fk_rails_f9fa63fb49; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_policies
+    ADD CONSTRAINT fk_rails_f9fa63fb49 FOREIGN KEY (changed_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: trade_legs fk_rails_fb47c7025b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3363,12 +3678,21 @@ ALTER TABLE ONLY public.order_proposals
 
 
 --
+-- Name: allocation_drifts fk_rails_ffa84f9e42; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocation_drifts
+    ADD CONSTRAINT fk_rails_ffa84f9e42 FOREIGN KEY (allocation_target_id) REFERENCES public.allocation_targets(id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261016100001'),
 ('20260902200001'),
 ('20260902190001'),
 ('20260902180001'),

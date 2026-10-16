@@ -33,13 +33,16 @@ Source of truth: `docs/artifacts/investment-copilot-prd.md` §5.12 and §6. Phas
 
 ## 2. Jobs and cadence (`config/recurring.yml`, America/New_York, trading days unless noted)
 
-- `Allocation::DriftJob` 16:40, after the EOD snapshot: weights, drift rows, then the planner (rebalance proposals or thesis reviews), one `allocation_drift_checked` audit per run with the counts.
+- `Allocation::DriftJob` 17:10 (built in step 1; 16:40 would often read positions synced before the close, since the off-hours cadence is an hour): weights, drift rows, then the planner (rebalance proposals or thesis reviews), one `allocation_drift_checked` audit per run with the counts. The run is `unavailable` unless the balance and the positions sync both postdate that day's regular close. A targeted instrument that is held is priced by its position's last price, so the close and the market value behind its weight agree; one that is not held is priced by its quote's last print, fetched once per run, and a failed fetch makes the whole run unavailable with that reason.
 - `Allocation::InflowJob` after each activities sync (enqueued by `Sync::ActivitiesJob` like the journal linker): new deposits → inflow rows and the policy's first action through the planner.
 - `Allocation::TrancheJob` 09:00 on the tranche's due date: hands the tranche to the planner.
 - `Allocation::DiagnosticsJob` Saturday 08:00: correlations for every held instrument and every diversifier against SPY, and the cash-drag row.
 - Sunday review reads `allocation_drifts`, `correlations`, `cash_drag_diagnostics`, and `fund_flows`; nothing is computed in the prompt.
 
 ## 3. Screens
+
+**Built in step 1, where it differs from below:** there is no instrument page, so the asset class and tags are edited on the targets screen (`/allocation`, "Classes and tags", through `instruments/:id/classification`) for every held, targeted, or watched instrument. Every write on the targets screen, the classification, and the deployment policy is the approver's, like the rule editor; the second user reads. A target names an instrument the desk already knows (as a proposal does): nothing on the screen asks Schwab.
+
 
 - Dashboard: an "Allocation" section below positions, one line per target (weight vs target, drift, band, last action), unallocated holdings named; reads the latest drift rows.
 - Rule editor: book rules listed under their own heading with the same forms; the preview for `rebalance_band` shows which targets would propose tonight.
@@ -71,5 +74,11 @@ The deposit activity type and its fields; whether a LIMIT order with no child is
 Auto-execution of any allocation action; options; FMP screening and fundamentals; asset-class classification from a data source (classes are authored by hand); intraday drift; tax-aware rebalancing beyond the wash-sale rule.
 
 ## 8. For the user to confirm (recorded, not blocking the build)
+
+**Seeded default (step 1):** the deployment policy starts at `ask`, the one mode under which a deposit causes no mechanical action.
+
+**Answered 2026-10-16, all as drafted:** rebalance buys are plain LIMIT orders with no bracket stop; rebalance notional counts toward the daily notional cap; one versioned `rebalance_band` rule, no per-target override; `allocation` origin, hand-entered fund flows, tags and authored asset class, and the drift job in shadow all accepted.
+
+The questions as asked:
 
 Rebalance buys as plain LIMIT orders without a bracket stop; `allocation` as a proposal origin; whether rebalance notional counts toward the daily notional cap; fund flows entered by hand until a source is verified; the leveraged and amplified flags as tags and the asset class as an authored column rather than data from a source; no per-target band override (the band is one versioned rule; a per-target band would need versioning of its own); the drift job running in the same shadow mode as everything else, so a shadowed rebalance is placed by hand like any other.

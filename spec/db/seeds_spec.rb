@@ -5,6 +5,8 @@ RSpec.describe "db/seeds.rb" do
     2.times { Rails.application.load_seed }
     expect(User.pluck(:email_address)).to contain_exactly("john@athayde.com", "whitney@athayde.com")
     expect(Account.count + SchwabToken.count + AgentRun.count).to eq(0)
+    expect(RiskRule.active.scope_book.pluck(:rule_type)).to contain_exactly(*RiskRule::BOOK_TYPES)
+    expect(DeploymentPolicy.sole).to have_attributes(mode: "ask", active: true, version: 1)
   end
 
   it "seeds a whole desk through the fake broker and fake model in development, once" do

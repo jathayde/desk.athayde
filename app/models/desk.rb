@@ -111,6 +111,22 @@ class Desk
   def open_risk_ratio = equity && equity.positive? ? open_risk / equity : nil
   def excluded_by_reason = rows.reject { |r| r.protection == :protected }.group_by(&:protection).transform_values(&:size)
   def review_count = account ? account.trades.needing_review.count : 0
+
+  # The active targets and the latest drift row of each, as the nightly check wrote it; the dashboard never
+  # recomputes drift, and says when the check has not run for a session it should have.
+  def allocation_targets = @allocation_targets ||= Allocation::Target.active.includes(:instrument).order(:asset_class, :id).to_a
+  def allocation_drifts = @allocation_drifts ||= Allocation::Drift.current.index_by(&:allocation_target_id)
+  def allocation_stale?(drift) = allocation_due_on.present? && drift.as_of < allocation_due_on
+
+  # The latest Schwab trading day whose check is past, from the stored calendar only; on an early close the job
+  # still runs at its scheduled minute, so that, not the close, is when a row falls due.
+  def allocation_due_on
+    return @allocation_due_on if defined?(@allocation_due_on)
+    now = Time.current.in_time_zone(MarketDay::ZONE)
+    through = now >= now.change(Allocation::DriftJob::DUE_AT) ? now.to_date : now.to_date - 1
+    @allocation_due_on = MarketDay.schwab.trading.where(date: ..through).maximum(:date)
+  end
+  def unallocated_positions = @unallocated_positions ||= account ? Allocation::Book.unallocated(account).to_a : []
   def balance_stale? = balance && stale?(balance.as_of, :positions)
   def orders_as_of = @orders_as_of ||= account&.last_sync(:orders)
 

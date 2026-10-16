@@ -1,0 +1,74 @@
+<% content_for :title, "Allocation" %>
+<% approver = Current.user&.approver? %>
+<h1>Allocation</h1>
+<p class="muted">What the book should hold. The drift check measures against these after the close on trading days and, for now, only reports. The band is the <%= link_to "rebalance band rule", risk_rules_path(anchor: "book") %><% if @band_rule %> (<%= @band_rule.param(:percent) %> points, v<%= @band_rule.version %>)<% else %> <span class="warn">(not configured)</span><% end %>, widened to one share wherever one share is a bigger slice of equity than that.</p>
+
+<h2 class="sec">Targets · <%= percent(@targets.sum(&:target_weight), precision: 2) %> of equity</h2>
+<% if @targets.empty? %>
+  <p class="empty">No targets. Nothing is measured until one exists.</p>
+<% else %>
+  <ul class="trades">
+    <% @targets.each do |target| %>
+      <% drift = @drifts[target.id] %>
+      <li class="kv">
+        <span><b><%= target.label %></b><% if target.class_target? %> <small class="muted">class<% if drift && drift.detail["members"].present? %> · <%= drift.detail["members"].join(", ") %><% end %></small><% end %>
+          <br><small class="muted"><%= drift_summary(drift) %></small></span>
+        <% if approver %>
+          <span class="choice">
+            <%= form_with url: allocation_target_path(target), method: :patch, class: "inline-form" do |f| %>
+              <%= f.label :target_percent, "Target %", for: "target_percent_#{target.id}" %>
+              <%= f.text_field :target_percent, id: "target_percent_#{target.id}", value: (target.target_weight * 100).round(2).to_s("F"), inputmode: "decimal", size: 6 %>
+              <%= f.submit "Reweigh", class: "secondary" %>
+            <% end %>
+            <%= button_to "Retire", allocation_target_retirement_path(target), method: :post, class: "link-button" %>
+          </span>
+        <% else %>
+          <b><%= percent(target.target_weight, precision: 2) %></b>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+<% end %>
+
+<% if approver %>
+  <h2 class="sec">Add a target</h2>
+  <%= form_with url: allocation_targets_path, method: :post, class: "account-form" do |f| %>
+    <div class="fields">
+      <%= f.label :symbol, "Symbol (or leave blank for a class)" %>
+      <%= f.text_field :symbol, autocapitalize: "characters" %>
+      <%= f.label :asset_class, "Asset class" %>
+      <%= f.text_field :asset_class, list: "asset-classes" %>
+      <%= f.label :target_percent, "Target, percent of equity" %>
+      <%= f.text_field :target_percent, inputmode: "decimal", required: true %>
+      <%= f.submit "Add target" %>
+    </div>
+  <% end %>
+  <datalist id="asset-classes"><% @instruments.filter_map(&:asset_class).uniq.sort.each do |name| %><option value="<%= name %>"><% end %></datalist>
+<% end %>
+
+<h2 class="sec" id="instruments">Classes and tags</h2>
+<p class="muted">Authored by hand. A class target counts every held member without a target of its own. Leveraged and amplified instruments will never get a mechanical proposal; diversifiers are checked against SPY.</p>
+<% if @instruments.empty? %>
+  <p class="empty">No held, targeted, or watched instruments yet.</p>
+<% else %>
+  <ul class="trades">
+    <% @instruments.each do |instrument| %>
+      <li class="kv">
+        <% if approver %>
+          <%= form_with url: instrument_classification_path(instrument), method: :patch, class: "inline-form classify" do |f| %>
+            <b><%= instrument.symbol %></b>
+            <%= f.label :asset_class, "Class", for: "asset_class_#{instrument.id}" %>
+            <%= f.text_field :asset_class, id: "asset_class_#{instrument.id}", value: instrument.asset_class, list: "asset-classes", size: 12 %>
+            <% InstrumentTag::TAGS.each do |tag| %>
+              <label><%= check_box_tag "tags[]", tag, instrument.tagged?(tag), id: "tag_#{instrument.id}_#{tag}" %> <%= tag %></label>
+            <% end %>
+            <%= f.submit "Save", class: "secondary" %>
+          <% end %>
+        <% else %>
+          <span><b><%= instrument.symbol %></b> · <%= instrument.asset_class || "no class" %></span>
+          <span class="muted"><%= instrument.tag_names.join(", ").presence || "untagged" %></span>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+<% end %>

@@ -11,6 +11,10 @@ Rails.application.routes.draw do
   resources :risk_rules, only: %i[ index update ] do
     get :preview, on: :member
   end
+  resource :deployment_policy, only: :update
+  resources :allocation_targets, path: "allocation", only: %i[ index create update ] do
+    resource :retirement, only: :create, module: :allocation_targets
+  end
   resources :proposals, only: %i[ index show new create ] do
     scope module: :proposals do
       resource :approval, only: :create
@@ -21,7 +25,9 @@ Rails.application.routes.draw do
     resource :drop, only: :create, module: :watchlist_items
   end
   resources :accounts, only: :update
-  resources :instruments, only: :update
+  resources :instruments, only: :update do
+    resource :classification, only: :update, module: :instruments
+  end
   resources :trades, only: %i[ index show update ] do
     scope module: :trades do
       resource :review, only: %i[ show update ]

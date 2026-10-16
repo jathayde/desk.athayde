@@ -1,33 +1,38 @@
 <% content_for :title, "Rules" %>
 <h1>Rules</h1>
-<p class="muted">Every edit is a new version; the old one is kept with the proposals it judged. <% if @settings.halted? %><span class="warn">A halt is engaged: rules are locked unless you type why you are editing anyway.</span><% end %></p>
-<% @rules.each do |rule| %>
-  <section class="rule">
-    <h2 class="sec"><%= rule.rule_type.humanize %><% if rule.setup %> · <%= rule.setup.name %><% end %> <small>v<%= rule.version %><% if rule.note.present? %> · <%= rule.note %><% end %></small></h2>
-    <% if rule.param_keys.empty? %>
-      <p class="muted">No parameters; this rule answers "not checked" until Phase 2.5.</p>
-    <% else %>
-      <%= form_with scope: "rule_#{rule.id}", url: risk_rule_path(rule), method: :patch, class: "account-form" do |f| %>
-        <div class="fields">
-          <% rule.param_keys.each do |key| %>
-            <%= f.label "params_#{key}", key.humanize %>
-            <%= f.text_field "params_#{key}", name: f.field_name(:params, key), value: rule.params[key], inputmode: "decimal" %>
-          <% end %>
-          <% if rule.mode_choosable? %>
-            <%= f.label :mode, "Mode" %>
-            <%= f.select :mode, options_for_select(RiskRule.modes.keys, rule.mode) %>
-          <% end %>
-          <%= f.label :note, "Why" %>
-          <%= f.text_field :note %>
-          <% if @settings.halted? %>
-            <%= f.label :override_reason, "Editing during a halt: why" %>
-            <%= f.text_field :override_reason %>
-          <% end %>
-          <%= f.submit "Save as v#{rule.version + 1}" %>
-          <%= f.submit "Preview effect", formaction: preview_risk_rule_path(rule), formmethod: "get", class: "secondary" %>
-        </div>
-      <% end %>
+<p class="muted">Every edit is a new version; the old one is kept with whatever it judged. <% if @settings.halted? %><span class="warn">A halt is engaged: rules are locked unless you type why you are editing anyway.</span><% end %></p>
+
+<h2 class="sec" id="trade">Trade rules · judge one order</h2>
+<%= render partial: "risk_rules/rule", collection: @trade_rules, as: :rule, locals: { settings: @settings } %>
+<% if @trade_rules.empty? %><p class="empty">No rules yet. The seeds create the starting set.</p><% end %>
+
+<h2 class="sec" id="book">Book rules · judge the whole book, never an order</h2>
+<p class="muted">Bands and floors for the nightly drift check. Targets live on the <%= link_to "allocation screen", allocation_targets_path %>.</p>
+<%= render partial: "risk_rules/rule", collection: @book_rules, as: :rule, locals: { settings: @settings } %>
+<% if @book_rules.empty? %><p class="empty">No book rules yet. The seeds create the starting set.</p><% end %>
+
+<section class="rule" id="deployment">
+  <% if (policy = @deployment_policy) %>
+    <h2 class="sec">Deployment policy · new cash <small>v<%= policy.version %><% if policy.note.present? %> · <%= policy.note %><% end %></small></h2>
+    <p class="muted">Now: <%= policy.summary %>.</p>
+    <%= form_with model: policy, scope: :deployment_policy, url: deployment_policy_path, method: :patch, class: "account-form" do |f| %>
+      <div class="fields">
+        <%= f.hidden_field :id %>
+        <%= f.label :mode, "When cash arrives" %>
+        <%= f.select :mode, options_for_select(DeploymentPolicy::MODE_LABELS.invert.transform_keys(&:upcase_first), policy.mode) %>
+        <%= f.label :weeks, "Weeks (staged only)" %>
+        <%= f.text_field :weeks, inputmode: "numeric" %>
+        <%= f.label :note, "Why" %>
+        <%= f.text_field :note, value: nil %>
+        <% if @settings.halted? %>
+          <%= f.label :override_reason, "Editing during a halt: why" %>
+          <%= f.text_field :override_reason %>
+        <% end %>
+        <%= f.submit "Save as v#{policy.version + 1}" %>
+      </div>
     <% end %>
-  </section>
-<% end %>
-<% if @rules.empty? %><p class="empty">No rules yet. The seeds create the starting set.</p><% end %>
+  <% else %>
+    <h2 class="sec">Deployment policy · new cash</h2>
+    <p class="empty">No deployment policy yet. The seeds create one that asks each time.</p>
+  <% end %>
+</section>

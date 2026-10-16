@@ -26,6 +26,9 @@ shared: &shared
   stop_collar_trails:
     class: StopCollar::TrailJob
     schedule: "10 16 * * 1-5 America/New_York" # after the close, before the end-of-day brief
+  allocation_drift:
+    class: Allocation::DriftJob
+    schedule: "10 17 * * 1-5 America/New_York" # after the first off-hours positions and balance sync past the close
   memory_check_repo:
     class: Memory::CheckRepoJob
     schedule: "*/30 * * * * America/New_York"

@@ -8,6 +8,9 @@ test("a rule is previewed over the waiting proposal, then saved as a new version
   await expect(page.getByRole("heading", { name: "Preview: Notional cap v2" })).toBeVisible();
   await expect(page.getByText("pass → blocks")).toBeVisible();
   await page.getByRole("link", { name: "Back to rules" }).click();
+  // Turbo shows the cached rules page first; typing into that snapshot is lost when the fresh render lands.
+  await expect(page.getByRole("heading", { name: "Rules", exact: true })).toBeVisible();
+  await expect(page.locator("html")).not.toHaveAttribute("data-turbo-preview");
   await cap.getByLabel("Per order").fill("1000");
   await cap.getByLabel("Why").fill("smaller account");
   await cap.getByRole("button", { name: "Save as v2" }).click();

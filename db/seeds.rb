@@ -12,6 +12,14 @@ end
   RiskRule.active_for(rule_type) || RiskRule.create!(rule_type: rule_type, params: params, mode: rule_type == "wash_sale" ? "caution" : "block", note: "seeded starting set")
 end
 
+# The starting book rules and deployment policy (docs/phase-2.5-plan.md §0.1). Asking each time is the one policy
+# under which a deposit causes no mechanical action, so it is where the desk starts.
+{ "rebalance_band" => { "percent" => "5" }, "min_rebalance_notional" => { "amount" => "100" }, "correlation_threshold" => { "value" => "0.6", "window_days" => "60" },
+  "cash_drag_weeks" => { "weeks" => "3" } }.each do |rule_type, params|
+  RiskRule.active_for(rule_type) || RiskRule.create!(rule_type: rule_type, params: params, note: "seeded starting set")
+end
+DeploymentPolicy.current || DeploymentPolicy.create!(mode: "ask", note: "seeded starting policy")
+
 # A development desk through the fake broker and the fake model, so every screen and a brief render without
 # Schwab or Anthropic. Never in production, never against the real adapters, never twice.
 return unless Rails.env.development? && Schwab.fake? && Agent.fake?

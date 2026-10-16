@@ -26,4 +26,18 @@ RSpec.describe RiskRule do
     expect(described_class.active_for("stop_collar", setup: create(:setup, name: "Other"))).to eq(global)
     expect(described_class.new(rule_type: "vibes", params: {})).not_to be_valid
   end
+
+  it "files book rules under their own scope, resolves them by type, and keeps them out of a proposal's evaluation" do
+    band = described_class.create!(rule_type: "rebalance_band", params: { "percent" => "5" }, scope: "trade")
+    expect(band).to have_attributes(scope: "book", previewable?: true) # the type decides the scope, whatever the caller says
+    expect(described_class.active_for("rebalance_band")).to eq(band)
+    expect(described_class.active_set_for(nil)).not_to have_key("rebalance_band")
+    expect(described_class.new(rule_type: "correlation_threshold", params: { "value" => "0.6" })).not_to be_valid # window_days missing
+    expect(described_class.new(rule_type: "rebalance_band", params: { "percent" => "five" })).not_to be_valid # an unreadable band would stop the nightly check
+    expect(described_class.new(rule_type: "rebalance_band", params: { "percent" => "-5" })).not_to be_valid
+    expect(described_class.new(rule_type: "rebalance_band", params: { "percent" => "101" })).not_to be_valid
+    expect(described_class.create!(rule_type: "cash_drag_weeks", params: { "weeks" => "3" })).not_to be_previewable
+    expect { described_class.create!(rule_type: "rebalance_band", params: { "percent" => "4" }) }.to raise_error(ActiveRecord::RecordNotUnique)
+    expect(Guardrails::Evaluator.new(build(:order_proposal)).call.results.map(&:rule_type)).not_to include(*described_class::BOOK_TYPES)
+  end
 end
