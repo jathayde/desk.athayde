@@ -251,6 +251,7 @@ A second rule set alongside the trading guardrails, covering the book-level beha
 **Phase 1 (read-only):** Schwab OAuth + token lifecycle, account/position/transaction sync, dashboard, journal auto-population from fills, memory repo, MCP read tools, daily briefs.
 **Phase 2 (propose + approve):** guardrail engine, order proposals via MCP, approval UI, bracket submission (entry + child stop, 5.4.2) from UI, ambiguous-outcome reconciliation, settlement checks from broker balances, wash-sale checks against the linked IRA, Hotwire Native iOS app with push and Face ID confirm (5.8a). Ships with shadow mode on.
 **Phase 2.5 (allocation module):** targets, drift checks, rebalance/deployment proposals, correlation and cash-drag diagnostics in the Sunday review (§5.12).
+**Phase 2.6 (quant research track):** forecasts frozen on proposals (horizon, probability, outcome) with Brier and reliability per setup; decision-time feature snapshots; pre-registered hypotheses with holdout dates and every variant logged; a live-vs-expected decay check in the Sunday review; costs in expectancy; an advisory skeptic note on proposals; stored daily bars and a walk-forward backtester last. Nothing in it places, sizes, or blocks an order; it produces the evidence Phase 3 is gated on. Gap analysis and open decisions: `docs/quant-research-gap-analysis.md`.
 **Phase 3 (earned automation):** conditional auto-submit for a narrow class (e.g., pre-approved stop adjustments) only after the journal shows positive expectancy over a real sample; kill-switch; per-day order caps.
 
 ## 7. Decisions Log
@@ -266,6 +267,7 @@ A second rule set alongside the trading guardrails, covering the book-level beha
 - Tax lots: order schema includes a per-order TaxLotMethod field (confirmed via community client libraries modeling the production schema); default FIFO, expose method selection on sells in the UI. Confirm exact enum values against official docs post-approval.
 - Greeks: Schwab option chains and option quotes include delta, gamma, theta, vega, rho, plus implied volatility, theoretical value, and time value. No local greeks computation needed for the eventual options module.
 - iOS: native private app, iOS only, via Hotwire Native; TestFlight internal or direct install; push for time-sensitive alerts; Face ID as the Approve confirm (5.8a).
+- Quant research track (Oct 16): added as Phase 2.6 after the allocation module, not as Phase 3; market making, book features, and short legs are out of scope for a cash account on daily data.
 - Review v8 (Sep 1): real bracket stops at Schwab; local idempotency with reconcile-before-retry; unattended runtime is read-only; trades defined as zero-to-zero lifecycles keyed by CUSIP; shadow mode on by default; broker balances as settled-cash source; market calendar from Schwab; flow-adjusted equity series; min rebalance notional; single-writer memory repo; one append-only audit table.
 
 ## 8. Options Scope (expanded from open question 2)
