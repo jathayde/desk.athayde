@@ -10,6 +10,13 @@
   <%= f.text_field :limit_price, value: params[:limit_price], inputmode: "decimal" %>
   <%= f.label :stop_price, "Stop (entries)" %>
   <%= f.text_field :stop_price, value: params[:stop_price], inputmode: "decimal" %>
+  <%= f.label :target_price, "Target (entries)" %>
+  <%= f.text_field :target_price, value: params[:target_price], inputmode: "decimal" %>
+  <p class="muted">Your forecast (entries, optional): the chance that, within the horizon of the market touching your limit, the high reaches the target before the low reaches the stop. Scored on the daily candles whatever happens to the order.</p>
+  <%= f.label :probability, "Probability (0 to 1)" %>
+  <%= f.text_field :probability, value: params[:probability], inputmode: "decimal" %>
+  <%= f.label :horizon_days, "Horizon (sessions)" %>
+  <%= f.text_field :horizon_days, value: params[:horizon_days], inputmode: "numeric" %>
   <%= f.label :quantity, "Quantity (exits; defaults to the position)" %>
   <%= f.text_field :quantity, value: params[:quantity], inputmode: "numeric" %>
   <%= f.label :tax_lot_method, "Lot method (exits)" %>
@@ -24,7 +31,7 @@
   <h2 class="sec">Preview: <%= @draft.priced_label %></h2>
   <%= render "proposals/evaluation", proposal: @draft, results: @report.to_h, sizing: @draft.sizing, collar: @draft.collar %>
   <%= form_with url: proposals_path, method: :post do |f| %>
-    <% %i[ kind symbol limit_price stop_price quantity setup_id thesis tax_lot_method ].each { |key| concat f.hidden_field(key, value: params[key]) } %>
+    <% Proposals::FORM_FIELDS.each { |key| concat f.hidden_field(key, value: params[key]) } %>
     <%= f.submit @report.blocked? ? "Propose anyway (it will be rejected by rules)" : "Propose" %>
   <% end %>
 <% end %>

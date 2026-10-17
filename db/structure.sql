@@ -23,6 +23,46 @@ END;
 $$;
 
 
+--
+-- Name: forecasts_frozen(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.forecasts_frozen() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP IN ('DELETE', 'TRUNCATE') THEN
+    RAISE EXCEPTION 'forecasts are never deleted';
+  END IF;
+  IF (to_jsonb(NEW) - ARRAY['outcome', 'void_reason', 'resolved_at', 'detail', 'checked_through', 'updated_at']) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['outcome', 'void_reason', 'resolved_at', 'detail', 'checked_through', 'updated_at']) THEN
+    RAISE EXCEPTION 'a forecast''s claim is frozen';
+  END IF;
+  IF OLD.outcome IS NOT NULL AND (to_jsonb(NEW) - 'updated_at') IS DISTINCT FROM (to_jsonb(OLD) - 'updated_at') THEN
+    RAISE EXCEPTION 'a resolved forecast is frozen';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: order_proposals_measures_frozen(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.order_proposals_measures_frozen() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (OLD.reference_close IS NOT NULL AND NEW.reference_close IS DISTINCT FROM OLD.reference_close)
+     OR (OLD.reference_on IS NOT NULL AND NEW.reference_on IS DISTINCT FROM OLD.reference_on)
+     OR (OLD.quote_at_approval IS NOT NULL AND NEW.quote_at_approval IS DISTINCT FROM OLD.quote_at_approval) THEN
+    RAISE EXCEPTION 'a proposal''s reference close and approval quote are frozen once set';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -554,6 +594,61 @@ ALTER SEQUENCE public.devices_id_seq OWNED BY public.devices.id;
 
 
 --
+-- Name: forecasts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.forecasts (
+    id bigint NOT NULL,
+    order_proposal_id bigint NOT NULL,
+    author character varying NOT NULL,
+    user_id bigint,
+    probability numeric(5,4) NOT NULL,
+    horizon_days integer NOT NULL,
+    entry_price numeric(18,4) NOT NULL,
+    target_price numeric(18,4) NOT NULL,
+    stop_price numeric(18,4) NOT NULL,
+    reference_close numeric(18,4) NOT NULL,
+    reference_on date NOT NULL,
+    starts_on date NOT NULL,
+    made_at timestamp with time zone DEFAULT now() NOT NULL,
+    saw_agent_forecast boolean DEFAULT false NOT NULL,
+    checked_through date,
+    outcome character varying,
+    void_reason character varying,
+    resolved_at timestamp with time zone,
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT forecasts_author CHECK (((author)::text = ANY ((ARRAY['agent'::character varying, 'human'::character varying])::text[]))),
+    CONSTRAINT forecasts_horizon CHECK (((horizon_days >= 1) AND (horizon_days <= 60))),
+    CONSTRAINT forecasts_levels CHECK (((stop_price > (0)::numeric) AND (stop_price < entry_price) AND (stop_price < reference_close) AND (reference_close < target_price) AND (entry_price < target_price))),
+    CONSTRAINT forecasts_outcome CHECK (((outcome IS NULL) OR ((outcome)::text = ANY ((ARRAY['hit'::character varying, 'miss'::character varying, 'void'::character varying])::text[])))),
+    CONSTRAINT forecasts_probability CHECK (((probability > (0)::numeric) AND (probability < (1)::numeric))),
+    CONSTRAINT forecasts_resolution CHECK ((((NOT ((outcome)::text IS DISTINCT FROM 'void'::text)) = (void_reason IS NOT NULL)) AND ((outcome IS NULL) = (resolved_at IS NULL)))),
+    CONSTRAINT forecasts_void_reason CHECK (((void_reason IS NULL) OR ((void_reason)::text = ANY ((ARRAY['never_entered'::character varying, 'split'::character varying, 'data_unavailable'::character varying])::text[]))))
+);
+
+
+--
+-- Name: forecasts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.forecasts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: forecasts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.forecasts_id_seq OWNED BY public.forecasts.id;
+
+
+--
 -- Name: fund_flows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -745,7 +840,10 @@ CREATE TABLE public.order_proposals (
     lots jsonb DEFAULT '[]'::jsonb NOT NULL,
     allocation_source_type character varying,
     allocation_source_id bigint,
-    context jsonb DEFAULT '{}'::jsonb NOT NULL
+    context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    reference_close numeric(18,4),
+    reference_on date,
+    quote_at_approval jsonb
 );
 
 
@@ -2039,6 +2137,13 @@ ALTER TABLE ONLY public.devices ALTER COLUMN id SET DEFAULT nextval('public.devi
 
 
 --
+-- Name: forecasts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forecasts ALTER COLUMN id SET DEFAULT nextval('public.forecasts_id_seq'::regclass);
+
+
+--
 -- Name: fund_flows id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2400,6 +2505,14 @@ ALTER TABLE ONLY public.deployment_tranches
 
 ALTER TABLE ONLY public.devices
     ADD CONSTRAINT devices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: forecasts forecasts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forecasts
+    ADD CONSTRAINT forecasts_pkey PRIMARY KEY (id);
 
 
 --
@@ -2955,6 +3068,27 @@ CREATE UNIQUE INDEX index_devices_on_token ON public.devices USING btree (token)
 --
 
 CREATE INDEX index_devices_on_user_id ON public.devices USING btree (user_id);
+
+
+--
+-- Name: index_forecasts_on_order_proposal_id_and_author; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_forecasts_on_order_proposal_id_and_author ON public.forecasts USING btree (order_proposal_id, author);
+
+
+--
+-- Name: index_forecasts_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_forecasts_on_user_id ON public.forecasts USING btree (user_id);
+
+
+--
+-- Name: index_forecasts_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_forecasts_open ON public.forecasts USING btree (order_proposal_id) WHERE (outcome IS NULL);
 
 
 --
@@ -3707,6 +3841,27 @@ CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events F
 
 
 --
+-- Name: forecasts forecasts_frozen; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER forecasts_frozen BEFORE DELETE OR UPDATE ON public.forecasts FOR EACH ROW EXECUTE FUNCTION public.forecasts_frozen();
+
+
+--
+-- Name: forecasts forecasts_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER forecasts_no_truncate BEFORE TRUNCATE ON public.forecasts FOR EACH STATEMENT EXECUTE FUNCTION public.forecasts_frozen();
+
+
+--
+-- Name: order_proposals order_proposals_measures_frozen; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER order_proposals_measures_frozen BEFORE UPDATE ON public.order_proposals FOR EACH ROW EXECUTE FUNCTION public.order_proposals_measures_frozen();
+
+
+--
 -- Name: allocation_drifts fk_rails_026b13a78b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3872,6 +4027,14 @@ ALTER TABLE ONLY public.cash_inflows
 
 ALTER TABLE ONLY public.activities
     ADD CONSTRAINT fk_rails_6886e9a52a FOREIGN KEY (order_id) REFERENCES public.orders(id);
+
+
+--
+-- Name: forecasts fk_rails_69c972f93b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forecasts
+    ADD CONSTRAINT fk_rails_69c972f93b FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 
 --
@@ -4067,6 +4230,14 @@ ALTER TABLE ONLY public.sync_runs
 
 
 --
+-- Name: forecasts fk_rails_be5357595f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forecasts
+    ADD CONSTRAINT fk_rails_be5357595f FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+
+
+--
 -- Name: order_proposals fk_rails_bfa8882b3a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4225,6 +4396,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261017100001'),
 ('20261016140001'),
 ('20261016130001'),
 ('20261016120001'),

@@ -21,6 +21,8 @@ Rails.application.routes.draw do
     scope module: :proposals do
       resource :approval, only: :create
       resource :rejection, only: :create
+      resource :forecast, only: :create
+      resource :forecast_reveal, only: :create
     end
   end
   resources :thesis_reviews, only: :show do

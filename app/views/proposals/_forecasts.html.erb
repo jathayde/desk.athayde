@@ -1,0 +1,24 @@
+<h2 class="sec">Forecasts <small class="muted">(target before stop within the horizon, counted from the session the market touches the limit; scored on daily candles whatever happens to the order)</small></h2>
+<dl class="kv-list">
+  <% forecasts.each do |forecast| %>
+    <% if forecast.author_agent? && !revealed %>
+      <div class="kv"><dt>Agent</dt><dd>hidden until you add yours · <%= button_to "Show it first (recorded on yours)", proposal_forecast_reveal_path(proposal), class: "secondary", form: { class: "inline-form" } %></dd></div>
+    <% else %>
+      <div class="kv"><dt><%= forecast.author_agent? ? "Agent" : forecast.user&.name || "Operator" %></dt>
+        <dd><%= percent(forecast.probability) %> within <%= pluralize(forecast.horizon_days, "session") %> · <%= forecast.outcome_label %><% if forecast.author_human? && forecast.saw_agent_forecast %> · made after seeing the agent's<% end %></dd></div>
+    <% end %>
+  <% end %>
+  <% if forecasts.empty? %><div class="kv"><dt>Forecasts</dt><dd>none</dd></div><% end %>
+</dl>
+<% if proposal.approvable? && Current.user&.approver? && own.nil? && proposal.target_price && proposal.reference_close %>
+  <%= form_with url: proposal_forecast_path(proposal), method: :post, class: "account-form" do |f| %>
+    <p class="muted">Your forecast on these levels: entry <%= money(proposal.limit_price) %>, stop <%= money(proposal.stop_price) %>, target <%= money(proposal.target_price) %>. It is never changed once added.</p>
+    <%= f.label :probability, "Probability (0 to 1)" %>
+    <%= f.text_field :probability, inputmode: "decimal", autocomplete: "off" %>
+    <%= f.label :horizon_days, "Horizon (sessions)" %>
+    <%= f.text_field :horizon_days, inputmode: "numeric", autocomplete: "off" %>
+    <%= f.submit "Add my forecast", class: "secondary" %>
+  <% end %>
+<% elsif proposal.approvable? && own.nil? && proposal.target_price.nil? %>
+  <p class="muted">No target on this proposal, so no forecast can be added to it.</p>
+<% end %>

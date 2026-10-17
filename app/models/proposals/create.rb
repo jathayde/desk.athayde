@@ -1,11 +1,15 @@
 # The one way a proposal comes into being, from the tool or the form: refuse what the halts forbid before a
-# row exists, draft, save, evaluate (which engages any halt the rules ask for), and audit the creation.
+# row exists, draft, save, evaluate (which engages any halt the rules ask for), and audit the creation. A
+# forecast that comes with it (docs/phase-2.6-plan.md §0.2) is written in the same transaction, so a proposal
+# refused for any reason leaves none.
 class Proposals::Create
   class Refused < Proposals::Error; end
 
   def self.call(**) = new(**).call
 
-  def initialize(**arguments) = @arguments = arguments # the keywords Proposals.draft takes
+  def initialize(forecast: nil, **arguments) # forecast: { probability:, horizon_days: }; the rest, the keywords Proposals.draft takes
+    @forecast, @arguments = forecast, arguments
+  end
 
   # Drafted outside the lock (an entry's draft reads candles from Schwab, and no lock is held across a call);
   # the checks and the write happen under the account-and-instrument lock the allocation planner takes too, so
@@ -24,6 +28,7 @@ class Proposals::Create
       proposal.save!
       AuditEvent.log("proposal_created", actor: proposal.audit_actor, user: proposal.user, subject: proposal,
                      data: { kind: proposal.kind, side: proposal.side, symbol: proposal.instrument.symbol, quantity: proposal.quantity, limit_price: proposal.limit_price, stop_price: proposal.stop_price })
+      record_forecast(proposal) if @forecast # before the evaluation, whose halts a refusal here must not roll back
       proposal.evaluate!(Guardrails::Evaluator.new(proposal).call)
     end
     ActiveRecord.after_all_transactions_commit { Alert.new_proposal(proposal) } unless proposal.human? # the operator made the human ones
@@ -33,4 +38,17 @@ class Proposals::Create
   rescue ActiveRecord::RecordInvalid => e
     raise Refused, e.record.errors.full_messages.to_sentence
   end
+
+  private
+    # A forecast the author got wrong refuses the proposal; one the desk cannot measure (no final close, levels the
+    # last close already settles) leaves the proposal without one, on the record, so a forecast never decides what
+    # is proposed.
+    def record_forecast(proposal)
+      Forecast.record!(proposal, author: proposal.agent? ? :agent : :human, user: proposal.user, **@forecast)
+    rescue Forecast::Unmeasurable => e
+      proposal.forecast_note = e.message
+      AuditEvent.log("forecast_not_recorded", actor: proposal.audit_actor, user: proposal.user, subject: proposal, reason: e.message, data: @forecast.transform_values(&:to_s))
+    rescue ArgumentError => e
+      raise Refused, "forecast: #{e.message}"
+    end
 end

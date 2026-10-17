@@ -25,6 +25,25 @@ RSpec.describe Submission::Submit do
     expect(AuditEvent.where(subject: proposal).pluck(:kind).last(3)).to eq(%w[ proposal_approved proposal_submitting would_have_submitted ])
   end
 
+  it "freezes the quote it was approved against, fetched before the lock, and never refuses for want of one (docs/phase-2.6-plan.md §0.8)" do
+    proposal = propose
+    quotes = -> { Schwab::FakeClient.instance.calls.count { it.first == :quotes } }
+    expect { proposal.approve_and_submit!(user: whitney, acknowledged: acknowledged) rescue nil }.not_to change(&quotes) # no quote spent on a press that cannot pass
+    proposal.approve_and_submit!(user: john, acknowledged: acknowledged)
+    quote = proposal.reload.quote_at_approval
+    expect(quote).to include("bid", "ask", "mark", "quote_time", "fetched_at", "stale")
+    expect(quote["bid"]).to be_present
+    expect(AuditEvent.where(subject: proposal, kind: "proposal_approved").sole.data["quote"]).to eq(quote)
+  end
+
+  it "records a quote it could not get as unavailable and approves anyway" do
+    proposal = propose
+    Schwab::FakeClient.instance.enqueue(:quotes) { raise Schwab::RateLimited.new(retry_after: 30) }
+    proposal.approve_and_submit!(user: john, acknowledged: acknowledged)
+    expect(proposal.reload).to be_submitted
+    expect(proposal.quote_at_approval).to include("unavailable", "fetched_at")
+  end
+
   it "refuses the non-approver, the wrong state, a missing acknowledgement, a missing override reason, and a second approval" do
     proposal = propose
     expect { proposal.approve_and_submit!(user: whitney, acknowledged: acknowledged) }.to raise_error(Submission::Refused, /only the approver/)

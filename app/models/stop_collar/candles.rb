@@ -31,8 +31,18 @@ class StopCollar::Candles
 
   def initialize(candles) = @all = candles
 
+  # The candles whose session has closed: today's is a partial bar until its regular close has passed, by the
+  # stored calendar (never fetched; unknown means not yet).
+  def self.final(candles, now: Time.current)
+    today = now.in_time_zone(MarketDay::ZONE).to_date
+    closes_at = MarketDay.find_by(date: today)&.regular_closes_at
+    closed = closes_at && closes_at <= now
+    candles.select { |c| c[:date].to_date < today || (closed && c[:date].to_date == today) }
+  end
+
   def last(n) = all.last(n)
   def close = all.last[:close]
+  def final(now: Time.current) = self.class.final(all, now: now)
 
   # Average true range over the last n bars, the plain average form.
   def atr(n)

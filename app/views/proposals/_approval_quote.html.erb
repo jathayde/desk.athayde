@@ -1,0 +1,9 @@
+<h2 class="sec">Quote at approval <small class="muted">(frozen when approved; the cost of the fill is measured against it)</small></h2>
+<dl class="kv-list">
+  <% if quote["unavailable"] %>
+    <div class="kv"><dt>Quote</dt><dd>unavailable: <%= quote["unavailable"] %></dd></div>
+  <% else %>
+    <div class="kv"><dt>Bid · ask · mark</dt><dd><%= money(quote["bid"]) %> · <%= money(quote["ask"]) %> · <%= money(quote["mark"]) %><% if quote["stale"] %> · stale<% end %></dd></div>
+    <div class="kv"><dt>Quoted</dt><dd><%= quote["quote_time"] ? stamp(Time.zone.parse(quote["quote_time"])) : "unknown" %> · fetched <%= stamp(Time.zone.parse(quote["fetched_at"])) %></dd></div>
+  <% end %>
+</dl>

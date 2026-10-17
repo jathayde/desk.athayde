@@ -14,6 +14,9 @@ class OrderProposal < ApplicationRecord
   belongs_to :allocation_source, polymorphic: true, optional: true # the drift row, cash inflow, or tranche an allocation proposal came from
   has_many :orders, dependent: :restrict_with_exception
   has_many :submission_attempts, dependent: :restrict_with_exception
+  has_many :forecasts, -> { order(:id) }, dependent: :restrict_with_exception
+
+  attr_accessor :forecast_note # why an entry was created without the forecast it came with, for the tool's answer
   has_one :trade, dependent: :restrict_with_exception
 
   enum :kind, { entry: "entry", exit: "exit", stop_adjustment: "stop_adjustment", rebalance: "rebalance" }, prefix: true
@@ -112,6 +115,10 @@ class OrderProposal < ApplicationRecord
   def ambiguous_orders = submission_unknown? ? Array(latest_attempt&.ambiguous_order_ids) : []
 
   # The approve gesture: transaction one, then the shadow or real branch (Submission::Submit).
+  # The operator asked to see the agent's forecast before adding theirs (docs/phase-2.6-plan.md §0.2).
+  def reveal_agent_forecast!(user) = AuditEvent.log("agent_forecast_revealed", actor: :human, user: user, subject: self)
+  def agent_forecast_revealed_to?(user) = user.present? && AuditEvent.exists?(kind: "agent_forecast_revealed", subject: self, user: user)
+
   def approve_and_submit!(user:, acknowledged: [], override_reason: nil) = Submission::Submit.call(self, user: user, acknowledged: acknowledged, override_reason: override_reason)
 
   # ---- transitions, each a row of the table, each one audit row, each under the row lock ----------
@@ -153,12 +160,12 @@ class OrderProposal < ApplicationRecord
 
   # Transaction one of the submission: the approval, the state, and the attempt row commit together, or not at all.
   # One live submission per instrument: refused here in words, and by the database's partial unique index.
-  def start_submission!(user:, acknowledged:, override_reason:, payload:, shadow:)
+  def start_submission!(user:, acknowledged:, override_reason:, payload:, shadow:, quote: nil)
     transaction do
       raise IllegalTransition, "#{instrument.symbol} has a submission still unresolved" if self.class.unresolved.where(instrument_id: instrument_id).where.not(id: id).exists?
       transition!(from: APPROVABLE, to: :submitting, event: "proposal_approved", user: user, reason: override_reason,
-                  attributes: { decided_at: Time.current, decided_by: user, acknowledged_warnings: acknowledged, override_reason: override_reason, shadow: shadow },
-                  data: { acknowledged: acknowledged, shadow: shadow })
+                  attributes: { decided_at: Time.current, decided_by: user, acknowledged_warnings: acknowledged, override_reason: override_reason, shadow: shadow, quote_at_approval: quote },
+                  data: { acknowledged: acknowledged, shadow: shadow, quote: quote }.compact)
       submission_attempts.create!(attempted_at: Time.current, payload: payload, outcome: :pending).tap do
         AuditEvent.log("proposal_submitting", actor: :human, user: user, subject: self)
       end

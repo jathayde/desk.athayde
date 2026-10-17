@@ -16,6 +16,7 @@ class Submission::Submit
   end
 
   def call
+    @quote = Submission::ApprovalQuote.fetch(@proposal.instrument) if @user&.approver? && @proposal.approvable? # before the lock, and only for a press that could pass
     attempt = OrderProposal.transaction { first_transaction }
     @proposal.shadow? ? @proposal.record_shadow!(attempt) : Submission::Place.call(@proposal, attempt)
   rescue Blocked => e
@@ -36,7 +37,7 @@ class Submission::Submit
       check_drift!(report)
       check_acknowledgements!(report)
       @proposal.update!(guardrail_results: report.to_h, evaluated_at: Time.current)
-      @proposal.start_submission!(user: @user, acknowledged: @acknowledged, override_reason: @override_reason, payload: payload, shadow: SystemSettings.instance.shadow_mode?)
+      @proposal.start_submission!(user: @user, acknowledged: @acknowledged, override_reason: @override_reason, payload: payload, shadow: SystemSettings.instance.shadow_mode?, quote: @quote)
     end
 
     def authorize!

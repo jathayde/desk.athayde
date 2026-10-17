@@ -14,6 +14,10 @@ class ProposalsController < ApplicationController
     @proposal = OrderProposal.find(params[:id])
     @position = @proposal.account.positions.find_by(instrument: @proposal.instrument)
     collar = @proposal.collar.present? ? StopCollar::Collar.load(@proposal.collar) : nil
+    @forecasts = @proposal.forecasts.to_a
+    @own_forecast = @forecasts.find(&:author_human?)
+    # Blind until the operator has added theirs or chosen to look (docs/phase-2.6-plan.md §0.2); the reader sees all.
+    @forecast_revealed = @own_forecast || !@proposal.approvable? || !Current.user&.approver? || @proposal.agent_forecast_revealed_to?(Current.user)
     @chart = PriceChart.for(@proposal.instrument, stop: @proposal.stop_price || @position&.stop_price, entry: @proposal.limit_price, collar: collar)
   end
 
@@ -23,10 +27,11 @@ class ProposalsController < ApplicationController
   end
 
   def create
-    proposal = Proposals::Create.call(**proposal_arguments, origin: :human, user: Current.user)
+    arguments = proposal_arguments
+    proposal = Proposals::Create.call(**arguments, origin: :human, user: Current.user, forecast: forecast_arguments(arguments[:kind]))
     redirect_to proposal_path(proposal), notice: "Proposed #{proposal.instrument.symbol}."
   rescue Proposals::Error, ArgumentError => e
-    redirect_to new_proposal_path(params.permit(:kind, :symbol, :limit_price, :stop_price, :setup_id, :thesis, :quantity, :tax_lot_method)), alert: e.message
+    redirect_to new_proposal_path(params.permit(*Proposals::FORM_FIELDS)), alert: e.message
   end
 
   private
@@ -42,8 +47,14 @@ class ProposalsController < ApplicationController
     def proposal_arguments
       kind = params[:kind].presence_in(%w[ entry exit ]) || "entry" # a thesis review's deploy and exit arrive here too
       { account: Account.trading.order(:id).first, kind: kind, side: kind == "entry" ? :buy : :sell, symbol: params[:symbol].to_s,
-        limit_price: decimal(params[:limit_price]), stop_price: decimal(params[:stop_price]), setup: Setup.find_by(id: params[:setup_id]),
+        limit_price: decimal(params[:limit_price]), stop_price: decimal(params[:stop_price]),
+        target_price: kind == "entry" ? decimal(params[:target_price]) : nil, setup: Setup.find_by(id: params[:setup_id]),
         thesis: params[:thesis].presence, quantity: params[:quantity].presence&.to_i, tax_lot_method: params[:tax_lot_method].presence }
+    end
+
+    # The operator's forecast is optional (docs/phase-2.6-plan.md §0.2): none unless a probability is given.
+    def forecast_arguments(kind)
+      { probability: params[:probability], horizon_days: params[:horizon_days] } if kind == "entry" && params[:probability].present?
     end
 
     def decimal(value) = value.present? ? BigDecimal(value.to_s.strip) : nil

@@ -1,7 +1,7 @@
 <% content_for :title, "Proposal #{@proposal.instrument.symbol}" %>
 <% proposal = @proposal %>
 <h1><%= proposal.priced_label %> <small><%= proposal.status_label %></small></h1>
-<p class="callout"><%= proposal.kind.humanize %> · <%= proposal.origin %><% if proposal.setup %> · <%= proposal.setup.name %><% end %><% if proposal.stop_price %> · stop <%= money(proposal.stop_price) %><% end %><% if proposal.shadow? %> · shadow<% end %></p>
+<p class="callout"><%= proposal.kind.humanize %> · <%= proposal.origin %><% if proposal.setup %> · <%= proposal.setup.name %><% end %><% if proposal.stop_price %> · stop <%= money(proposal.stop_price) %><% end %><% if proposal.target_price %> · target <%= money(proposal.target_price) %><% end %><% if proposal.shadow? %> · shadow<% end %></p>
 <% if proposal.thesis.present? %><p class="thesis"><%= proposal.thesis %></p><% end %>
 
 <%= render "shared/candles", chart: @chart %>
@@ -10,6 +10,8 @@
 <% when CashInflow, DeploymentTranche %><%= render "proposals/deployment", context: proposal.context %>
 <% end %>
 <%= render "proposals/evaluation", proposal: proposal, results: proposal.guardrail_results, sizing: proposal.sizing, collar: proposal.collar %>
+<% if proposal.kind_entry? %><%= render "proposals/forecasts", proposal: proposal, forecasts: @forecasts, own: @own_forecast, revealed: @forecast_revealed %><% end %>
+<% if proposal.quote_at_approval %><%= render "proposals/approval_quote", quote: proposal.quote_at_approval %><% end %>
 <% if proposal.reduces_position? %>
   <h2 class="sec">Lots this sale takes, <%= proposal.tax_lot_method %> <small class="muted">(as the journal knows them, split-adjusted and net of earlier sales, frozen when proposed; Schwab's method names are unverified)</small></h2>
   <dl class="kv-list">
