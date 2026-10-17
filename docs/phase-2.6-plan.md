@@ -82,6 +82,13 @@ The stored daily history and the backtester (§0.10); a screened research univer
 - Hypothesis evidence limited to proposals that named it at creation; one verdict on the first `min_sample` trades, with a Bonferroni bar.
 - The skeptic on every entry, the operator's included, at one agent run each on `Agent::MODEL` (a smaller model, or agent entries only, would cut the cost).
 - Setups left ungated by hypotheses (§0.5).
+- Added during the build, from the step and phase reviews (§8, §9), each a number or a rule you did not choose:
+  - an entry counts as evidence for a hypothesis about a setup only when the entry names that setup itself;
+  - a hypothesis verdict on fewer than 30 trades is labelled indicative;
+  - a calibration interval is shown only from 8 distinct weeks of forecasts;
+  - a decay flag needs two looks in a row below what was declared, the second adding at least 5 trades;
+  - an entry's cost is comparable only when approved inside the regular session and filled within 15 minutes;
+  - the skeptic runs on at most 25 entries a day, retries a failed run once, and works within 6 turns, 8 tool calls, and 120,000 input tokens.
 
 ## 8. As built
 
