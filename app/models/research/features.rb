@@ -83,7 +83,7 @@ class Research::Features
     def open_risk
       desk = Desk.new(account: @proposal.account)
       return Missing.new("the desk is #{desk.state.to_s.humanize(capitalize: false)}") unless desk.ready?
-      (@context ||= {})["open_risk_excluded"] = desk.excluded_by_reason
+      (@context ||= {})["open_risk_excluded"] = desk.excluded_by_reason.transform_keys(&:to_s) # as jsonb holds it, so the row reads unchanged after save
       desk.open_risk_ratio&.to_f || Missing.new("no equity to divide by")
     end
 
@@ -103,12 +103,13 @@ class Research::Features
 
     # The final candles as StopCollar::Candles, with nil and the reason when they cannot be read.
     def final_candles(symbol)
-      history = Agent::MarketData.price_history(symbol, range: "1y")
-      return [ nil, "history is stale (Schwab unavailable)" ] if history[:stale]
-      final = StopCollar::Candles.final(Array(history[:candles]).map { it.transform_keys(&:to_sym) }, fetched_at: [ history[:fetched_at], @now ].compact.min).sort_by { it[:date] }
+      read = StopCollar::Candles.read(symbol)
+      final = StopCollar::Candles.final(read.all, fetched_at: [ read.fetched_at, @now ].compact.min)
       return [ nil, "no final candles" ] if final.empty?
       return [ nil, "the last final candle is #{final.last[:date]}, more than two trading days old" ] if final.last[:date].to_date < StopCollar::Candles.oldest_acceptable_date
       [ StopCollar::Candles.new(final), nil ]
+    rescue StopCollar::Candles::Refused => e
+      [ nil, e.message ]
     rescue Schwab::Error => e # a rate limit included: the proposal goes ahead without the features
       [ nil, "history unavailable: #{e.message.truncate(80)}" ]
     end

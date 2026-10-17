@@ -23,6 +23,11 @@ RSpec.describe "Hypotheses" do
     get new_proposal_path
     expect(response.body).to include("Evidence for a hypothesis under test", "##{hypothesis.id} Breakouts pay (Breakout)")
     post proposals_path, params: { kind: "entry", symbol: "XYZ", limit_price: "50", stop_price: "47", thesis: "t", hypothesis_id: hypothesis.id }
+    unnamed = OrderProposal.last
+    expect(unnamed).to have_attributes(hypothesis: nil, setup: nil) # the hypothesis never supplies a setup, which sizing reads
+    expect(AuditEvent.where(kind: "hypothesis_not_named", subject: unnamed).sole.reason).to include("name that setup")
+    unnamed.reject!(user: john, reason: "again, with the setup")
+    post proposals_path, params: { kind: "entry", symbol: "XYZ", limit_price: "50", stop_price: "47", thesis: "t", hypothesis_id: hypothesis.id, setup_id: breakout.id }
     proposal = OrderProposal.last
     expect(proposal).to have_attributes(hypothesis: hypothesis, setup: breakout)
     get proposal_path(proposal)

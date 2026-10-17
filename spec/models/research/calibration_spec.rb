@@ -24,8 +24,9 @@ RSpec.describe Research::Calibration do
     10.times { forecast(outcome: "hit", probability: 0.6, baseline: 0.3) }
     10.times { forecast(outcome: "miss", probability: 0.6, baseline: 0.3) }
     f = figures
-    expect(f).to include("n" => 20, "hit_rate" => 0.5, "brier" => 0.26, "baseline_brier" => 0.29, "hindsight_brier" => 0.25, "skill" => 0.03)
-    expect(f["skill_interval"].size).to eq(2)
+    expect(f).to include("n" => 20, "hit_rate" => 0.5, "brier" => 0.26, "baseline_brier" => 0.29, "hindsight_brier" => 0.25, "skill" => 0.03, "weeks" => 1)
+    expect(f).not_to include("skill_interval") # one week of forecasts is one draw, however many there are
+    expect(CalibrationSnapshot.new(figures: f.deep_stringify_keys).verdict).to eq("too few weeks to tell (1 weeks; 8 needed)")
     expect(f).not_to include("reliability")
     nineteen = described_class.new(Forecast.includes(order_proposal: :setup).order(:id).first(19), as_of: as_of)
     below = nineteen.figures(nineteen.cuts.first)
@@ -70,10 +71,15 @@ RSpec.describe Research::Calibration do
     late = create(:order_proposal, account: account, instrument: create(:instrument), status: "rejected", target_price: 56, reference_close: 50, reference_on: monday - 1)
     forecast(outcome: "miss", proposal: late)
     forecast(outcome: "miss", proposal: late, author: "human", starts_on: monday + 1)
+    longer = create(:order_proposal, account: account, instrument: create(:instrument), status: "rejected", target_price: 56, reference_close: 50, reference_on: monday - 1)
+    forecast(outcome: "hit", proposal: longer)
+    Forecast.create!(order_proposal: longer, author: "human", probability: 0.5, baseline_probability: 0.3, horizon_days: 30, entry_price: 50, stop_price: 47, target_price: 56,
+                     reference_close: 50, reference_on: monday - 1, reference_volatility: 0.02, starts_on: monday, checked_through: monday + 5, outcome: "miss", resolved_at: Time.current)
     c = calibration
     cuts = c.cuts.to_h { [ [ it.scope, it.key ], it.forecasts.size ] }
-    expect(cuts).to include([ "overall", "all" ] => 3, [ "author", "agent" ] => 3, [ "author", "human" ] => 3, [ "paired", "agent" ] => 1, [ "paired", "human" ] => 1,
-                            [ "setup", breakout.id.to_s ] => 1, [ "setup", "none" ] => 2)
+    expect(cuts).to include([ "overall", "all" ] => 4, [ "author", "agent" ] => 4, [ "author", "human" ] => 4, [ "paired", "agent" ] => 1, [ "paired", "human" ] => 1, # a 30-session claim is not a 10-session one
+                            [ "setup", breakout.id.to_s ] => 1, [ "setup", "none" ] => 3)
+    expect(c.figures(c.cuts.find { it.scope == "author" && it.key == "agent" })["coverage"]).to eq("entries" => 0, "forecast" => 0) # the factory's are the operator's
     expect(c.figures(c.cuts.find { it.scope == "paired" && it.key == "agent" })).to include("anchored_excluded" => 1)
   end
 

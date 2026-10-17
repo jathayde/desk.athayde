@@ -34,17 +34,13 @@ module Proposals
   VOLATILITY_RETURNS = 20
 
   # The hypothesis an entry is evidence for, named only when it can be (docs/phase-2.6-plan.md §0.5); otherwise the
-  # entry goes ahead unnamed with the reason, since research bookkeeping never decides what is proposed. A named
-  # entry takes the hypothesis's setup.
+  # entry goes ahead unnamed with the reason, since research bookkeeping never decides what is proposed.
   def self.name_hypothesis(proposal, hypothesis)
-    reason = if !proposal.kind_entry? then "a hypothesis is evidence for entries only"
-    elsif !hypothesis.collecting? then "hypothesis ##{hypothesis.id} is #{hypothesis.status}, not being tested or watched for decay"
-    elsif MarketDay.today < hypothesis.holdout_from then "hypothesis ##{hypothesis.id} takes evidence from #{hypothesis.holdout_from.iso8601}"
-    elsif hypothesis.setup && proposal.setup && proposal.setup != hypothesis.setup then "the setup is #{proposal.setup.name}, not the hypothesis's #{hypothesis.setup.name}"
+    if (reason = hypothesis.refusal_for(proposal))
+      proposal.hypothesis, proposal.hypothesis_note = nil, reason
+    else
+      proposal.hypothesis = hypothesis
     end
-    return proposal.hypothesis_note = reason if reason
-    proposal.hypothesis = hypothesis
-    proposal.setup ||= hypothesis.setup
   end
 
   # The last final close, which every forecast on an entry is measured from (docs/phase-2.6-plan.md §0.1), and the
@@ -63,7 +59,6 @@ module Proposals
   def self.volatility(closes)
     returns = closes.each_cons(2).map { |prev, close| Math.log(close / prev) }
     return nil if returns.size < VOLATILITY_RETURNS
-    mean = returns.sum / returns.size
-    BigDecimal(Math.sqrt(returns.sum { (it - mean)**2 } / (returns.size - 1)), 6).round(6).nonzero?
+    BigDecimal(Research::Stats.standard_deviation(returns), 6).round(6).nonzero?
   end
 end

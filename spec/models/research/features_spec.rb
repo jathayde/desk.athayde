@@ -70,6 +70,6 @@ RSpec.describe Research::Features do
     Rails.cache.clear
     script_price_history(ending: MarketDay.today - 10)
     features = described_class.snapshot(OrderProposal.new(account: account, instrument: xyz))
-    expect(features["missing"]["close_vs_sma20"]).to include("more than two trading days old")
+    expect(features["missing"]["close_vs_sma20"]).to match(/more than 2 trading days old/)
   end
 end

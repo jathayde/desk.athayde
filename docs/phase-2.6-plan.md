@@ -90,6 +90,7 @@ The stored daily history and the backtester (§0.10); a screened research univer
 - `starts_on` is stored, computed from `made_at` and the stored calendar's regular open (09:30 when no row exists). The resolver never consults the calendar; the candles are the calendar.
 - `Forecast::Resolution` is pure and leaves a forecast open when the candles run out. `Research::ResolveForecastsJob` decides what running out means: five nights without usable history void it as `data_unavailable`, a delisted name with no successor is a `miss` (`ended_early`) once entered and `never_entered` otherwise, and a delisted name with a successor is read through the successor's symbol.
 - A forecast that cannot be recorded refuses the proposal it came with. It is recorded before the evaluation, so the refusal never rolls back a halt the rules engaged.
+- The resolver consults the stored calendar only for the closed days that excuse a gap in the candles; it never reads a future session from it.
 - The approval quote is fetched straight from Schwab, not from the 2-minute tool cache, for an approver pressing on an approvable proposal. It is marked `stale` when Schwab's quote time is more than 30 seconds older than the fetch, which outside the session it usually is. A quote whose CUSIP is not the instrument's is recorded as unavailable.
 - The operator's add form is hidden from the reader. The agent's forecast is hidden from the approver until they add theirs, choose to look first, or the proposal is decided. Looking is a POST that writes an `agent_forecast_revealed` audit row, and `saw_agent_forecast` is derived from that row, never from the form.
 - **Step review (DHH; counselors, claude-opus and claude-sonnet, `agents/counselors/phase26-step1/`), all taken:**
@@ -229,3 +230,40 @@ The stored daily history and the backtester (§0.10); a screened research univer
 - **Tests:** `e2e/research.spec.js` covers the operator's blind forecast beside the agent's, then both shown; a resolved forecast reading as scored; the research screen's calibration; and a hypothesis accepted on its verdict and another moved to testing.
 - **Scenarios:** two new ones, `forecasts` and `research`.
 - **Reset:** the reset lifts the freeze triggers on the frozen tables, test-only, to empty them.
+
+## 9. Phase review (DHH; counselors in two parts, `agents/counselors/phase26-review-a/` and `-b/`; a first whole-phase run timed out)
+
+All taken unless said otherwise. These were the seams between steps that the step reviews could not see.
+
+- **Research never decides what is proposed.**
+  - A named hypothesis no longer supplies the setup. Sizing and the rules read the setup, so a hypothesis about a setup counts an entry only when the entry names that setup itself, and is dropped with the reason otherwise.
+  - `Hypothesis#refusal_for` is the one statement of the naming rule, read by the draft and by the proposal's validation.
+  - The hypothesis is re-read under the lock, so one retired while the entry drafted is dropped, never refused.
+- **`Proposals::Create`.**
+  - A forecast's own fields (`Forecast.check_claim!`) are checked before anything else, the one forecast failure that refuses, so no halt is ever lost to it. Any other forecast failure leaves the entry unforecast, in its own savepoint, on the record.
+  - The halts are re-read under the lock.
+  - Only the save raises the duplicate-proposal refusal.
+  - Every refusal writes `proposal_refused`.
+  - A failure after commit (the alert, the skeptic's enqueue) is reported, never raised.
+- **`forecastable?` is `Forecast.measurable?`,** so the page never offers a form that would refuse.
+- **One candle reader.** `StopCollar::Candles.read` serves the collar (at least 30), the reference close, and the decision snapshot. The standard deviation moved to `Research::Stats`.
+- **Statistics.**
+  - **Decay check.** It reads the trades after the sample as a prefix in proposal order, up to the first still open, so it no longer favours fast losers. A flag needs the second look below to add at least five trades.
+  - **Paired calibration.** It pairs only the same claim (session and horizon), with the overlap rule applied to every pair before maturity.
+  - **Interval floor.** Intervals drawn by week need eight weeks; below that the cell says too few weeks.
+  - **Baseline (version 2).** It exposes a marketable entry to the stop for the whole entry session, as the resolver does.
+  - **Ended names.** A history that stops after the entry, delisted or not, gives up as a miss marked `ended_early`, never a void.
+  - **Coverage.** The agent's calibration cut carries its coverage too.
+  - **The verdict.**
+    - Its cached result is keyed with `Research::Stats::VERSION`.
+    - It says when the sample mean is below what was declared, and labels a sample under 30 as indicative.
+    - Its audit row's live count is named `tests_now`, so it is never read as the bar's.
+- **Costs.**
+  - An entry is comparable only when approved inside the regular session and filled within 15 minutes of the approval, so a pre-market approval filled at the open books no gap as slippage.
+  - Gross minus realized is slippage, not fees: the trade page says gross is still net of fees.
+- **Skeptic.** A failed run is retried once and no more, and the daily cap is counted under an advisory lock.
+- **Not taken.**
+  - **Squashing the migrations that replaced `order_proposals_measures_frozen` in turn.** They are committed, and `structure.sql` holds the final function, which both part A reviewers checked against every existing writer and found refuses nothing. Squashing would rewrite committed history for no change in behaviour.
+  - **Freezing the proposal's own levels (limit, stop, target, setup, sizing) in the database.** No path writes them after creation, and the forecasts copy them when written. This is recorded as a gap in enforcement, not a bug.
+  - **The baseline computed inside the proposal's transaction.** About 30 ms; left there, since its seed is the proposal's id.
+  - **The split ratio voiding a real −50% or −33% gap.** Already disclosed in §7.

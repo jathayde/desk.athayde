@@ -2,15 +2,19 @@
 # only for a trade that came from a proposal (a stop typed in at review is not a plan). The initial entry's fill is
 # measured against the mid frozen at approval; a stop-out's fills against the stop that triggered, the stop order's
 # own price, which needs no quote. Each leg is tagged:
-# - comparable: a marketable entry (its limit at or above the ask) approved on a live quote and filled in that
-#   session, so fill less mid is the spread and impact paid; or a stop that triggered, so fill less stop is the gap;
+# - comparable: a marketable entry (its limit at or above the ask), approved inside the regular session on a live
+#   quote and filled within FILL_WINDOW of the approval, so fill less mid is the spread and impact paid; or a stop
+#   that triggered, so fill less stop is the gap;
 # - shadow: placed by hand, so the gap is the operator's delay, not the market's cost;
-# - not_comparable: a resting limit, a stale quote, or a later session, where the gap is the market's drift;
+# - not_comparable: a resting limit, a stale quote, an approval outside the session, or a slow fill, where the gap
+#   is the market's drift (a pre-market approval filled at the open books the gap, not the spread);
 # - unavailable: no quote, no bid and ask, no stop price on the order.
 # Realized R is already net of everything paid (fees included); gross R adds back only the comparable slippage, and
 # only on a trade whose entry is comparable, so every trade with a gross R measured the same thing. A positive cost
 # is money lost to the fill.
 class Trade::Costs
+  FILL_WINDOW = 15.minutes
+
   def initialize(trade, ledger)
     @trade, @ledger, @proposal = trade, ledger, trade.order_proposal
     @entry, @stop = (@proposal ? [ entry_cost, stop_cost ] : [ nil, nil ])
@@ -53,8 +57,11 @@ class Trade::Costs
       return "shadow" if @proposal.shadow?
       ask = BigDecimal(quote["ask"].to_s, exception: false)
       return "not_comparable" if quote["stale"] || ask.nil? || @proposal.limit_price < ask # a resting limit fills on the market's move
-      approved_on = @proposal.decided_at&.in_time_zone(MarketDay::ZONE)&.to_date
-      fills.all? { it.executed_at&.in_time_zone(MarketDay::ZONE)&.to_date == approved_on } ? "comparable" : "not_comparable"
+      approved_at = @proposal.decided_at or return "not_comparable"
+      day = MarketDay.find_by(date: approved_at.in_time_zone(MarketDay::ZONE).to_date)
+      in_session = day&.trading && day.regular_opens_at <= approved_at && approved_at < day.regular_closes_at
+      prompt = fills.all? { it.executed_at && it.executed_at.between?(approved_at, approved_at + FILL_WINDOW) }
+      in_session && prompt ? "comparable" : "not_comparable"
     end
 
     # Per share in original-entry units, so it lines up with initial_risk.

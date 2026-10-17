@@ -77,6 +77,9 @@ RSpec.describe Research::SkepticJob do
     described_class.perform_now(proposal)
     expect(proposal.reload.skeptic_note).to be_nil
     expect(proposal.skeptic_runs.first).to be_failed
+    fake.enqueue { raise Anthropic::Errors::APIConnectionError.new(url: URI("https://api.anthropic.com"), request: nil) }
+    described_class.perform_now(proposal) # the one retry
+    expect { described_class.perform_now(proposal) }.not_to change(AgentRun, :count) # and no more
     proposal.reject!(user: john, reason: "no")
     blocked = propose(stop_price: 30)
     OrderProposal.where(id: blocked).update_all(status: "rejected_by_rules")

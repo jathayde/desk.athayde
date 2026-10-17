@@ -85,6 +85,14 @@ RSpec.describe Research::ResolveForecastsJob do
     expect(forecast.reload.detail["failed_nights"]).to eq(1)
   end
 
+  it "scores a name that stopped trading after the entry as a miss when it gives up, even unmarked as delisted" do
+    forecast = forecast_on(xyz, horizon: 20)
+    serve("XYZ", [ 49, 51 ], [ 49.5, 52 ])
+    5.times { |i| night(monday + 7 + i) } # the history still ends on Tuesday
+    expect(forecast.reload).to have_attributes(outcome: "miss", void_reason: nil)
+    expect(forecast.detail).to include("ended_early" => true, "entered_on" => (monday + 1).iso8601)
+  end
+
   it "stops at a rate limit and names what it did not reach" do
     forecast_on(xyz)
     Schwab::FakeClient.instance.enqueue(:price_history, sticky: true) { raise Schwab::RateLimited.new(retry_after: 30) }

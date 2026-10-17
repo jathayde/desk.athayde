@@ -22,15 +22,15 @@ class Forecast < ApplicationRecord
   # Levels the forecast cannot be measured on: the proposal is not refused for them, only left without a forecast,
   # so the forecast is never what decides whether an entry is proposed (docs/phase-2.6-plan.md §8).
   class Unmeasurable < ArgumentError; end
+  # The author's own mistake (a probability or horizon out of range): the one thing about a forecast that refuses
+  # the proposal it came with, checked before anything else.
+  class InvalidClaim < ArgumentError; end
 
   # Inside the proposal's own transaction when it comes with the proposal, so a refused creation writes none.
   # The probability and horizon are the author's; everything else is the proposal's. Whether the operator had seen
   # the agent's first is read from the record of the reveal, never from the form.
   def self.record!(proposal, author:, probability:, horizon_days:, user: nil)
-    probability = BigDecimal(probability.to_s, exception: false)&.round(4) # validated as stored
-    horizon = Integer(horizon_days.to_s, exception: false)
-    raise ArgumentError, "probability must be between 0 and 1, exclusive, to four places" unless probability && probability > 0 && probability < 1
-    raise ArgumentError, "horizon must be #{HORIZON.first} to #{HORIZON.last} sessions" unless horizon && HORIZON.cover?(horizon)
+    probability, horizon = check_claim!(probability: probability, horizon_days: horizon_days)
     measurable!(proposal)
     made_at = Time.current
     saw = author.to_s == "human" && proposal.agent_forecast_revealed_to?(user)
@@ -46,7 +46,23 @@ class Forecast < ApplicationRecord
   # What the levels, the horizon, and the volatility alone imply, frozen with the claim (Research::Baseline).
   def self.baseline_for(proposal, horizon, author)
     Research::Baseline.probability(entry: proposal.limit_price, stop: proposal.stop_price, target: proposal.target_price, volatility: proposal.reference_volatility,
-                                   horizon_days: horizon, seed: proposal.id * 2 + (author.to_s == "agent" ? 0 : 1))
+                                   horizon_days: horizon, seed: proposal.id * 2 + (author.to_s == "agent" ? 0 : 1), marketable: proposal.limit_price >= proposal.reference_close)
+  end
+
+  # The probability as stored and the horizon, or InvalidClaim.
+  def self.check_claim!(probability:, horizon_days:)
+    probability = BigDecimal(probability.to_s, exception: false)&.round(4) # validated as stored
+    horizon = Integer(horizon_days.to_s, exception: false)
+    raise InvalidClaim, "probability must be between 0 and 1, exclusive, to four places" unless probability && probability > 0 && probability < 1
+    raise InvalidClaim, "horizon must be #{HORIZON.first} to #{HORIZON.last} sessions" unless horizon && HORIZON.cover?(horizon)
+    [ probability, horizon ]
+  end
+
+  def self.measurable?(proposal)
+    measurable!(proposal)
+    true
+  rescue Unmeasurable
+    false
   end
 
   # The database's checks say the same; this says it in words before a constraint fires.
@@ -82,11 +98,18 @@ class Forecast < ApplicationRecord
     self
   end
 
-  # A night without usable candles: counted, and the void_after-th in a row voids it as data unavailable.
-  def record_failed_night!(void_after:)
+  # A night without usable candles: counted, and the void_after-th in a row gives up. Given the verdict of a history
+  # that has stopped (ended:), giving up on an entered forecast is a miss marked ended_early, not a void.
+  def record_failed_night!(void_after:, ended: nil)
     nights = detail["failed_nights"].to_i + 1
     give_up = nights >= void_after
-    resolve!(Resolution::Verdict.new(outcome: give_up ? "void" : nil, void_reason: give_up ? "data_unavailable" : nil, checked_through: checked_through, detail: { "failed_nights" => nights }))
+    entered = ended && (ended.detail["entered_on"] || detail["entered_on"])
+    verdict = if give_up && entered
+      Resolution::Verdict.new(outcome: "miss", void_reason: nil, checked_through: ended.checked_through, detail: ended.detail.merge("failed_nights" => nights, "ended_early" => true))
+    else
+      Resolution::Verdict.new(outcome: give_up ? "void" : nil, void_reason: give_up ? "data_unavailable" : nil, checked_through: checked_through, detail: { "failed_nights" => nights })
+    end
+    resolve!(verdict)
     outcome || "no_data"
   end
 

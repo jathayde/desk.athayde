@@ -6,13 +6,17 @@ class StopCollar::Candles
 
   Refused = Class.new(StandardError)
 
-  # Sorted symbol-keyed candles, or raises Refused with the reason. A Schwab rate limit propagates: it is a
-  # budget spent, not a data quality verdict.
-  def self.for(instrument)
-    history = Agent::MarketData.price_history(instrument.symbol, range: "1y")
+  # Sorted symbol-keyed candles, enough of them to measure a collar, or raises Refused with the reason. A Schwab
+  # rate limit propagates: it is a budget spent, not a data quality verdict.
+  def self.for(instrument) = read(instrument.symbol, at_least: MIN_CANDLES)
+
+  # A year of a symbol's daily candles, fresh and recent, at least at_least of them: the one read the collar, the
+  # forecast's reference close, and the decision snapshot share. Raises Refused with the reason.
+  def self.read(symbol, at_least: 1)
+    history = Agent::MarketData.price_history(symbol, range: "1y")
     raise Refused, "history is stale (Schwab unavailable)" if history[:stale]
     candles = Array(history[:candles]).map { |c| c.transform_keys(&:to_sym) }.sort_by { |c| c[:date] }
-    raise Refused, "only #{candles.size} daily candles; #{MIN_CANDLES} needed" if candles.size < MIN_CANDLES
+    raise Refused, "only #{candles.size} daily candles; #{at_least} needed" if candles.size < at_least
     raise Refused, "latest candle is #{candles.last[:date]}, more than #{MAX_TRADING_DAYS_OLD} trading days old" if candles.last[:date].to_date < oldest_acceptable_date
     new(candles, fetched_at: history[:fetched_at])
   end

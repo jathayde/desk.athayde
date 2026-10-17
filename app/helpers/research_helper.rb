@@ -56,7 +56,9 @@ module ResearchHelper
     clears = verdict["clears"] ? "clears the bar" : "does not clear the bar"
     "mean R #{number_with_precision(verdict["mean_r"], precision: 2)} over #{verdict["n"]} (lower bound at the bar's level #{number_with_precision(verdict["lower_bound"], precision: 2)}), " \
       "p #{verdict["p_value"]} against #{verdict["bar"]} for #{pluralize(verdict["tests"], "hypothesis", plural: "hypotheses")} tested: #{clears}" \
-      "#{"; #{pluralize(verdict["excluded_trade_ids"].size, "excluded trade")} counted" if verdict["excluded_trade_ids"].present?}"
+      "#{"; #{pluralize(verdict["excluded_trade_ids"].size, "excluded trade")} counted" if verdict["excluded_trade_ids"].present?}" \
+      "#{"; mean below the #{number_with_precision(verdict["expected_mean_r"], precision: 2)} declared, so the decay check will read it as below" if verdict["at_or_above_declared"] == false}" \
+      "#{"; indicative only: under #{Hypothesis::INDICATIVE_BELOW} trades" if verdict["indicative"]}"
   end
 
   SLIPPAGE_TAGS = {

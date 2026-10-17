@@ -46,7 +46,7 @@
     <%= f.text_area :rules, rows: 3 %>
     <%= f.label :setup_id, "Setup" %>
     <%= f.collection_select :setup_id, setups, :id, :name, include_blank: "No setup" %>
-    <%= f.label :expected_mean_r, "Expected mean R per trade" %>
+    <%= f.label :expected_mean_r, "Expected mean R per trade, realized and net of what is paid (the decay check holds live trades to it)" %>
     <%= f.text_field :expected_mean_r, inputmode: "decimal" %>
     <%= f.label :min_sample, "Trades to judge it on (10 to 500)" %>
     <%= f.text_field :min_sample, inputmode: "numeric" %>

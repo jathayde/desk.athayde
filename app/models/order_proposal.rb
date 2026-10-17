@@ -134,7 +134,7 @@ class OrderProposal < ApplicationRecord
     end
   end
 
-  def forecastable? = kind_entry? && target_price.present? && reference_close.present?
+  def forecastable? = Forecast.measurable?(self) # the same rule a forecast's own record! applies, so no form is offered that would refuse
 
   # The operator asked to see the agent's forecast before adding theirs (docs/phase-2.6-plan.md §0.2).
   def reveal_agent_forecast!(user) = AuditEvent.log("agent_forecast_revealed", actor: :human, user: user, subject: self)
@@ -290,10 +290,9 @@ class OrderProposal < ApplicationRecord
       self
     end
 
-    # Proposals.name_hypothesis says the same in words and drops the name; this keeps any other writer honest.
+    # Proposals.name_hypothesis drops a name this refuses; this keeps any other writer honest.
     def names_a_testing_hypothesis
-      errors.add(:hypothesis, "##{hypothesis.id} is #{hypothesis.status}; only one being tested or accepted can be named") unless hypothesis.collecting?
-      errors.add(:hypothesis, "is evidence for entries only") unless kind_entry?
-      errors.add(:setup, "must be the hypothesis's, #{hypothesis.setup.name}") if hypothesis.setup && setup != hypothesis.setup
+      reason = hypothesis.refusal_for(self)
+      errors.add(:hypothesis, reason) if reason
     end
 end

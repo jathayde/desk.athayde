@@ -29,21 +29,24 @@ class CalibrationSnapshot < ApplicationRecord
   def reliability? = reliability.present?
   def verdict
     return "not enough forecasts yet (#{n} scored; #{floor(:brier)} needed)" unless scored?
+    return "too few weeks to tell (#{figures["weeks"]} weeks; #{floor(:weeks)} needed)" unless skill_interval
     clears(skill_interval, "the baseline")
   end
 
   # The paired head-to-head, carried on the agent's row: below zero, the operator was closer.
   def head_to_head_verdict
-    return nil unless operator_minus_agent_interval
-    low, high = operator_minus_agent_interval
-    return "agent and operator not distinguishable" unless high < 0 || low > 0
-    high < 0 ? "the operator closer than the agent" : "the agent closer than the operator"
+    return nil unless operator_minus_agent
+    return "too few weeks to compare the two" unless operator_minus_agent_interval
+    { "better" => "the agent closer than the operator", "worse" => "the operator closer than the agent" }.fetch(direction(operator_minus_agent_interval), "agent and operator not distinguishable")
   end
 
   private
-    def clears(interval, against)
+    def clears(interval, against) = direction(interval).then { it ? "#{it} than #{against}" : "not distinguishable from #{against}" }
+
+    # Which side of zero an interval sits on: above is "better", below "worse", across it nil.
+    def direction(interval)
       low, high = interval
-      return "not distinguishable from #{against}" unless low > 0 || high < 0
-      low > 0 ? "better than #{against}" : "worse than #{against}"
+      return "better" if low > 0
+      "worse" if high < 0
     end
 end

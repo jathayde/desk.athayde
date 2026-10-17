@@ -16,4 +16,9 @@ RSpec.describe Research::Baseline do
   it "is well below the no-drift odds when the horizon is short, which a baseline without it would ignore" do
     expect(baseline(horizon_days: 5)).to be < 0.1
   end
+
+  it "exposes a marketable entry to the stop for the whole entry session, as the resolver does, which tells most where the stop is near" do
+    near = { stop: 49.5, target: 51, horizon_days: 5 }
+    expect(baseline(**near, marketable: true)).to be < baseline(**near, marketable: false)
+  end
 end

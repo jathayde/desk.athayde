@@ -106,4 +106,32 @@ RSpec.describe Proposals::Create do
     expect(AuditEvent.where(kind: "proposal_created", subject: named).sole.data).to include("hypothesis" => hypothesis.id)
     expect { named.update_columns(hypothesis_id: nil) }.to raise_error(ActiveRecord::StatementInvalid, /never after/)
   end
+
+  describe "research never deciding what is proposed (the phase review)" do
+    it "refuses a forecast's own bad field before any draft, on the record, and leaves off a forecast whose write fails" do
+      calls = Schwab::FakeClient.instance.calls.size
+      expect { described_class.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, target_price: 56, thesis: "t", origin: :agent, forecast: { probability: "1.2", horizon_days: 10 }) }
+        .to raise_error(described_class::Refused, /forecast: probability/)
+      expect(Schwab::FakeClient.instance.calls.size).to eq(calls) # refused before the draft read anything
+      expect(AuditEvent.where(kind: "proposal_refused").last).to have_attributes(actor: "agent", reason: start_with("forecast: probability"))
+      allow(Research::Baseline).to receive(:probability).and_raise(Math::DomainError, "a broken baseline")
+      proposal = described_class.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, target_price: 56, thesis: "t", origin: :agent, forecast: { probability: "0.4", horizon_days: 10 })
+      expect(proposal).to be_validated
+      expect(proposal.forecasts).to be_empty
+      expect(AuditEvent.where(kind: "forecast_not_recorded", subject: proposal).sole.reason).to include("a broken baseline")
+    end
+
+    it "drops a hypothesis retired while the entry was drafting, never refusing the entry" do
+      breakout = create(:setup, name: "Breakout")
+      hypothesis = Hypothesis.write!({ statement: "s", rules: "r", setup: breakout, min_sample: 10, holdout_from: MarketDay.today, expected_mean_r: 0.3 }, user: john)
+      hypothesis.test!(user: john, reason: "go")
+      allow(Research::Features).to receive(:snapshot).and_wrap_original do |original, *args|
+        Hypothesis.find(hypothesis.id).retire!(user: john, reason: "mid-draft")
+        original.call(*args)
+      end
+      proposal = described_class.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, setup: breakout, thesis: "t", origin: :agent, hypothesis: hypothesis)
+      expect(proposal).to have_attributes(hypothesis: nil, setup: breakout)
+      expect(AuditEvent.where(kind: "hypothesis_not_named", subject: proposal).sole.reason).to include("is retired")
+    end
+  end
 end

@@ -11,6 +11,7 @@
 class Hypothesis < ApplicationRecord
   STATUSES = %w[ proposed testing accepted rejected retired ].freeze
   ALPHA = 0.05
+  INDICATIVE_BELOW = 30 # a bootstrap on fewer skewed R values undercovers: such a verdict is labelled indicative
   CLAIM = %i[ statement setup_id rules min_sample holdout_from expected_mean_r parent_id created_by_id ].freeze
 
   belongs_to :setup, optional: true
@@ -69,16 +70,30 @@ class Hypothesis < ApplicationRecord
   # Entries may name it: while testing, for the verdict; once accepted, for the decay check.
   def collecting? = status_testing? || status_accepted?
 
-  # The named trades after the frozen sample, closed with an R, in the order proposed: what the decay check reads.
-  # After the sample means proposed after its last trade's proposal, so nothing the verdict saw can leak in.
-  def since_sample = after_sample.select { it.closed? && it.realized_r }
+  # Why an entry cannot be evidence for this hypothesis, or nil when it can. The one statement of the rule, read by
+  # the draft (which drops the name and says why) and by the proposal's own validation. The setup must be the
+  # entry's own: the hypothesis never supplies it, since sizing and the rules read the setup and a hypothesis is
+  # never an input to either (docs/phase-2.6-plan.md §0).
+  def refusal_for(proposal)
+    return "a hypothesis is evidence for entries only" unless proposal.kind_entry?
+    return "hypothesis ##{id} is #{status}, not being tested or watched for decay" unless collecting?
+    return "hypothesis ##{id} takes evidence from #{holdout_from.iso8601}" if MarketDay.today < holdout_from
+    return "hypothesis ##{id} is about the #{setup.name} setup; name that setup to count as its evidence" if setup && proposal.setup != setup
+    nil
+  end
+
+  # The named trades after the frozen sample, in the order proposed, up to the first still open or without an R:
+  # what the decay check reads, so a fast stop-out never counts ahead of a slow winner proposed before it, the rule
+  # the verdict's sample follows. After the sample means proposed after its last trade's proposal, so nothing the
+  # verdict saw can leak in.
+  def since_sample = after_sample.take_while { it.closed? && it.realized_r }
   def open_since_sample = after_sample.count(&:open?)
 
   # Every named entry that became a trade on or after the holdout, in the order proposed; the sample is the first
   # min_sample of them.
   def evidence_trades
     @evidence_trades ||= Trade.joins(:order_proposal).merge(order_proposals.where(created_at: holdout_from.in_time_zone(MarketDay::ZONE).beginning_of_day..))
-                              .order("order_proposals.created_at", "order_proposals.id").includes(:instrument).to_a
+                              .order("order_proposals.created_at", "order_proposals.id").includes(:instrument, :order_proposal).to_a
   end
 
   def sample = evidence_trades.first(min_sample)
@@ -124,10 +139,12 @@ class Hypothesis < ApplicationRecord
       tests = Hypothesis.where(tested_at: ..completed_at).or(Hypothesis.where(id: id)).count # itself always
       bar = self.class.bar(tests)
       r = sample.map { it.realized_r.to_f }
-      test = Rails.cache.fetch([ "hypothesis-mean-test", Digest::SHA256.hexdigest([ r, bar ].to_json) ]) { Research::Stats.mean_test(r, alpha: bar) } # rows in, so the same answer
+      key = [ "hypothesis-mean-test", Research::Stats::VERSION, ::Digest::SHA256.hexdigest([ r, bar ].to_json) ]
+      test = Rails.cache.fetch(key) { Research::Stats.mean_test(r, alpha: bar) } # rows in, so the same answer
       p_value, lower_bound = test[:p_value].round(6), test[:lower_bound].round(4)
       { "n" => r.size, "mean_r" => test[:mean].round(4), "p_value" => p_value, "lower_bound" => lower_bound, "tests" => tests, "bar" => bar.round(6),
-        "clears" => p_value <= bar.round(6) && lower_bound.positive?, "expected_mean_r" => expected_mean_r.to_f, "completed_at" => completed_at.iso8601,
+        "clears" => p_value <= bar.round(6) && lower_bound.positive?, "expected_mean_r" => expected_mean_r.to_f, "at_or_above_declared" => test[:mean] >= expected_mean_r.to_f,
+        "indicative" => r.size < INDICATIVE_BELOW, "completed_at" => completed_at.iso8601,
         "r" => sample.to_h { [ it.id.to_s, it.realized_r.to_f ] }, "excluded_trade_ids" => sample.select(&:excluded_from_stats?).map(&:id) }
     end
 
@@ -141,7 +158,7 @@ class Hypothesis < ApplicationRecord
         attributes = block_given? ? yield : {}
         update!(attributes.merge(status: to))
         AuditEvent.log("hypothesis_status_changed", actor: :human, user: user, subject: self, reason: reason,
-                       data: { from: before, to: status, tests: Hypothesis.ever_tested.count, verdict: attributes[:evidence] }.compact)
+                       data: { from: before, to: status, tests_now: Hypothesis.ever_tested.count, verdict: attributes[:evidence] }.compact) # the verdict's own tests is its bar's
       end
       self
     end

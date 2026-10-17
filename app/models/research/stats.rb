@@ -1,6 +1,7 @@
 # The few statistics the research screens need, in plain Ruby with a fixed seed so every figure can be reproduced
 # from the rows it was computed on (docs/phase-2.6-plan.md §0.3, §0.6).
 module Research::Stats
+  VERSION = 2 # 2: the centred bootstrap replaced the sign-flip test; part of every cached result's key
   SEED = 2026
   DRAWS = 10_000
   Z95 = 1.959964
@@ -8,6 +9,13 @@ module Research::Stats
   module_function
 
   def mean(values) = values.sum(0.0) / values.size
+
+  # The sample standard deviation, or nil under two values.
+  def standard_deviation(values)
+    return nil if values.size < 2
+    centre = mean(values)
+    Math.sqrt(values.sum { (it - centre)**2 } / (values.size - 1))
+  end
 
   # The 2.5th and 97.5th percentiles of the resampled mean. With clusters (a key per value), whole clusters are
   # drawn, so values that move together, the same week's forecasts, are not counted as independent evidence.

@@ -2,11 +2,13 @@
 # sample, their mean R and its bootstrap interval against the mean R declared before any evidence. Written on
 # Saturdays from MIN_TRADES trades on, and only when the set of trades has changed since the last row. A look whose
 # interval's upper end is below the declaration is marked below; it is flagged, with a suggestion, only when the
-# look before it was below too, since every look re-examines a growing sample and a single one would cry wolf. A
-# flag is a prompt to look, not a test. The operator acts, or not, in the rule editor or on the setup page;
-# nothing is changed by the check.
+# look before it was below too and this one adds at least NEW_FOR_A_FLAG trades, since every look re-examines a
+# growing sample and a single one would cry wolf. The trades read are a prefix in proposal order, so a fast loser
+# never counts ahead of a slow winner proposed before it. A flag is a prompt to look, not a test. The operator
+# acts, or not, in the rule editor or on the setup page; nothing is changed by the check.
 class DecayCheck < ApplicationRecord
   MIN_TRADES = 20
+  NEW_FOR_A_FLAG = 5 # a second look that adds fewer is the first look counted twice
 
   belongs_to :hypothesis
 
@@ -20,7 +22,7 @@ class DecayCheck < ApplicationRecord
     r = trades.map { it.realized_r.to_f }
     low, high = Research::Stats.bootstrap_interval(r).map { it.round(4) }
     below = high < hypothesis.expected_mean_r.to_f.round(4)
-    flagged = below && previous&.below == true
+    flagged = below && previous&.below == true && r.size - previous.n >= NEW_FOR_A_FLAG
     transaction do
       check = today || new(hypothesis: hypothesis, as_of: as_of)
       check.update!(n: r.size, mean_r: Research::Stats.mean(r).round(4), interval_low: low, interval_high: high, expected_mean_r: hypothesis.expected_mean_r,

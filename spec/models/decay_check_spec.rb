@@ -28,22 +28,33 @@ RSpec.describe DecayCheck do
     expect(first).to have_attributes(n: 20, below: true, flagged: false, expected_mean_r: 1.0, suggestion: nil)
     expect(AuditEvent.where(kind: "decay_check_recorded", subject: first).sole.data).to include("below" => true, "flagged" => false)
     expect(described_class.record!(hypothesis.reload, as_of: MarketDay.today + 7)).to be_nil # the same trades: no new look
-    evidence(hypothesis, -0.4, at: 30.minutes.ago)
-    second = described_class.record!(hypothesis.reload, as_of: MarketDay.today + 7)
-    expect(second).to have_attributes(n: 21, below: true, flagged: true)
+    evidence(hypothesis, -0.4, at: 50.minutes.ago)
+    one_more = described_class.record!(hypothesis.reload, as_of: MarketDay.today + 7)
+    expect(one_more).to have_attributes(n: 21, below: true, flagged: false) # one new trade: the same look again
+    4.times { |i| evidence(hypothesis, -0.4, at: 40.minutes.ago + i.minutes) }
+    second = described_class.record!(hypothesis.reload, as_of: MarketDay.today + 14)
+    expect(second).to have_attributes(n: 25, below: true, flagged: false) # the look before (21) added under five
+    5.times { |i| evidence(hypothesis, -0.4, at: 20.minutes.ago + i.minutes) }
+    second = described_class.record!(hypothesis.reload, as_of: MarketDay.today + 21)
+    expect(second).to have_attributes(n: 30, below: true, flagged: true)
     expect(second.suggestion).to include("smaller max risk per trade for the Breakout setup")
     expect(Research::Digest.new.flagged_decay).to eq([ second ])
     hypothesis.retire!(user: john, reason: "it decayed")
     expect(Research::Digest.new.flagged_decay).to be_empty # never "decaying" once retired
   end
 
-  it "never reads a trade the verdict's sample held" do
+  it "never reads a trade the verdict's sample held, and reads in proposal order only up to the first still open" do
     20.times { |i| evidence(hypothesis, 1.2, at: 2.hours.ago + i.minutes) }
     expect(hypothesis.reload.since_sample.map(&:id)).not_to include(*hypothesis.evidence["r"].keys.map(&:to_i))
+    slow = create(:order_proposal, account: account, status: "filled", setup: breakout, hypothesis: hypothesis, created_at: 2.hours.ago + 9.minutes + 30.seconds)
+    create(:trade, account: account, instrument: slow.instrument, order_proposal: slow, status: "open")
+    expect(hypothesis.reload.since_sample.size).to eq(10) # the ten proposed before the open one
   end
 
   it "runs on Saturday for accepted hypotheses, and the entries after acceptance can still name one" do
-    expect(Proposals.name_hypothesis(OrderProposal.new(kind: "entry"), hypothesis)).to eq(breakout)
+    named = OrderProposal.new(kind: "entry", setup: breakout)
+    Proposals.name_hypothesis(named, hypothesis)
+    expect(named.hypothesis).to eq(hypothesis)
     20.times { |i| evidence(hypothesis, 1.2, at: 2.hours.ago + i.minutes) }
     Research::DecayJob.perform_now(MarketDay.today)
     expect(hypothesis.decay_checks.sole).to have_attributes(n: 20, flagged: false)

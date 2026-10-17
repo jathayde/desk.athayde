@@ -40,7 +40,10 @@ module Research
         ended = ended?(instrument)
         return forecast.record_failed_night!(void_after: FAILED_NIGHTS) if candles.nil? && !ended
         verdict = Forecast::Resolution.call(forecast, candles || [], ended: ended, closed_days: closed_days)
-        return forecast.record_failed_night!(void_after: FAILED_NIGHTS) if Forecast::Resolution.gap?(verdict) || (verdict.outcome.nil? && behind?(candles))
+        return forecast.record_failed_night!(void_after: FAILED_NIGHTS) if Forecast::Resolution.gap?(verdict)
+        # A history that stopped while the name was in the trade is a name that stopped trading, delisted or not:
+        # a miss once entered, never a void, so the losers that vanish stay in the score.
+        return forecast.record_failed_night!(void_after: FAILED_NIGHTS, ended: verdict) if verdict.outcome.nil? && behind?(candles)
         forecast.resolve!(verdict)
         forecast.outcome || "open"
       end

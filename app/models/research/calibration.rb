@@ -14,6 +14,7 @@ class Research::Calibration
   BRIER_FLOOR = 20
   RELIABILITY_FLOOR = 50
   BUCKETS = 5 # quintiles: from RELIABILITY_FLOOR, every bucket holds at least ten
+  WEEKS_FLOOR = 8 # an interval drawn by week needs weeks to draw: below this it is not computed
   MATURING = 7.days
   AUTHOR_LABELS = { "agent" => "Agent", "human" => "Operator" }.freeze
 
@@ -32,7 +33,7 @@ class Research::Calibration
     scored = counted.select { scored?(it) }
     figures = { "n" => scored.size, "open" => cut.forecasts.count { it.outcome.nil? }, "maturing" => counted.count { it.outcome.present? && !mature?(it) && !it.outcome_void? },
                 "overlapping" => cut.forecasts.reject(&:outcome_void?).size - counted.size, "voids" => cut.forecasts.select(&:outcome_void?).group_by(&:void_reason).transform_values(&:size),
-                "instruments" => scored.map { it.order_proposal.instrument_id }.uniq.size, "floors" => { "brier" => BRIER_FLOOR, "reliability" => RELIABILITY_FLOOR }, **cut.extra }
+                "instruments" => scored.map { it.order_proposal.instrument_id }.uniq.size, "floors" => { "brier" => BRIER_FLOOR, "reliability" => RELIABILITY_FLOOR, "weeks" => WEEKS_FLOOR }, **cut.extra }
     scored.size >= BRIER_FLOOR ? figures.merge(round_figures(scores(scored))) : figures
   end
 
@@ -44,22 +45,23 @@ class Research::Calibration
     # The operator's forecast is optional, so its cut also says how many of the operator's entries carry one.
     def author_cuts
       AUTHOR_LABELS.map do |author, label|
-        Cut.new(scope: "author", key: author, label: label, forecasts: forecasts.select { it.author == author }, extra: author == "human" ? { "coverage" => coverage } : {})
+        Cut.new(scope: "author", key: author, label: label, forecasts: forecasts.select { it.author == author }, extra: { "coverage" => coverage(author) })
       end
     end
 
-    # Both authors on the same proposal from the same session, both scored, the operator's made blind: the only
-    # fair comparison, since the operator's forecast is optional and picks its own cases. A pair is one bet, kept
-    # or dropped whole by the overlap rule, and the agent's row carries the difference between the two.
+    # Both authors on the same proposal, the same claim (the same session and the same horizon), the operator's
+    # made blind: the only fair comparison, since the operator's forecast is optional and picks its own cases. A
+    # pair is one bet, kept or dropped whole by the overlap rule over every pair (open ones included, as the other
+    # cuts do), then scored once both have matured; the agent's row carries the difference between the two.
     def paired_cuts
       pairs = forecasts.group_by(&:order_proposal_id).values.filter_map do |rows|
         agent, human = rows.find(&:author_agent?), rows.find(&:author_human?)
-        [ agent, human ] if agent && human && agent.starts_on == human.starts_on && scored?(agent) && scored?(human)
+        [ agent, human ] if agent && human && agent.starts_on == human.starts_on && agent.horizon_days == human.horizon_days && !agent.outcome_void? && !human.outcome_void?
       end
       anchored = pairs.count { |_, human| human.saw_agent_forecast }
       blind = pairs.reject { |_, human| human.saw_agent_forecast }
       kept = first_of_each_bet(blind.map(&:first)).to_set
-      blind = blind.select { |agent, _| kept.include?(agent) }
+      blind = blind.select { |agent, human| kept.include?(agent) && scored?(agent) && scored?(human) }
       extra = { "anchored_excluded" => anchored }
       [ Cut.new(scope: "paired", key: "agent", label: "Agent, paired", forecasts: blind.map(&:first), extra: extra.merge(head_to_head(blind))),
         Cut.new(scope: "paired", key: "human", label: "Operator, paired", forecasts: blind.map(&:last), extra: extra) ]
@@ -74,17 +76,20 @@ class Research::Calibration
 
     def one_per_proposal(rows) = rows.group_by(&:order_proposal_id).values.map { |group| group.find(&:author_agent?) || group.first }
 
-    def coverage
-      entries = OrderProposal.kind_entry.where(origin: "human")
-      { "entries" => entries.count, "forecast" => entries.where(id: Forecast.author_human.select(:order_proposal_id)).count }
+    # How many of the author's own entries carry a forecast: the operator's are optional, and the agent's are left
+    # off when the desk cannot measure them, so neither cut is the whole of what was proposed.
+    def coverage(author)
+      entries = OrderProposal.kind_entry.where(origin: author)
+      { "entries" => entries.count, "forecast" => entries.where(id: Forecast.where(author: author).select(:order_proposal_id)).count }
     end
 
     # The operator's squared error less the agent's, per pair: below zero, the operator was closer.
     def head_to_head(pairs)
       return {} if pairs.size < BRIER_FLOOR
       differences = pairs.map { |agent, human| error(human) - error(agent) }
+      weeks = pairs.map { week(it.first) }
       { "operator_minus_agent" => Research::Stats.mean(differences).round(4),
-        "operator_minus_agent_interval" => round_figures(Research::Stats.bootstrap_interval(differences, clusters: pairs.map { week(it.first) })) }
+        "operator_minus_agent_interval" => (round_figures(Research::Stats.bootstrap_interval(differences, clusters: weeks)) if weeks.uniq.size >= WEEKS_FLOOR) }.compact
     end
 
     def scored?(forecast) = forecast.outcome.present? && !forecast.outcome_void? && mature?(forecast)
@@ -115,7 +120,8 @@ class Research::Calibration
                  "expired" => scored.count { it.detail["expired"] }, "mean_probability" => Research::Stats.mean(forecast), "mean_baseline" => Research::Stats.mean(baseline),
                  "mean_reward_to_risk" => Research::Stats.mean(scored.map { it.reward_to_risk.to_f }),
                  "brier" => Research::Stats.mean(brier), "baseline_brier" => Research::Stats.mean(against), "hindsight_brier" => hit_rate * (1 - hit_rate),
-                 "skill" => Research::Stats.mean(skill), "skill_interval" => Research::Stats.bootstrap_interval(skill, clusters: scored.map { week(it) }) }
+                 "skill" => Research::Stats.mean(skill), "weeks" => scored.map { week(it) }.uniq.size }
+      scores["skill_interval"] = Research::Stats.bootstrap_interval(skill, clusters: scored.map { week(it) }) if scores["weeks"] >= WEEKS_FLOOR
       scores["reliability"] = reliability(scored) if scored.size >= RELIABILITY_FLOOR
       scores
     end

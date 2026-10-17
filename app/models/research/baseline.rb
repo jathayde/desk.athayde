@@ -5,19 +5,22 @@
 # day's high and low drawn from the Brownian bridge between its open and close, with a seed fixed per forecast so
 # the number is reproducible. A forecaster who cannot beat this has said nothing the levels and the tape did not.
 module Research::Baseline
-  VERSION = 1
+  VERSION = 2 # 2: a marketable entry is exposed to the stop for the whole entry session
   PATHS = 2_000
-  ENTRY_DAY_LEFT = 0.5 # the share of the entry session after the limit is touched, on average
+  # The share of the entry session the stop is tested over after the fill: all of it for a marketable limit,
+  # filled at the open, which the resolver tests against the whole day's low; about half for a resting one.
+  ENTRY_DAY_MARKETABLE = 1.0
+  ENTRY_DAY_RESTING = 0.5
 
   module_function
 
-  def probability(entry:, stop:, target:, volatility:, horizon_days:, seed:)
+  def probability(entry:, stop:, target:, volatility:, horizon_days:, seed:, marketable: false)
     random = Random.new(seed)
     sigma = volatility.to_f
     up, down = Math.log(target.to_f / entry.to_f), Math.log(stop.to_f / entry.to_f)
     hits = PATHS.times.count do
       x = 0.0
-      x, _, low = session(x, sigma * Math.sqrt(ENTRY_DAY_LEFT), random)
+      x, _, low = session(x, sigma * Math.sqrt(marketable ? ENTRY_DAY_MARKETABLE : ENTRY_DAY_RESTING), random)
       next false if low <= down
       horizon_days.times.any? do
         x, high, low = session(x, sigma, random)

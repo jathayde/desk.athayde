@@ -6,6 +6,11 @@ RSpec.describe Trade::Costs do
   let(:approved_at) { Time.zone.parse("2026-10-14 10:00:00 -0400") }
   let(:quote) { { "bid" => "49.90", "ask" => "50.10", "mark" => "50.00", "fetched_at" => approved_at.iso8601, "stale" => false } }
 
+  before do
+    zone = Time.find_zone!(MarketDay::ZONE)
+    [ 14, 15 ].each { |day| MarketDay.create!(date: Date.new(2026, 10, day), trading: true, source: :schwab, fetched_at: Time.current, regular_opens_at: zone.local(2026, 10, day, 9, 30), regular_closes_at: zone.local(2026, 10, day, 16)) }
+  end
+
   # An entry of 100 at the given fill, approved against the quote, closed by a stop order (in parts if asked) or a
   # limit exit.
   def trade(fill: 50.20, limit: 50.25, filled_at: approved_at + 5.minutes, shadow: false, stop_fills: nil, stop_price: 47, exit_fill: 56, quote: self.quote, proposal: true)
@@ -43,6 +48,7 @@ RSpec.describe Trade::Costs do
     expect(trade(limit: 49.50, fill: 49.50).slippage["entry"]["tag"]).to eq("not_comparable") # below the ask: it waited for the market
     expect(trade(quote: quote.merge("stale" => true)).slippage["entry"]["tag"]).to eq("not_comparable")
     expect(trade(filled_at: approved_at + 1.day).slippage["entry"]["tag"]).to eq("not_comparable")
+    expect(trade(filled_at: approved_at + 20.minutes).slippage["entry"]["tag"]).to eq("not_comparable") # past the fill window: the market moved
     shadowed = trade(shadow: true, stop_fills: [ [ 100, 46.50 ] ])
     expect(shadowed.slippage.values.map { it["tag"] }).to eq(%w[ shadow shadow ])
     expect(shadowed.gross_r).to be_nil

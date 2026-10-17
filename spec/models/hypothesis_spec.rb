@@ -48,7 +48,7 @@ RSpec.describe Hypothesis do
     hypothesis.test!(user: john, reason: "go")
     10.times { |i| evidence(hypothesis, 1.5 + (i % 3) * 0.1, proposed: 1.hour.ago + i.minutes, closed: 10.minutes.ago) }
     verdict = hypothesis.reload.verdict
-    expect(verdict).to include("n" => 10, "tests" => 1, "bar" => 0.05, "clears" => true)
+    expect(verdict).to include("n" => 10, "tests" => 1, "bar" => 0.05, "clears" => true, "indicative" => true, "at_or_above_declared" => true)
     expect(verdict["p_value"]).to be < 0.01
     write(statement: "another").test!(user: john, reason: "and another") # tested after the sample completed: not in its family
     expect(Hypothesis.new(hypothesis.attributes).verdict).to include("tests" => 1) # and so not in the verdict, whenever it is decided
