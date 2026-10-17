@@ -13,7 +13,8 @@ class FailureDigest
   attr_reader :since, :now
 
   def sync_failures = @sync_failures ||= SyncRun.where(status: %w[ failed partial ]).where(finished_at: window).includes(:account).recent_first.to_a
-  def agent_failures = @agent_failures ||= AgentRun.where(status: %w[ failed capped ]).where(finished_at: window).recent_first.to_a
+  # A skeptic run that failed is a missing note worth knowing about; one capped after writing is not a failure.
+  def agent_failures = @agent_failures ||= AgentRun.where(status: %w[ failed capped ]).where.not(kind: :skeptic).or(AgentRun.skeptic.failed).where(finished_at: window).recent_first.to_a
   def undelivered = @undelivered ||= AgentRun.unemailed.where(finished_at: window).recent_first.to_a
   def failed_jobs = @failed_jobs ||= SolidQueue::FailedExecution.where(created_at: window).includes(:job).order(created_at: :desc).to_a
   def failed_attempts = @failed_attempts ||= SubmissionAttempt.dead.where(updated_at: window).includes(order_proposal: :instrument).order(updated_at: :desc).to_a

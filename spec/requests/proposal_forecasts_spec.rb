@@ -19,11 +19,12 @@ RSpec.describe "Proposal forecasts" do
     get proposal_path(proposal)
     expect(response.body).to include("hidden until you add yours", "Add my forecast", "What the desk saw", "formula v1", "Close against its 200-day average", "missing: 59 final candles; 200 needed")
     expect(response.body).not_to include("62.0%")
+    expect(response.body).to include("The case against", "Hidden until you add your forecast", "Show it first (recorded on yours)")
     post proposal_forecast_path(proposal), params: { probability: "0.4", horizon_days: "8", saw_agent_forecast: "1" } # the form's word is not taken
     expect(response).to redirect_to(proposal_path(proposal))
     expect(proposal.forecasts.find_by(author: "human")).to have_attributes(user: john, probability: BigDecimal("0.4"), horizon_days: 8, saw_agent_forecast: false, target_price: 56)
     get proposal_path(proposal)
-    expect(response.body).to include("62.0%", "40.0%")
+    expect(response.body).to include("62.0%", "40.0%", "Pending.")
     expect(response.body).not_to include("Add my forecast")
     post proposal_forecast_path(proposal), params: { probability: "0.5", horizon_days: "8" }
     expect(flash[:alert]).to include("already forecast")

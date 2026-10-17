@@ -96,6 +96,24 @@ END;
 $$;
 
 
+--
+-- Name: order_proposals_skeptic_frozen(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.order_proposals_skeptic_frozen() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (OLD.skeptic_note IS NOT NULL AND NEW.skeptic_note IS DISTINCT FROM OLD.skeptic_note)
+     OR (OLD.skeptic_risk IS NOT NULL AND NEW.skeptic_risk IS DISTINCT FROM OLD.skeptic_risk)
+     OR (OLD.skeptic_run_id IS NOT NULL AND NEW.skeptic_run_id IS DISTINCT FROM OLD.skeptic_run_id) THEN
+    RAISE EXCEPTION 'a skeptic note is frozen once written';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -212,7 +230,9 @@ CREATE TABLE public.agent_runs (
     cache_read_input_tokens integer,
     tool_calls_count integer DEFAULT 0 NOT NULL,
     degraded_reasons jsonb DEFAULT '[]'::jsonb NOT NULL,
-    transcript jsonb DEFAULT '[]'::jsonb NOT NULL
+    transcript jsonb DEFAULT '[]'::jsonb NOT NULL,
+    order_proposal_id bigint,
+    CONSTRAINT agent_runs_skeptic_has_a_proposal CHECK ((((kind)::text = 'skeptic'::text) = (order_proposal_id IS NOT NULL)))
 );
 
 
@@ -1011,7 +1031,12 @@ CREATE TABLE public.order_proposals (
     quote_at_approval jsonb,
     reference_volatility numeric(9,6),
     features jsonb,
-    hypothesis_id bigint
+    hypothesis_id bigint,
+    skeptic_note text,
+    skeptic_risk character varying,
+    skeptic_run_id bigint,
+    CONSTRAINT order_proposals_skeptic_note_whole CHECK (((skeptic_note IS NULL) OR ((skeptic_note <> ''::text) AND (skeptic_risk IS NOT NULL) AND (skeptic_run_id IS NOT NULL)))),
+    CONSTRAINT order_proposals_skeptic_risk CHECK (((skeptic_risk IS NULL) OR ((skeptic_risk)::text = ANY ((ARRAY['thesis'::character varying, 'timing'::character varying, 'sample'::character varying, 'cost'::character varying, 'trend'::character varying, 'other'::character varying])::text[]))))
 );
 
 
@@ -3103,7 +3128,14 @@ CREATE INDEX index_agent_runs_on_started_at ON public.agent_runs USING btree (st
 -- Name: index_agent_runs_one_per_kind_and_day; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_agent_runs_one_per_kind_and_day ON public.agent_runs USING btree (kind, market_date) WHERE ((status)::text <> 'failed'::text);
+CREATE UNIQUE INDEX index_agent_runs_one_per_kind_and_day ON public.agent_runs USING btree (kind, market_date) WHERE (((status)::text <> 'failed'::text) AND ((kind)::text <> 'skeptic'::text));
+
+
+--
+-- Name: index_agent_runs_one_skeptic_per_proposal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_agent_runs_one_skeptic_per_proposal ON public.agent_runs USING btree (order_proposal_id) WHERE (((kind)::text = 'skeptic'::text) AND ((status)::text <> 'failed'::text));
 
 
 --
@@ -4157,6 +4189,13 @@ CREATE TRIGGER order_proposals_measures_frozen BEFORE UPDATE ON public.order_pro
 
 
 --
+-- Name: order_proposals order_proposals_skeptic_frozen; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER order_proposals_skeptic_frozen BEFORE UPDATE ON public.order_proposals FOR EACH ROW EXECUTE FUNCTION public.order_proposals_skeptic_frozen();
+
+
+--
 -- Name: allocation_drifts fk_rails_026b13a78b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4349,6 +4388,14 @@ ALTER TABLE ONLY public.activities
 
 
 --
+-- Name: agent_runs fk_rails_699968b4d2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_runs
+    ADD CONSTRAINT fk_rails_699968b4d2 FOREIGN KEY (order_proposal_id) REFERENCES public.order_proposals(id);
+
+
+--
 -- Name: forecasts fk_rails_69c972f93b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4450,6 +4497,14 @@ ALTER TABLE ONLY public.watchlist_items
 
 ALTER TABLE ONLY public.hypotheses
     ADD CONSTRAINT fk_rails_86b6249e0b FOREIGN KEY (decided_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: order_proposals fk_rails_932aa55340; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_proposals
+    ADD CONSTRAINT fk_rails_932aa55340 FOREIGN KEY (skeptic_run_id) REFERENCES public.agent_runs(id);
 
 
 --
@@ -4747,6 +4802,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261017150001'),
 ('20261017140001'),
 ('20261017130001'),
 ('20261017120001'),

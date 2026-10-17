@@ -1,0 +1,14 @@
+<h2 class="sec">The case against <small class="muted">(written by an agent after the proposal, never a verdict: it blocks nothing and asks for no acknowledgement)</small></h2>
+<% run = proposal.skeptic_runs.first %>
+<% if !revealed %>
+  <p class="muted">Hidden until you add your forecast, so it does not lean on yours. <%= button_to "Show it first (recorded on yours)", proposal_forecast_reveal_path(proposal), class: "secondary", form: { class: "inline-form" } %></p>
+<% elsif proposal.skeptic_note %>
+  <p class="thesis"><%= proposal.skeptic_note %></p>
+  <p class="muted">Strongest objection: <%= proposal.skeptic_risk %> · <%= proposal.skeptic_run.cost_label %><% if proposal.decided_at && proposal.skeptic_run.finished_at && proposal.skeptic_run.finished_at > proposal.decided_at %> · written after the decision<% end %></p>
+<% elsif proposal.rejected_by_rules? %>
+  <p class="muted">None: the rules rejected it, so there is nothing to decide.</p>
+<% elsif run.nil? %>
+  <p class="muted">Pending.</p>
+<% else %>
+  <p class="muted"><%= skeptic_status(run) %></p>
+<% end %>

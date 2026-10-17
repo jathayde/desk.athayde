@@ -91,5 +91,15 @@ module ResearchHelper
     check.below ? "#{line}: below it on this look; flagged if the next is too" : "#{line}: holding"
   end
 
+  # A skeptic run that has not left a note, in words.
+  def skeptic_status(run)
+    return "The skeptic stopped answering: #{run.error || "left running"}" if run.running? && run.started_at < AgentRun::STALE_AFTER.ago
+    return "Being written." if run.running?
+    return "No note today: #{run.error}" if run.skipped?
+    return "The skeptic ran out of budget before finishing (#{run.error}); no note." if run.capped?
+    return "The skeptic failed: #{run.error}" if run.failed?
+    "The skeptic finished without writing a note."
+  end
+
   def stale_calibration_note(research) = research.current? ? nil : "These are the last figures computed; no Saturday run has written any since."
 end

@@ -16,6 +16,8 @@ class OrderProposal < ApplicationRecord
   has_many :submission_attempts, dependent: :restrict_with_exception
   has_many :forecasts, -> { order(:id) }, dependent: :restrict_with_exception
   belongs_to :hypothesis, optional: true # named when proposed, never after (docs/phase-2.6-plan.md §0.5)
+  belongs_to :skeptic_run, class_name: "AgentRun", optional: true
+  has_many :skeptic_runs, -> { skeptic.recent_first }, class_name: "AgentRun", dependent: :restrict_with_exception
 
   validate :names_a_testing_hypothesis, on: :create, if: :hypothesis
 
@@ -118,11 +120,27 @@ class OrderProposal < ApplicationRecord
   def failure_reason = submission_failed? ? latest_attempt&.error : nil
   def ambiguous_orders = submission_unknown? ? Array(latest_attempt&.ambiguous_order_ids) : []
 
-  # The approve gesture: transaction one, then the shadow or real branch (Submission::Submit).
+  # An entry the rules let through: there is something to decide, so the skeptic writes (docs/phase-2.6-plan.md §0.9).
+  def skeptic_due? = kind_entry? && !rejected_by_rules? && skeptic_note.nil?
+
+  # The skeptic's note, once, with its audit row; a run that wrote nothing but the risk line leaves no note. Written
+  # without touching updated_at, which the submission sweep reads.
+  def record_skeptic_note!(run)
+    parsed = Agent::SkepticNote.parse(run.output_markdown)
+    return if parsed.note.blank?
+    transaction do
+      update_columns(skeptic_note: parsed.note, skeptic_risk: parsed.risk, skeptic_run_id: run.id)
+      AuditEvent.log("skeptic_note_written", actor: :agent, subject: self, data: { run: run.id, risk: parsed.risk, after_decision: decided_at.present? })
+    end
+  end
+
+  def forecastable? = kind_entry? && target_price.present? && reference_close.present?
+
   # The operator asked to see the agent's forecast before adding theirs (docs/phase-2.6-plan.md §0.2).
   def reveal_agent_forecast!(user) = AuditEvent.log("agent_forecast_revealed", actor: :human, user: user, subject: self)
   def agent_forecast_revealed_to?(user) = user.present? && AuditEvent.exists?(kind: "agent_forecast_revealed", subject: self, user: user)
 
+  # The approve gesture: transaction one, then the shadow or real branch (Submission::Submit).
   def approve_and_submit!(user:, acknowledged: [], override_reason: nil) = Submission::Submit.call(self, user: user, acknowledged: acknowledged, override_reason: override_reason)
 
   # ---- transitions, each a row of the table, each one audit row, each under the row lock ----------

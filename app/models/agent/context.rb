@@ -1,12 +1,12 @@
 # What the model is told before it asks anything: the desk's freshness, the token, the calendar, the memory
 # files, and every reason the run is already degraded. Computed once per run from the database alone.
 class Agent::Context
-  def initialize(kind:, date:, memory: Memory::Repo.configured)
-    @kind, @date, @memory = kind, date, memory
+  def initialize(kind:, date:, memory: Memory::Repo.configured, proposal: nil)
+    @kind, @date, @memory, @proposal = kind, date, memory, proposal
     @desk = Desk.new
   end
 
-  attr_reader :kind, :date, :memory, :desk
+  attr_reader :kind, :date, :memory, :desk, :proposal
 
   def account = desk.account
   def market_day = @market_day ||= MarketDay.find_by(date: date)
@@ -60,12 +60,22 @@ class Agent::Context
   def percent(ratio) = ratio ? "#{(BigDecimal(ratio.to_s) * 100).round(1).to_s('F')}%" : "n/a"
   # One line of data, never a line break: a symbol is Schwab's, and the prompt's structure is ours.
   def single_line(text) = text.to_s.gsub(/[\r\n]+/, " ")
+  # Free text as a quoted string, so nothing in it can pass for the prompt's own lines.
+  def quoted(text, limit: 200) = single_line(text).truncate(limit).to_json
+
+  def guardrail_summary
+    return "rejected by rules" if proposal.rejected_by_rules?
+    proposal.warnings.any? ? "cautions on #{proposal.warnings.join(", ")}" : "no cautions"
+  end
 
   # Rendered once per run: the same bytes on every turn is what makes the prompt cache hit.
-  def system_prompt = @system_prompt ||= render("system")
+  def system_prompt = @system_prompt ||= render(system_template)
   def user_prompt = @user_prompt ||= render(kind.to_s)
 
   private
+    # The skeptic has a job of its own; every other run shares the brief's frame.
+    def system_template = kind.to_s == "skeptic" ? "skeptic_system" : "system"
+
     def render(name)
       template = Rails.root.join("app/models/agent/prompts/#{name}.md.erb").read
       ERB.new(template, trim_mode: "-").result(binding)

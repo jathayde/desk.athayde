@@ -16,8 +16,9 @@ class ProposalsController < ApplicationController
     collar = @proposal.collar.present? ? StopCollar::Collar.load(@proposal.collar) : nil
     @forecasts = @proposal.forecasts.to_a
     @own_forecast = @forecasts.find(&:author_human?)
-    # Blind until the operator has added theirs or chosen to look (docs/phase-2.6-plan.md §0.2); the reader sees all.
-    @forecast_revealed = @own_forecast || !@proposal.approvable? || !Current.user&.approver? || @proposal.agent_forecast_revealed_to?(Current.user)
+    # Blind until the operator has added theirs or chosen to look (docs/phase-2.6-plan.md §0.2); the reader sees all,
+    # and so does an operator who could not add one (no target, no reference close), since blindness then protects nothing.
+    @forecast_revealed = @own_forecast || !@proposal.approvable? || !Current.user&.approver? || !@proposal.forecastable? || @proposal.agent_forecast_revealed_to?(Current.user)
     @chart = PriceChart.for(@proposal.instrument, stop: @proposal.stop_price || @position&.stop_price, entry: @proposal.limit_price, collar: collar)
   end
 

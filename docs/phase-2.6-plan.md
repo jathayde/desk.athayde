@@ -193,3 +193,34 @@ The stored daily history and the backtester (§0.10); a screened research univer
     - Retired hypotheses never show as decaying.
     - The row and its audit row are written in one transaction.
   - Expected R moved to `Forecast#expected_r`. `decay_summary` takes the check, and the latest check is preloaded, so nothing is counted on render.
+
+**Step 6 (skeptic note).** As planned (§0.9), with these specifics:
+- **The run.** `Research::SkepticJob` is enqueued after commit by `Proposals::Create`, for entries the rules did not reject. It makes one `AgentRun` (kind `skeptic`, `order_proposal_id`) through `Agent::Conversation` with the scheduled read-only tools and a skeptic system prompt of its own.
+- **Database rules.** One non-failed skeptic run per proposal, while the one-per-kind-per-day index excludes the skeptic. The note, its risk, and its run are frozen once written.
+- **The note.**
+  - The model ends with "Risk: <word>", parsed into `skeptic_risk` from the fixed list, and anything else is "other".
+  - The note is never emailed, and is excluded from the undelivered digest.
+  - On the proposal page it is hidden, like the agent's forecast, until the operator has added theirs or chosen to look.
+  - The page shows a failed run as a line, and the note's cost.
+- **The tool.** `get_research_summary` is read-only and scheduled, never over MCP, so the agent that writes forecasts never reads its own calibration.
+- **Cost.** The system page counts the month's skeptic notes and their share of the spend. The brief list leaves them out.
+- **Step review (DHH; counselors `agents/counselors/phase26-step6/`), all taken:**
+  - **Email and digest.** A capped skeptic run is never in the failure digest. A failed one is, as a missing note.
+  - **Recovery and caps.**
+    - A finished run whose note was never written (a worker killed between the two) is written from, not paid for again.
+    - A race to start a run is caught by the unique index and ends quietly.
+    - The skeptic has its own budgets (6 turns, 8 tool calls, 120,000 input tokens), no `evaluate_hypothetical_order` (it answers in share counts), and a daily cap of 25 runs that leaves a skipped run and a line.
+  - **Writing the note.**
+    - `Agent::SkepticNote` reads the risk line loosely (bold, punctuation, blank lines) and never leaves it in the note. A word off the list is "other", and an over-long note is cut and says so.
+    - A bare risk line leaves no note, and the database requires a whole note.
+    - The note and its audit are written in one transaction without touching `updated_at`.
+  - **The prompts.**
+    - The system prompt forbids arithmetic of the skeptic's own.
+    - It gives the date and the desk's degraded reasons, and drops the memory files it never had.
+    - The user prompt supplies the forecast's expected R and the setup's measured costs, so nothing has to be worked out. Free text is quoted as JSON strings, the thesis capped at 1,000 characters.
+  - **The page.**
+    - The skeptic panel has its own "show it first" button through the recorded reveal.
+    - An operator who could not add a forecast (no target, no reference close) sees the note outright, since blindness then protects nothing.
+    - A stale, capped, skipped, or noteless run each say so, and a note written after the decision says that too.
+  - **The system page** counts skeptic runs and the notes they wrote.
+  - **The migration's `down`** removes skeptic runs before restoring the one-per-day index.

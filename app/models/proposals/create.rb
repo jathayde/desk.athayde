@@ -37,6 +37,7 @@ class Proposals::Create
       proposal.evaluate!(Guardrails::Evaluator.new(proposal).call)
     end
     ActiveRecord.after_all_transactions_commit { Alert.new_proposal(proposal) } unless proposal.human? # the operator made the human ones
+    ActiveRecord.after_all_transactions_commit { Research::SkepticJob.perform_later(proposal) } if proposal.skeptic_due?
     proposal
   rescue ActiveRecord::RecordNotUnique
     raise Refused, "#{proposal.instrument.symbol} already has a #{proposal.side} proposal waiting; decide it first" # only the save can collide, after the draft

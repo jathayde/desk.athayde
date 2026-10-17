@@ -9,11 +9,15 @@ class Agent::Conversation
   DEADLINE = 10.minutes
   TOOL_RESULT_LIMIT = 24.kilobytes
   BUDGET_EXHAUSTED = "tool budget exhausted; write the brief from what you have"
+  # The skeptic writes 150 words about one proposal, once per entry: a brief's budget would be a brief's bill each time.
+  SKEPTIC = { turns: 6, tool_calls: 8, input_tokens: 120_000 }.freeze
+  SKEPTIC_WITHOUT = %w[ evaluate_hypothetical_order ].freeze # it answers in share counts, which the skeptic never states
 
   Ended = Class.new(StandardError)
 
-  def initialize(agent_run, context: Agent::Context.new(kind: agent_run.kind, date: agent_run.market_date), client: Agent.client)
+  def initialize(agent_run, context: Agent::Context.new(kind: agent_run.kind, date: agent_run.market_date, proposal: agent_run.order_proposal), client: Agent.client)
     @run, @context, @client = agent_run, context, client
+    @limits = agent_run.skeptic? ? SKEPTIC : { turns: MAX_TURNS, tool_calls: MAX_TOOL_CALLS, input_tokens: MAX_INPUT_TOKENS }
     @messages = []
     @degraded_reasons = context.degraded_reasons.dup
     @turns = @tool_calls = 0
@@ -67,22 +71,24 @@ class Agent::Conversation
 
     def call(tool_choice:)
       raise Ended, "deadline of #{DEADLINE.inspect} passed before turn #{@turns + 1}" if elapsed > DEADLINE
-      raise Ended, "#{MAX_TURNS} turns passed without a final answer" if @turns >= MAX_TURNS
+      raise Ended, "#{@limits[:turns]} turns passed without a final answer" if @turns >= @limits[:turns]
       @turns += 1
       response = @client.messages.create(
         model: Agent::MODEL, max_tokens: @max_tokens, system_: @context.system_prompt, messages: @messages,
-        tools: Agent::Tools.definitions(:scheduled), tool_choice: tool_choice, cache_control: { type: :ephemeral },
+        tools: tools, tool_choice: tool_choice, cache_control: { type: :ephemeral },
         request_options: { timeout: Agent::REQUEST_TIMEOUT } # the client-level timeout is ignored by the SDK when this is absent
       )
       %i[ input_tokens output_tokens cache_creation_input_tokens cache_read_input_tokens ].each { |field| @usage[field] += response.usage.public_send(field).to_i }
       response
     end
 
-    # Which budget, if any, leaves no room for another tool turn plus the final call MAX_TURNS reserves.
+    def tools = @tools ||= Agent::Tools.definitions(:scheduled).reject { run.skeptic? && SKEPTIC_WITHOUT.include?(it[:name]) }
+
+    # Which budget, if any, leaves no room for another tool turn plus the final call the turn limit reserves.
     def budget_spent
-      return "turns" if @turns >= MAX_TURNS - 1
-      return "tool calls" if @tool_calls >= MAX_TOOL_CALLS
-      "input tokens" if input_tokens >= MAX_INPUT_TOKENS
+      return "turns" if @turns >= @limits[:turns] - 1
+      return "tool calls" if @tool_calls >= @limits[:tool_calls]
+      "input tokens" if input_tokens >= @limits[:input_tokens]
     end
 
     def input_tokens = @usage[:input_tokens] + @usage[:cache_read_input_tokens] + @usage[:cache_creation_input_tokens]
@@ -100,7 +106,7 @@ class Agent::Conversation
     # Every tool_use id is answered in one user message, results first. A batch that would pass the call cap,
     # or one asked for after tools were withdrawn, runs nothing: each id gets an error result and the next call carries no tools.
     def answer(tool_uses, forced:)
-      if forced || @tool_calls + tool_uses.size > MAX_TOOL_CALLS
+      if forced || @tool_calls + tool_uses.size > @limits[:tool_calls]
         @capped_by ||= "tool calls"
         return tool_uses.map { |use| { type: :tool_result, tool_use_id: use.id, is_error: true, content: BUDGET_EXHAUSTED } }
       end
@@ -109,6 +115,7 @@ class Agent::Conversation
 
     def tool_result(use)
       @tool_calls += 1
+      return { type: :tool_result, tool_use_id: use.id, is_error: true, content: "#{use.name} is not offered here" } unless tools.any? { it[:name] == use.name }
       result = Agent::Tools.call(use.name, use.input, transport: :scheduled, agent_run: run)
       @degraded_reasons << "#{use.name} failed: #{result.error}" unless result.ok?
       @degraded_reasons << "#{use.name} returned stale data" if result.ok? && stale?(result.value)

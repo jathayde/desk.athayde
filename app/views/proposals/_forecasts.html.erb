@@ -10,7 +10,7 @@
   <% end %>
   <% if forecasts.empty? %><div class="kv"><dt>Forecasts</dt><dd>none</dd></div><% end %>
 </dl>
-<% if proposal.approvable? && Current.user&.approver? && own.nil? && proposal.target_price && proposal.reference_close %>
+<% if proposal.approvable? && Current.user&.approver? && own.nil? && proposal.forecastable? %>
   <%= form_with url: proposal_forecast_path(proposal), method: :post, class: "account-form" do |f| %>
     <p class="muted">Your forecast on these levels: entry <%= money(proposal.limit_price) %>, stop <%= money(proposal.stop_price) %>, target <%= money(proposal.target_price) %>. It is never changed once added.</p>
     <%= f.label :probability, "Probability (0 to 1)" %>

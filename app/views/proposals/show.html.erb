@@ -11,7 +11,10 @@
 <% end %>
 <%= render "proposals/evaluation", proposal: proposal, results: proposal.guardrail_results, sizing: proposal.sizing, collar: proposal.collar %>
 <% if proposal.features %><%= render "proposals/features", features: proposal.features %><% end %>
-<% if proposal.kind_entry? %><%= render "proposals/forecasts", proposal: proposal, forecasts: @forecasts, own: @own_forecast, revealed: @forecast_revealed %><% end %>
+<% if proposal.kind_entry? %>
+  <%= render "proposals/skeptic", proposal: proposal, revealed: @forecast_revealed %>
+  <%= render "proposals/forecasts", proposal: proposal, forecasts: @forecasts, own: @own_forecast, revealed: @forecast_revealed %>
+<% end %>
 <% if proposal.quote_at_approval %><%= render "proposals/approval_quote", quote: proposal.quote_at_approval %><% end %>
 <% if proposal.reduces_position? %>
   <h2 class="sec">Lots this sale takes, <%= proposal.tax_lot_method %> <small class="muted">(as the journal knows them, split-adjusted and net of earlier sales, frozen when proposed; Schwab's method names are unverified)</small></h2>

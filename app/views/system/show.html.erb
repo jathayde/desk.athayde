@@ -31,6 +31,7 @@
     <p class="muted"><%= link_to "Rules", risk_rules_path %> · every edit is a new version.</p>
   <% end %>
   <div class="kv"><dt>API spend this month</dt><dd><%= money(status.api_spend_this_month, precision: 2) %><% if status.unpriced_runs? %> <small>plus unpriced runs</small><% end %></dd></div>
+  <div class="kv"><dt>Skeptic runs this month</dt><dd><%= status.skeptic_runs_this_month.count %> (<%= OrderProposal.where(skeptic_run_id: status.skeptic_runs_this_month.select(:id)).count %> notes), <%= money(status.skeptic_runs_this_month.sum(:estimated_cost), precision: 2) %> of that spend</dd></div>
   <div class="kv"><dt>Memory repo</dt>
     <dd><% if status.memory_repo.present? %><%= pluralize(status.memory_repo.paths.size, "file") %>, changed <%= as_of(status.memory_repo.last_modified_at) %><% else %>missing<% end %><% if status.memory_run %> · pull <%= status.memory_run.status %> <%= as_of(status.memory_run.finished_at || status.memory_run.started_at) %><% if status.memory_run.error %> <small><%= status.memory_run.error.truncate(80) %></small><% end %><% end %></dd></div>
 </dl>

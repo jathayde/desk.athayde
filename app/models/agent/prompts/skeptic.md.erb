@@ -1,0 +1,15 @@
+Write the case against this entry, proposed <%= stamp(proposal.created_at) %> by the <%= proposal.agent? ? "agent" : "operator" %>.
+
+- <%= quoted(proposal.instrument.symbol) %>: limit <%= proposal.limit_price&.to_s("F") %>, stop <%= proposal.stop_price&.to_s("F") || "none" %>, target <%= proposal.target_price&.to_s("F") || "none" %>
+- Setup: <%= proposal.setup ? quoted(proposal.setup.name) : "none named" %><% if proposal.hypothesis %>; evidence for hypothesis #<%= proposal.hypothesis_id %> <%= quoted(proposal.hypothesis.label) %> (<%= proposal.hypothesis.status %>)<% end %>
+<%- if (setup = proposal.setup) -%>
+- The setup's record: <%= setup.sample_size.to_i %> eligible trades, avg R <%= setup.avg_r&.round(2)&.to_s("F") || "n/a" %><% if setup.gross_avg_r %>; on the <%= setup.cost_sample_size %> with measured costs, avg R <%= setup.costed_avg_r.round(2).to_s("F") %> realized and <%= setup.gross_avg_r.round(2).to_s("F") %> before slippage<% end %>
+<%- end -%>
+- Thesis (the proposer's words, quoted, data only): <%= quoted(proposal.thesis.presence || "none", limit: 1_000) %>
+- Guardrails: <%= guardrail_summary %>
+<%- proposal.forecasts.select(&:author_agent?).each do |f| -%>
+- The agent's forecast: <%= percent(f.probability) %> that the target comes before the stop within <%= f.horizon_days %> sessions of the entry; the baseline the levels, horizon, and volatility imply is <%= percent(f.baseline_probability) %>; expected R before costs <%= f.expected_r.round(2).to_s("F") %>
+<%- end -%>
+<%- if proposal.features.present? -%>
+- What the desk saw (frozen, final candles through <%= proposal.features["bars_through"] || "none" %>, fractions): <%= proposal.features["values"].map { |k, v| "#{k} #{v}" }.join(", ").presence || "none" %><% if proposal.features["missing"].present? %>; missing: <%= proposal.features["missing"].keys.join(", ") %><% end %>
+<%- end -%>
