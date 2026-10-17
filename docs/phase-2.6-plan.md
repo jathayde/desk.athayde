@@ -224,3 +224,8 @@ The stored daily history and the backtester (§0.10); a screened research univer
     - A stale, capped, skipped, or noteless run each say so, and a note written after the decision says that too.
   - **The system page** counts skeptic runs and the notes they wrote.
   - **The migration's `down`** removes skeptic runs before restoring the one-per-day index.
+
+**Step 7 (Playwright).**
+- **Tests:** `e2e/research.spec.js` covers the operator's blind forecast beside the agent's, then both shown; a resolved forecast reading as scored; the research screen's calibration; and a hypothesis accepted on its verdict and another moved to testing.
+- **Scenarios:** two new ones, `forecasts` and `research`.
+- **Reset:** the reset lifts the freeze triggers on the frozen tables, test-only, to empty them.

@@ -6,7 +6,9 @@ module Playwright::Scenario
   ACCOUNT_HASH = Schwab::FakeClient::ACCOUNT_HASH
   SCENARIOS = %w[ not_connected waiting_for_accounts needs_setup healthy expiring expired halted unprotected delisted sync_failed review_queue closed_trade
                   proposal proposal_warn proposal_blocked proposal_override submission_unknown rule_halted rebalance rebalance_skipped
-                  allocation_desk thesis_review deposit_ask ].freeze
+                  allocation_desk thesis_review deposit_ask forecasts research ].freeze
+  # What the database refuses to delete, the research records frozen once written: lifted for the reset alone.
+  FROZEN_TABLES = %w[ forecasts hypotheses order_proposals ].freeze
 
   # Guarded here as well as at the route: reset! empties the database.
   def load!(name)
@@ -20,6 +22,16 @@ module Playwright::Scenario
   def reset!
     Schwab::FakeClient.instance.reset!
     Rails.cache.clear
+    without_freezes do
+      DecayCheck.delete_all
+      CalibrationSnapshot.delete_all
+      Forecast.delete_all
+      OrderProposal.update_all(skeptic_run_id: nil, hypothesis_id: nil)
+      ToolCall.where(agent_run: AgentRun.skeptic).delete_all
+      AgentRun.skeptic.delete_all
+      Hypothesis.update_all(parent_id: nil)
+      Hypothesis.delete_all
+    end
     [ Allocation::Drift, ThesisReview, DeploymentTranche, CashInflow, Allocation::Target, InstrumentTag, TradeLeg, Trade, Snapshot, Position, Balance, Activity, SubmissionAttempt, Order, OrderProposal, WatchlistItem, RiskRule, SyncRun, MarketDay, SchwabToken, Session, Account, Instrument, Setup ].each(&:delete_all)
     SystemSettings.instance.update!(shadow_mode: true, manual_halt: false, manual_halt_reason: nil, manual_halt_at: nil, sync_paused_reason: nil,
                                     rule_halt_rule: nil, rule_halt_reason: nil, rule_halt_tripped_at: nil, rule_halt_resets_at: nil)
@@ -182,7 +194,50 @@ module Playwright::Scenario
     trade.trade_legs.create!(kind: :exit, quantity: 40, price: 55.31, cash_amount: 2212.4, executed_at: 1.day.ago)
   end
 
+  # An agent entry waiting with its forecast (hidden until the operator adds one), and a resolved one beside it.
+  def forecasts
+    proposal_desk
+    Proposals::Create.call(account: Account.first, kind: :entry, side: :buy, symbol: "XYZ", limit_price: BigDecimal("50"), stop_price: BigDecimal("47"), target_price: BigDecimal("56"),
+                           thesis: "Adding to the base breakout on volume.", origin: :agent, forecast: { probability: "0.62", horizon_days: 10 })
+    earlier = Account.first.order_proposals.create!(instrument: Instrument.find_by!(symbol: "DEF"), kind: :entry, side: :buy, origin: :agent, status: :rejected, order_type: "LIMIT",
+                                                    quantity: 5, limit_price: 88, stop_price: 84, target_price: 96, reference_close: 87.5, reference_on: 20.days.ago.to_date,
+                                                    thesis: "A pullback to the 20-day.", decided_at: 19.days.ago, rejection_reason: "waiting for earnings")
+    Forecast.create!(order_proposal: earlier, author: "agent", probability: 0.55, baseline_probability: 0.31, horizon_days: 10, entry_price: 88, stop_price: 84, target_price: 96,
+                     reference_close: 87.5, reference_on: 20.days.ago.to_date, reference_volatility: 0.02, starts_on: 19.days.ago.to_date, made_at: 20.days.ago,
+                     checked_through: 12.days.ago.to_date, outcome: "hit", resolved_at: 11.days.ago, detail: { "entered_on" => 18.days.ago.to_date.iso8601, "decided_on" => 12.days.ago.to_date.iso8601 })
+  end
+
+  # Calibration on the screen, one hypothesis with its sample complete and one still only written down.
+  def research
+    proposal_desk
+    john = User.find_by!(email_address: "john@athayde.com")
+    CalibrationSnapshot.create!(as_of: MarketDay.today, scope: "author", key: "agent", label: "Agent",
+                                figures: { "n" => 24, "open" => 3, "maturing" => 1, "overlapping" => 0, "instruments" => 9, "voids" => { "never_entered" => 2 }, "brier" => 0.21,
+                                           "baseline_brier" => 0.24, "hindsight_brier" => 0.23, "skill" => 0.03, "skill_interval" => [ -0.02, 0.08 ], "hit_rate" => 0.5,
+                                           "hit_rate_if_ambiguous_hit" => 0.58, "ambiguous" => 2, "expired" => 4, "mean_probability" => 0.55, "mean_baseline" => 0.41, "mean_reward_to_risk" => 2.0 })
+    breakout = Setup.create!(name: "breakout-B")
+    testing = Hypothesis.write!({ statement: "Breakouts on volume pay", rules: "Close above the 20-day high on 1.5x average volume; stop under the base.", setup: breakout,
+                                  min_sample: 10, holdout_from: MarketDay.today, expected_mean_r: 0.5 }, user: john)
+    testing.test!(user: john, reason: "enough bases on the watchlist")
+    xyz = Instrument.find_by!(symbol: "XYZ")
+    10.times do |i|
+      named = Account.first.order_proposals.create!(instrument: xyz, kind: :entry, side: :buy, origin: :agent, status: :filled, order_type: "LIMIT", quantity: 5, limit_price: 50,
+                                                    stop_price: 47, setup: breakout, hypothesis: testing, created_at: Time.current - (10 - i).minutes)
+      Account.first.trades.create!(instrument: xyz, order_proposal: named, setup: breakout, status: :closed, closed_at: Time.current, realized_r: 1.2 + (i % 3) * 0.2, initial_risk: 15)
+    end
+    Hypothesis.write!({ statement: "Pullbacks to the 20-day hold", rules: "Buy the first touch of the 20-day in an uptrend.", min_sample: 30, holdout_from: MarketDay.today, expected_mean_r: 0.3 }, user: john)
+  end
+
   private
+    # Test-only: the reset empties tables whose rows the database otherwise never lets go.
+    def without_freezes
+      connection = ActiveRecord::Base.connection
+      FROZEN_TABLES.each { connection.execute("ALTER TABLE #{connection.quote_table_name(it)} DISABLE TRIGGER USER") }
+      yield
+    ensure
+      FROZEN_TABLES.each { connection.execute("ALTER TABLE #{connection.quote_table_name(it)} ENABLE TRIGGER USER") }
+    end
+
     def proposal_desk
       healthy
       User.first.update!(approver: true)
