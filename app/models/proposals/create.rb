@@ -19,6 +19,7 @@ class Proposals::Create
     raise Refused, "halted: #{settings.manual_halt_reason}" if settings.manual_halt?
     raise Refused, "entries are halted by #{settings.rule_halt_rule}: #{settings.rule_halt_reason}" if OrderProposal.opens_exposure?(@arguments[:kind], @arguments[:side]) && !settings.entries_allowed?
     proposal = Proposals.draft(**@arguments)
+    proposal.features = Research::Features.snapshot(proposal) if proposal.kind_entry? # outside the lock: it reads SPY's history too
     OrderProposal.transaction(requires_new: true) do # a savepoint inside a caller's transaction, so a refusal here leaves the caller's usable
       OrderProposal.lock_instrument!(proposal.account, proposal.instrument)
       open = proposal.account.order_proposals.pending.where(instrument: proposal.instrument, side: OrderProposal.sides.fetch(proposal.side)).first

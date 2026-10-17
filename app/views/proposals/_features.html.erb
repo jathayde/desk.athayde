@@ -1,0 +1,10 @@
+<h2 class="sec">What the desk saw <small class="muted">(frozen when proposed, formula v<%= features["version"] %>, final candles through <%= features["bars_through"] || "none" %>; recorded to be joined to outcomes, never used to decide)</small></h2>
+<dl class="kv-list">
+  <% if (failure = features.dig("missing", "all")) %>
+    <div class="kv"><dt>Snapshot</dt><dd>not taken: <%= failure %></dd></div>
+  <% else %>
+    <% Research::Features::FEATURES.each do |key, (label, _)| %>
+      <div class="kv"><dt><%= label %></dt><dd><%= feature_value(features, key) %></dd></div>
+    <% end %>
+  <% end %>
+</dl>

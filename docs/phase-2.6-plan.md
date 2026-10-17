@@ -128,3 +128,19 @@ The stored daily history and the backtester (§0.10); a screened research univer
   - An entry-day stop is ambiguous only when that day also reached the target (resolver version 2).
   - Reliability is quintiles with ties broken by id.
   - Wording says "lower is better", gives the sign of skill and the hindsight Brier, warns on the screen when the figures are stale, and the email says each author's own score is not a comparison.
+
+**Step 3 (decision snapshots).** As planned (§0.4), on entries only:
+- `Research::Features.snapshot` runs in `Proposals::Create` after the draft and before the lock. It reads final candles for the instrument and SPY through the tool cache, and `Desk` for the open-risk ratio.
+- A stale, failed, or rate-limited history leaves every market feature missing with the reason, and an exception leaves the whole snapshot missing. Neither ever refuses the proposal.
+- `order_proposals.features` is frozen once set, by the same trigger as the reference close and the approval quote.
+- The proposal page shows each feature, or why it is missing, with the formula version and the date of the last bar.
+- **Step review (DHH; counselors `agents/counselors/phase26-step3/`), all taken:**
+  - **Partial bars through the cache.** `StopCollar::Candles.final` now judges today's bar by when the history was fetched, not by the clock, and only 15 minutes after the regular close. Before this, a history cached at 15:58 and read at 16:01 passed its partial bar as final. That fix also covers step 1's reference close and volatility, and the resolver.
+  - **Never backfilled.** What a proposal saw when it was made (`reference_close`, `reference_on`, `reference_volatility`, `features`) is written with the row or never, so a value measured later cannot be backfilled. The approval quote stays frozen once set.
+  - **The features themselves:**
+    - The module is a class whose feature methods return a value or a `Missing` reason, and one feature's failure is that feature's alone.
+    - A history ending more than two trading days ago is not read.
+    - The ATR is `StopCollar::Candles#atr`.
+    - Every value is a fraction, rounded once. Volume is the multiple less one, like the averages.
+    - The snapshot stores the benchmark, the proposal's `reference_on`, and what the open-risk ratio leaves out.
+    - The units are written in the module, and a spec pins every version 1 formula on a fixed tape.

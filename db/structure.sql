@@ -53,11 +53,12 @@ CREATE FUNCTION public.order_proposals_measures_frozen() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-IF (OLD.reference_close IS NOT NULL AND NEW.reference_close IS DISTINCT FROM OLD.reference_close)
-   OR (OLD.reference_on IS NOT NULL AND NEW.reference_on IS DISTINCT FROM OLD.reference_on)
-   OR (OLD.quote_at_approval IS NOT NULL AND NEW.quote_at_approval IS DISTINCT FROM OLD.quote_at_approval)
-   OR (OLD.reference_volatility IS NOT NULL AND NEW.reference_volatility IS DISTINCT FROM OLD.reference_volatility) THEN
-  RAISE EXCEPTION 'a proposal''s reference close and approval quote are frozen once set';
+IF NEW.reference_close IS DISTINCT FROM OLD.reference_close OR NEW.reference_on IS DISTINCT FROM OLD.reference_on
+   OR NEW.reference_volatility IS DISTINCT FROM OLD.reference_volatility OR NEW.features IS DISTINCT FROM OLD.features THEN
+  RAISE EXCEPTION 'what a proposal saw when it was made is written with it, never after';
+END IF;
+IF OLD.quote_at_approval IS NOT NULL AND NEW.quote_at_approval IS DISTINCT FROM OLD.quote_at_approval THEN
+  RAISE EXCEPTION 'a proposal''s approval quote is frozen once set';
 END IF;
 RETURN NEW;
 END;
@@ -885,7 +886,8 @@ CREATE TABLE public.order_proposals (
     reference_close numeric(18,4),
     reference_on date,
     quote_at_approval jsonb,
-    reference_volatility numeric(9,6)
+    reference_volatility numeric(9,6),
+    features jsonb
 );
 
 
@@ -4460,6 +4462,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261017120001'),
 ('20261017110002'),
 ('20261017110001'),
 ('20261017100001'),

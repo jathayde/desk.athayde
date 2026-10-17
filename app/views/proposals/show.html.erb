@@ -10,6 +10,7 @@
 <% when CashInflow, DeploymentTranche %><%= render "proposals/deployment", context: proposal.context %>
 <% end %>
 <%= render "proposals/evaluation", proposal: proposal, results: proposal.guardrail_results, sizing: proposal.sizing, collar: proposal.collar %>
+<% if proposal.features %><%= render "proposals/features", features: proposal.features %><% end %>
 <% if proposal.kind_entry? %><%= render "proposals/forecasts", proposal: proposal, forecasts: @forecasts, own: @own_forecast, revealed: @forecast_revealed %><% end %>
 <% if proposal.quote_at_approval %><%= render "proposals/approval_quote", quote: proposal.quote_at_approval %><% end %>
 <% if proposal.reduces_position? %>

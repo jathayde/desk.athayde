@@ -17,7 +17,7 @@ RSpec.describe "Proposal forecasts" do
   it "hides the agent's forecast until the operator adds theirs, then shows both" do
     sign_in john
     get proposal_path(proposal)
-    expect(response.body).to include("hidden until you add yours", "Add my forecast")
+    expect(response.body).to include("hidden until you add yours", "Add my forecast", "What the desk saw", "formula v1", "Close against its 200-day average", "missing: 59 final candles; 200 needed")
     expect(response.body).not_to include("62.0%")
     post proposal_forecast_path(proposal), params: { probability: "0.4", horizon_days: "8", saw_agent_forecast: "1" } # the form's word is not taken
     expect(response).to redirect_to(proposal_path(proposal))

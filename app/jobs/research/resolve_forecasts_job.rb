@@ -57,7 +57,7 @@ module Research
         history = Agent::MarketData.price_history(source.symbol, range: "1y")
         return nil if history[:stale] || history[:empty] || Array(history[:candles]).empty?
         candles = history[:candles].map { |c| c = c.transform_keys(&:to_sym); { date: c[:date].to_date, high: c[:high].to_d, low: c[:low].to_d, close: c[:close].to_d } }
-        StopCollar::Candles.final(candles).sort_by { it[:date] }
+        StopCollar::Candles.final(candles, fetched_at: history[:fetched_at] || Time.current).sort_by { it[:date] }
       rescue Schwab::RateLimited
         raise
       rescue Schwab::Error

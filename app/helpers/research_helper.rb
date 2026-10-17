@@ -32,5 +32,12 @@ module ResearchHelper
     snapshot.head_to_head_verdict ? "#{headline}; head to head, #{snapshot.head_to_head_verdict}" : headline
   end
 
+  # A frozen feature in its own format, or why it is missing.
+  def feature_value(features, key)
+    value = features.dig("values", key)
+    return "missing: #{features.dig("missing", key) || "not recorded"}" if value.nil?
+    Research::Features::FEATURES.fetch(key).last == :signed_percent ? signed_percent(value.to_d) : percent(value.to_d)
+  end
+
   def stale_calibration_note(research) = research.current? ? nil : "These are the last figures computed; no Saturday run has written any since."
 end
