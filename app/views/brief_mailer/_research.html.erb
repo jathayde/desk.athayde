@@ -1,0 +1,8 @@
+<p><b>Research</b><%= research.computed_on ? ", calibration #{research.current? ? "as of" : "last computed"} #{research.computed_on.strftime("%a %b %-d")}" : "" %></p>
+<ul>
+  <% research.headlines.each do |snapshot| %><li><%= calibration_headline(snapshot) %></li><% end %>
+  <% if research.snapshots.empty? %><li>no calibration computed yet</li><% end %>
+</ul>
+<% if research.snapshots.any? %><p>Each author's own score picks its own cases; the paired lines are the fair comparison.</p><% end %>
+<% if research.snapshots.any? && (note = stale_calibration_note(research)) %><p><%= note %></p><% end %>
+<p><%= link_to "Research", research_url %></p>

@@ -53,12 +53,13 @@ CREATE FUNCTION public.order_proposals_measures_frozen() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF (OLD.reference_close IS NOT NULL AND NEW.reference_close IS DISTINCT FROM OLD.reference_close)
-     OR (OLD.reference_on IS NOT NULL AND NEW.reference_on IS DISTINCT FROM OLD.reference_on)
-     OR (OLD.quote_at_approval IS NOT NULL AND NEW.quote_at_approval IS DISTINCT FROM OLD.quote_at_approval) THEN
-    RAISE EXCEPTION 'a proposal''s reference close and approval quote are frozen once set';
-  END IF;
-  RETURN NEW;
+IF (OLD.reference_close IS NOT NULL AND NEW.reference_close IS DISTINCT FROM OLD.reference_close)
+   OR (OLD.reference_on IS NOT NULL AND NEW.reference_on IS DISTINCT FROM OLD.reference_on)
+   OR (OLD.quote_at_approval IS NOT NULL AND NEW.quote_at_approval IS DISTINCT FROM OLD.quote_at_approval)
+   OR (OLD.reference_volatility IS NOT NULL AND NEW.reference_volatility IS DISTINCT FROM OLD.reference_volatility) THEN
+  RAISE EXCEPTION 'a proposal''s reference close and approval quote are frozen once set';
+END IF;
+RETURN NEW;
 END;
 $$;
 
@@ -369,6 +370,42 @@ ALTER SEQUENCE public.balances_id_seq OWNED BY public.balances.id;
 
 
 --
+-- Name: calibration_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calibration_snapshots (
+    id bigint NOT NULL,
+    as_of date NOT NULL,
+    scope character varying NOT NULL,
+    key character varying NOT NULL,
+    label character varying NOT NULL,
+    figures jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT calibration_snapshots_scope CHECK (((scope)::text = ANY ((ARRAY['overall'::character varying, 'author'::character varying, 'paired'::character varying, 'setup'::character varying])::text[])))
+);
+
+
+--
+-- Name: calibration_snapshots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.calibration_snapshots_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: calibration_snapshots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.calibration_snapshots_id_seq OWNED BY public.calibration_snapshots.id;
+
+
+--
 -- Name: cash_drag_diagnostics; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -619,11 +656,15 @@ CREATE TABLE public.forecasts (
     detail jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
+    reference_volatility numeric(9,6),
+    baseline_probability numeric(5,4),
     CONSTRAINT forecasts_author CHECK (((author)::text = ANY ((ARRAY['agent'::character varying, 'human'::character varying])::text[]))),
+    CONSTRAINT forecasts_baseline_probability CHECK (((baseline_probability IS NULL) OR ((baseline_probability >= (0)::numeric) AND (baseline_probability <= (1)::numeric)))),
     CONSTRAINT forecasts_horizon CHECK (((horizon_days >= 1) AND (horizon_days <= 60))),
     CONSTRAINT forecasts_levels CHECK (((stop_price > (0)::numeric) AND (stop_price < entry_price) AND (stop_price < reference_close) AND (reference_close < target_price) AND (entry_price < target_price))),
     CONSTRAINT forecasts_outcome CHECK (((outcome IS NULL) OR ((outcome)::text = ANY ((ARRAY['hit'::character varying, 'miss'::character varying, 'void'::character varying])::text[])))),
     CONSTRAINT forecasts_probability CHECK (((probability > (0)::numeric) AND (probability < (1)::numeric))),
+    CONSTRAINT forecasts_reference_volatility CHECK (((reference_volatility IS NULL) OR (reference_volatility > (0)::numeric))),
     CONSTRAINT forecasts_resolution CHECK ((((NOT ((outcome)::text IS DISTINCT FROM 'void'::text)) = (void_reason IS NOT NULL)) AND ((outcome IS NULL) = (resolved_at IS NULL)))),
     CONSTRAINT forecasts_void_reason CHECK (((void_reason IS NULL) OR ((void_reason)::text = ANY ((ARRAY['never_entered'::character varying, 'split'::character varying, 'data_unavailable'::character varying])::text[]))))
 );
@@ -843,7 +884,8 @@ CREATE TABLE public.order_proposals (
     context jsonb DEFAULT '{}'::jsonb NOT NULL,
     reference_close numeric(18,4),
     reference_on date,
-    quote_at_approval jsonb
+    quote_at_approval jsonb,
+    reference_volatility numeric(9,6)
 );
 
 
@@ -2095,6 +2137,13 @@ ALTER TABLE ONLY public.balances ALTER COLUMN id SET DEFAULT nextval('public.bal
 
 
 --
+-- Name: calibration_snapshots id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_snapshots ALTER COLUMN id SET DEFAULT nextval('public.calibration_snapshots_id_seq'::regclass);
+
+
+--
 -- Name: cash_drag_diagnostics id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2457,6 +2506,14 @@ ALTER TABLE ONLY public.audit_events
 
 ALTER TABLE ONLY public.balances
     ADD CONSTRAINT balances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calibration_snapshots calibration_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_snapshots
+    ADD CONSTRAINT calibration_snapshots_pkey PRIMARY KEY (id);
 
 
 --
@@ -2970,6 +3027,13 @@ CREATE INDEX index_balances_on_account_id ON public.balances USING btree (accoun
 --
 
 CREATE INDEX index_balances_on_account_id_and_as_of ON public.balances USING btree (account_id, as_of);
+
+
+--
+-- Name: index_calibration_snapshots_on_as_of_and_scope_and_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_calibration_snapshots_on_as_of_and_scope_and_key ON public.calibration_snapshots USING btree (as_of, scope, key);
 
 
 --
@@ -4396,6 +4460,8 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261017110002'),
+('20261017110001'),
 ('20261017100001'),
 ('20261016140001'),
 ('20261016130001'),

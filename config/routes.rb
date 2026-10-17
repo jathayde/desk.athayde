@@ -3,6 +3,7 @@ Rails.application.routes.draw do
 
   match "/mcp", to: "mcp#handle", via: %i[ post get delete ]
 
+  resource :research, only: :show, controller: "research"
   resource :system, only: :show, controller: "system" do
     post :halt
     post :resume

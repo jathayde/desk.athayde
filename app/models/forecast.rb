@@ -4,7 +4,7 @@
 # candles whatever happened to the order. The database freezes the claim once written and the outcome once
 # resolved; the nightly resolver is the only writer of the outcome.
 class Forecast < ApplicationRecord
-  CLAIM = %i[ order_proposal_id author user_id probability horizon_days entry_price target_price stop_price reference_close reference_on starts_on made_at saw_agent_forecast ].freeze
+  CLAIM = %i[ order_proposal_id author user_id probability horizon_days entry_price target_price stop_price reference_close reference_on reference_volatility starts_on made_at saw_agent_forecast ].freeze
   HORIZON = 1..60
   REGULAR_OPEN = [ 9, 30 ] # the starts_on rule needs only the open, which no early close moves
   FLAGS = %w[ ambiguous stopped_on_entry_day expired ended_early ].freeze
@@ -36,10 +36,17 @@ class Forecast < ApplicationRecord
     saw = author.to_s == "human" && proposal.agent_forecast_revealed_to?(user)
     create!(order_proposal: proposal, author: author, user: user, probability: probability, horizon_days: horizon, made_at: made_at, starts_on: starts_on(made_at),
             entry_price: proposal.limit_price, target_price: proposal.target_price, stop_price: proposal.stop_price,
-            reference_close: proposal.reference_close, reference_on: proposal.reference_on, saw_agent_forecast: saw).tap do |forecast|
+            reference_close: proposal.reference_close, reference_on: proposal.reference_on, reference_volatility: proposal.reference_volatility, saw_agent_forecast: saw,
+            baseline_probability: baseline_for(proposal, horizon, author)).tap do |forecast|
       AuditEvent.log("forecast_recorded", actor: author.to_sym, user: user, subject: forecast,
                      data: { proposal: proposal.id, probability: forecast.probability.to_s, horizon_days: horizon, starts_on: forecast.starts_on.iso8601, saw_agent_forecast: saw })
     end
+  end
+
+  # What the levels, the horizon, and the volatility alone imply, frozen with the claim (Research::Baseline).
+  def self.baseline_for(proposal, horizon, author)
+    Research::Baseline.probability(entry: proposal.limit_price, stop: proposal.stop_price, target: proposal.target_price, volatility: proposal.reference_volatility,
+                                   horizon_days: horizon, seed: proposal.id * 2 + (author.to_s == "agent" ? 0 : 1))
   end
 
   # The database's checks say the same; this says it in words before a constraint fires.
@@ -47,6 +54,7 @@ class Forecast < ApplicationRecord
     raise Unmeasurable, "a forecast is on an entry" unless proposal.kind_entry?
     raise Unmeasurable, "no stop and target on the proposal" unless proposal.stop_price && proposal.target_price
     raise Unmeasurable, "no final close to measure it from" unless proposal.reference_close
+    raise Unmeasurable, "no volatility to set its baseline from" unless proposal.reference_volatility
     raise Unmeasurable, "the stop must sit below the limit and the target above it" unless proposal.stop_price.positive? && proposal.stop_price < proposal.limit_price && proposal.limit_price < proposal.target_price
     return if proposal.stop_price < proposal.reference_close && proposal.reference_close < proposal.target_price
     raise Unmeasurable, "the last close (#{proposal.reference_close.to_s("F")}) is outside the stop and the target, so it would be settled already"
@@ -90,4 +98,8 @@ class Forecast < ApplicationRecord
   end
 
   def reward_to_risk = (target_price - entry_price) / (entry_price - stop_price)
+  # The last session the claim can still be open on: the entry window and the horizon, counted in weekdays. A
+  # holiday inside it only makes the true end later, so a forecast past this is never cut off early by more than
+  # the holidays, and the calibration waits a further week before scoring it.
+  def window_ends_on = (Resolution::ENTRY_WINDOW + horizon_days).times.reduce(starts_on - 1) { |day, _| day = day + 1; day += 1 while day.on_weekend?; day }
 end

@@ -1,6 +1,7 @@
 # The scoring rule as a pure function of a forecast and its instrument's final daily candles
 # (docs/phase-2.6-plan.md §0.1). The entry is the first of five sessions from starts_on whose low reaches the
-# limit; on that day only the stop is tested, since a daily bar cannot order the fill against the levels. Then
+# limit; on that day only the stop is tested, since a daily bar cannot order the fill against the levels (a stop
+# there is ambiguous only if the day also reached the target). Then
 # horizon_days sessions: a day touching both levels is the stop, marked ambiguous; the last of them untouched is
 # a miss, marked expired. A close on the reference day more than 2% from the one frozen, or a one-day move on the
 # path read that lands on a split ratio (2:1, 3:1, 3:2, ... and their reverses), is a split or a restatement and
@@ -9,7 +10,7 @@
 # named, and the caller counts the night as failed. Candles running out leave it open, unless the caller says the
 # name has ended: then a miss once entered (on any night), and never entered otherwise.
 class Forecast::Resolution
-  VERSION = 1
+  VERSION = 2 # 2: an entry-day stop is ambiguous only when that day also reached the target
   ENTRY_WINDOW = 5
   REFERENCE_TOLERANCE = BigDecimal("0.02")
   SPLIT_RATIOS = [ 2, 3, 4, 5, 10, Rational(3, 2) ].flat_map { [ it.to_r, 1 / it.to_r ] }.freeze
@@ -55,7 +56,7 @@ class Forecast::Resolution
     # The deciding candle, its outcome, and its flags; nil while the horizon is still running.
     def decide(entry_at)
       entry = window[entry_at]
-      return [ entry, "miss", { ambiguous: true, stopped_on_entry_day: true } ] if entry[:low] <= forecast.stop_price
+      return [ entry, "miss", { ambiguous: entry[:high] >= forecast.target_price, stopped_on_entry_day: true }.select { _2 } ] if entry[:low] <= forecast.stop_price
       horizon = window[entry_at + 1, forecast.horizon_days]
       horizon.each do |c|
         stopped, reached = c[:low] <= forecast.stop_price, c[:high] >= forecast.target_price

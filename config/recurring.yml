@@ -35,6 +35,9 @@ shared: &shared
   allocation_diagnostics:
     class: Allocation::DiagnosticsJob
     schedule: "0 8 * * 6 America/New_York" # Saturday, read by Sunday's review
+  research_calibration:
+    class: Research::CalibrationJob
+    schedule: "15 8 * * 6 America/New_York" # Saturday, after the diagnostics, read by Sunday's review
   memory_check_repo:
     class: Memory::CheckRepoJob
     schedule: "*/30 * * * * America/New_York"

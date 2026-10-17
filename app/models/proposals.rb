@@ -22,7 +22,7 @@ module Proposals
       sizing = Sizing.for_proposal(proposal)
       proposal.sizing = sizing.to_h
       proposal.quantity = sizing.quantity
-      proposal.reference_close, proposal.reference_on = reference(instrument)
+      proposal.reference_close, proposal.reference_on, proposal.reference_volatility = reference(instrument)
     else
       proposal.quantity ||= account.positions.find_by(instrument: instrument)&.quantity
       proposal.lots = Proposals::Lots.for(account.trades.open.find_by(instrument: instrument), quantity: proposal.quantity.to_d, method: method) if proposal.reduces_position?
@@ -30,14 +30,25 @@ module Proposals
     proposal
   end
 
-  # The last final close, which every forecast on an entry is measured from (docs/phase-2.6-plan.md §0.1): never
-  # today's partial bar. The collar has just read the same history, so this is the tool cache's copy. Nil when
-  # the history cannot say (stale, or under the collar's 30 candles, which bars a new listing), and then no
-  # forecast can be made on it.
+  VOLATILITY_RETURNS = 20
+
+  # The last final close, which every forecast on an entry is measured from (docs/phase-2.6-plan.md §0.1), and the
+  # daily volatility up to it, the standard deviation of the last 20 daily log returns, which the calibration
+  # baseline needs (§0.3): never today's partial bar. The collar has just read the same history, so this is the tool
+  # cache's copy. Nils when the history cannot say (stale, or under the collar's 30 candles, which bars a new
+  # listing), and then no forecast can be made on it.
   def self.reference(instrument)
-    last = StopCollar::Candles.for(instrument).final.last or return [ nil, nil ]
-    [ last[:close], last[:date].to_date ]
+    final = StopCollar::Candles.for(instrument).final
+    return [ nil, nil, nil ] if final.empty?
+    [ final.last[:close], final.last[:date].to_date, volatility(final.last(VOLATILITY_RETURNS + 1).map { it[:close] }) ]
   rescue StopCollar::Candles::Refused, Schwab::Error
-    [ nil, nil ]
+    [ nil, nil, nil ]
+  end
+
+  def self.volatility(closes)
+    returns = closes.each_cons(2).map { |prev, close| Math.log(close / prev) }
+    return nil if returns.size < VOLATILITY_RETURNS
+    mean = returns.sum / returns.size
+    BigDecimal(Math.sqrt(returns.sum { (it - mean)**2 } / (returns.size - 1)), 6).round(6).nonzero?
   end
 end

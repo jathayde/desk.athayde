@@ -1,0 +1,32 @@
+<% content_for :title, "Research" %>
+<h1>Research</h1>
+<p class="muted">Whether the desk's forecasts mean anything. Each forecast is scored on the daily candles once the entry is touched: did the high reach the target before the low reached the stop, within its horizon. A Brier score (lower is better) is only worth something if it beats the baseline: what the levels, the horizon, and the volatility alone imply under the same rules, for a price with no expected drift. Skill is the baseline's Brier less the forecast's, so above zero the forecast was closer. The hindsight Brier, the best constant on the same sample, is shown for reference. A forecast is scored a week after its last possible session, so slow expiries count alongside fast hits and stops. Computed on Saturdays from the stored forecasts.</p>
+
+<% if @research.snapshots.empty? %>
+  <p class="empty">No calibration yet: the first is computed on Saturday. <%= pluralize(@research.open_forecasts, "forecast") %> open.</p>
+<% else %>
+  <p class="muted"><%= @research.current? ? "As of" : "Last computed" %> <%= @research.computed_on.strftime("%a %b %-d") %> · <%= pluralize(@research.open_forecasts, "forecast") %> open now.</p>
+  <% if (note = stale_calibration_note(@research)) %><p class="warn"><%= note %></p><% end %>
+  <% @research.snapshots.group_by(&:scope).each do |scope, snapshots| %>
+    <h2 class="sec"><%= calibration_heading(scope) %></h2>
+    <% if (note = calibration_note(scope)) %><p class="muted"><%= note %></p><% end %>
+    <ul class="trades">
+      <% snapshots.each do |snapshot| %>
+        <li class="kv">
+          <span><b><%= snapshot.label %></b>: <%= snapshot.verdict %><% if snapshot.head_to_head_verdict %>; head to head, <%= snapshot.head_to_head_verdict %> (operator less agent <%= signed_score(snapshot.operator_minus_agent) %>, 95%: <%= interval_range(snapshot.operator_minus_agent_interval) %>)<% end %>
+            <br><small class="muted"><%= pluralize(snapshot.n, "scored forecast") %> on <%= pluralize(snapshot.instruments, "name") %> · <%= snapshot.open %> open · <%= snapshot.maturing %> resolved, not yet scored · <%= void_summary(snapshot) %><% if snapshot.overlapping.positive? %> · <%= snapshot.overlapping %> overlapping, counted once<% end %><% if snapshot.anchored_excluded.positive? %> · <%= snapshot.anchored_excluded %> made after seeing the agent's, left out<% end %><% if (coverage = coverage_summary(snapshot)) %> · <%= coverage %><% end %></small>
+            <% if snapshot.scored? %>
+              <br><small>Brier <%= brier(snapshot.brier) %> · baseline <%= brier(snapshot.baseline_brier) %> · hindsight Brier <%= brier(snapshot.hindsight_brier) %> · skill <%= signed_score(snapshot.skill) %> (95%: <%= interval_range(snapshot.skill_interval) %>)</small>
+              <br><small class="muted">Hit rate <%= percent(snapshot.hit_rate) %> (<%= percent(snapshot.hit_rate_if_ambiguous_hit) %> counting <%= pluralize(snapshot.ambiguous, "ambiguous day") %> as hits) · <%= snapshot.expired %> expired · forecast <%= percent(snapshot.mean_probability) %> · baseline <%= percent(snapshot.mean_baseline) %> · reward to risk <%= number_with_precision(snapshot.mean_reward_to_risk, precision: 2) %></small>
+            <% end %>
+          </span>
+        </li>
+        <% if snapshot.reliability? %>
+          <li class="kv"><span><small>Reliability, <%= snapshot.label.downcase %>: <%= reliability_summary(snapshot) %></small></span></li>
+        <% elsif snapshot.scored? %>
+          <li class="kv"><span><small class="muted">Not enough forecasts for a reliability table (<%= snapshot.floor(:reliability) %> needed).</small></span></li>
+        <% end %>
+      <% end %>
+    </ul>
+  <% end %>
+<% end %>

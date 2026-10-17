@@ -17,17 +17,20 @@ RSpec.describe Forecast::Resolution do
   it "enters on the first session from starts_on whose low reaches the limit, then scores the target before the stop" do
     verdict = resolve([ 49, 51, 50 ], [ 50.5, 52 ], [ 49.5, 53 ], [ 51, 56.5 ])
     expect(verdict).to have_attributes(outcome: "hit", void_reason: nil, checked_through: monday + 3)
-    expect(verdict.detail).to include("entered_on" => (monday + 2).iso8601, "decided_on" => (monday + 3).iso8601, "resolver_version" => 1)
+    expect(verdict.detail).to include("entered_on" => (monday + 2).iso8601, "decided_on" => (monday + 3).iso8601, "resolver_version" => 2)
   end
 
   it "never reads the reference day, even when its range touched the levels" do
     expect(resolve([ 46, 57, 50 ], [ 49.5, 52 ]).outcome).to be_nil
   end
 
-  it "tests only the stop on the entry day, and calls it ambiguous" do
+  it "tests only the stop on the entry day, ambiguous only when the day also reached the target" do
     verdict = resolve([ 49, 51, 50 ], [ 46.5, 57 ])
     expect(verdict).to have_attributes(outcome: "miss")
-    expect(verdict.detail).to include("ambiguous" => true, "stopped_on_entry_day" => true)
+    expect(verdict.detail).to include("ambiguous" => true, "stopped_on_entry_day" => true, "resolver_version" => 2)
+    plain = resolve([ 49, 51, 50 ], [ 46.5, 51 ])
+    expect(plain.detail).to include("stopped_on_entry_day" => true)
+    expect(plain.detail).not_to include("ambiguous")
   end
 
   it "counts a day touching both levels as the stop, marked ambiguous, and a gap through the stop as a miss" do

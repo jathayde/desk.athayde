@@ -1,6 +1,6 @@
 # Every scheduled email. Subjects carry no dollar figures; every link is generated here, never by the model.
 class BriefMailer < ApplicationMailer
-  helper ApplicationHelper, AllocationHelper
+  helper ApplicationHelper, AllocationHelper, ResearchHelper
 
   def brief(run)
     @brief = Brief.new(run)
@@ -13,6 +13,7 @@ class BriefMailer < ApplicationMailer
     @status = SystemStatus.new
     @setups = Setup.order(:name)
     @allocation = Allocation::Digest.new(as_of: run.market_date)
+    @research = Research::Digest.new(as_of: run.market_date)
     @reauth_url = schwab_authorize_url
     mail to: recipients, subject: "Athayde Desk: Sunday review, re-authenticate Schwab"
   end

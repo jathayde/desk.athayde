@@ -66,7 +66,10 @@ RSpec.describe Proposals::Create do
       proposal = described_class.call(account: account, kind: :entry, side: :buy, symbol: "XYZ", limit_price: 50, stop_price: 47, target_price: 56, thesis: "t", origin: :human, user: john,
                                       forecast: { probability: "0.35", horizon_days: "15" })
       expect(proposal.reference_on).to eq(MarketDay.today - 1)
-      expect(proposal.forecasts.sole).to have_attributes(author: "human", user: john, reference_close: proposal.reference_close, reference_on: MarketDay.today - 1, saw_agent_forecast: false)
+      expect(proposal.forecasts.sole).to have_attributes(author: "human", user: john, reference_close: proposal.reference_close, reference_on: MarketDay.today - 1, saw_agent_forecast: false,
+                                                         reference_volatility: proposal.reference_volatility)
+      expect(proposal.reference_volatility).to be_between(0.001, 0.1)
+      expect(proposal.forecasts.sole.baseline_probability).to be_between(0, 1) # frozen with the claim
       expect(AuditEvent.where(kind: "forecast_recorded").last.data).to include("proposal" => proposal.id, "probability" => "0.35", "horizon_days" => 15)
       proposal.reject!(user: john, reason: "no")
       expect(propose(target_price: "56", probability: 1, horizon_days: 10).error).to be_present # the schema's exclusive bound
