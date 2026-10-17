@@ -39,5 +39,25 @@ module ResearchHelper
     Research::Features::FEATURES.fetch(key).last == :signed_percent ? signed_percent(value.to_d) : percent(value.to_d)
   end
 
+  def hypothesis_progress(hypothesis)
+    return "decided #{hypothesis.decided_at.strftime("%b %-d")}" if hypothesis.decided?
+    return "not yet testing: entries cannot name it" if hypothesis.status_proposed?
+    return "retired" if hypothesis.status_retired?
+    sample = hypothesis.sample
+    progress = "#{sample.count(&:closed?)} of #{hypothesis.min_sample} trades closed#{", #{sample.count(&:open?)} open" if sample.any?(&:open?)}"
+    unlinked = hypothesis.unlinked_fills
+    unlinked.positive? ? "#{progress}; #{pluralize(unlinked, "named entry", plural: "named entries")} filled into another trade, not evidence" : progress
+  end
+
+  # Ready hypotheses by name only: the email computes nothing.
+  def awaiting_decision_summary(research) = research.awaiting_decision.map { "##{it.id} #{it.label}" }.to_sentence
+
+  def verdict_summary(verdict)
+    clears = verdict["clears"] ? "clears the bar" : "does not clear the bar"
+    "mean R #{number_with_precision(verdict["mean_r"], precision: 2)} over #{verdict["n"]} (lower bound at the bar's level #{number_with_precision(verdict["lower_bound"], precision: 2)}), " \
+      "p #{verdict["p_value"]} against #{verdict["bar"]} for #{pluralize(verdict["tests"], "hypothesis", plural: "hypotheses")} tested: #{clears}" \
+      "#{"; #{pluralize(verdict["excluded_trade_ids"].size, "excluded trade")} counted" if verdict["excluded_trade_ids"].present?}"
+  end
+
   def stale_calibration_note(research) = research.current? ? nil : "These are the last figures computed; no Saturday run has written any since."
 end

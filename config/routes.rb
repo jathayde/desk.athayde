@@ -4,6 +4,11 @@ Rails.application.routes.draw do
   match "/mcp", to: "mcp#handle", via: %i[ post get delete ]
 
   resource :research, only: :show, controller: "research"
+  resources :hypotheses, only: :create do
+    resource :testing, only: :create, module: :hypotheses
+    resource :decision, only: :create, module: :hypotheses
+    resource :retirement, only: :create, module: :hypotheses
+  end
   resource :system, only: :show, controller: "system" do
     post :halt
     post :resume

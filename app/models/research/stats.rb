@@ -21,6 +21,19 @@ module Research::Stats
     [ means[(draws * 0.025).floor], means[(draws * 0.975).ceil - 1] ]
   end
 
+  # A one-sided test of a mean above zero by the centred bootstrap, which assumes no symmetry (R is skewed: many
+  # stops near −1, a few large winners). From one set of resampled means: the p-value is the share of them, shifted
+  # to a zero mean, at least as large as the observed mean (counted with the observed, so never zero); the lower
+  # bound is their alpha quantile, at the same level as the bar it is judged against.
+  def mean_test(values, alpha:, draws: DRAWS, seed: SEED)
+    random = Random.new(seed)
+    n = values.size
+    observed = mean(values)
+    means = Array.new(draws) { Array.new(n) { values[random.rand(n)] }.sum(0.0) / n }.sort
+    p_value = (means.count { it - observed >= observed } + 1).to_f / (draws + 1)
+    { p_value: p_value, lower_bound: means[(draws * alpha).floor], mean: observed }
+  end
+
   # The Wilson score interval on k successes in n, which stays inside 0..1 at small n.
   def wilson(k, n)
     p = k.to_f / n

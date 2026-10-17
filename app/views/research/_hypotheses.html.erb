@@ -1,0 +1,58 @@
+<h2 class="sec" id="hypotheses">Hypotheses <small class="muted">(<%= pluralize(research.tests, "hypothesis", plural: "hypotheses") %> tested so far: a verdict now must clear p ≤ <%= number_with_precision(research.bar, precision: 4) %>)</small></h2>
+<p class="muted">Written before the evidence; a changed parameter is a variant, never an edit. The evidence is fixed in advance: the first entries that named the hypothesis when they were proposed, from its holdout date, in the order proposed, with their stops frozen. Once every one of them has closed, the verdict is the chance of a mean R this large with no edge (a centred bootstrap, which does not assume R is symmetric) against a bar of <%= Hypothesis::ALPHA %> divided by the hypotheses tested by then, so the fifth idea has to clear a higher bar than the first; it is frozen when you decide or retire. Nothing here gates a setup or an order.</p>
+<% if research.hypotheses.empty? %>
+  <p class="empty">No hypotheses yet.</p>
+<% else %>
+  <ul class="trades">
+    <% research.hypotheses.each do |hypothesis| %>
+      <li class="kv" id="hypothesis-<%= hypothesis.id %>">
+        <span><b>#<%= hypothesis.id %> <%= hypothesis.statement %></b> <small class="muted"><%= hypothesis.status %><% if hypothesis.setup %> · <%= hypothesis.setup.name %><% end %><% if hypothesis.parent %> · variant of #<%= hypothesis.parent_id %><% end %></small>
+          <br><small><%= hypothesis.rules %></small>
+          <br><small class="muted">Expects mean R <%= number_with_precision(hypothesis.expected_mean_r, precision: 2) %> · judged on the first <%= hypothesis.min_sample %> trades from <%= hypothesis.holdout_from.strftime("%b %-d, %Y") %> · <%= hypothesis_progress(hypothesis) %></small>
+          <% if (verdict = hypothesis.verdict) %><br><small><%= hypothesis.decided? ? "Verdict" : "Verdict if decided now" %>: <%= verdict_summary(verdict) %></small><% end %>
+          <% if hypothesis.decision_note.present? %><br><small class="muted">Decision: <%= hypothesis.decision_note %></small><% end %></span>
+        <% if Current.user&.approver? %>
+          <span class="choice">
+            <% if hypothesis.status_proposed? %>
+              <%= form_with url: hypothesis_testing_path(hypothesis), method: :post, class: "inline-form" do |f| %>
+                <%= f.text_field :reason, placeholder: "why test it now", id: "testing_reason_#{hypothesis.id}" %><%= f.submit "Start testing", class: "secondary" %>
+              <% end %>
+            <% end %>
+            <% if hypothesis.status_testing? && hypothesis.ready? %>
+              <%= form_with url: hypothesis_decision_path(hypothesis), method: :post, class: "inline-form" do |f| %>
+                <%= f.text_field :reason, placeholder: "why", id: "decision_reason_#{hypothesis.id}" %>
+                <% if verdict["clears"] %><%= f.button "Accept", name: "decision", value: "accepted", class: "secondary" %><% end %>
+                <%= f.button "Reject", name: "decision", value: "rejected", class: "secondary" %>
+              <% end %>
+            <% end %>
+            <% unless hypothesis.status_retired? %>
+              <%= form_with url: hypothesis_retirement_path(hypothesis), method: :post, class: "inline-form" do |f| %>
+                <%= f.text_field :reason, placeholder: "why retire it", id: "retire_reason_#{hypothesis.id}" %><%= f.submit "Retire", class: "link-button" %>
+              <% end %>
+            <% end %>
+          </span>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+<% end %>
+<% if Current.user&.approver? %>
+  <h2 class="sec" id="new-hypothesis">Write a hypothesis</h2>
+  <%= form_with model: new_hypothesis, url: hypotheses_path, class: "account-form" do |f| %>
+    <%= f.label :statement, "What you expect, in a sentence" %>
+    <%= f.text_field :statement %>
+    <%= f.label :rules, "The entry and exit rules, exactly enough that you would know an entry that follows them" %>
+    <%= f.text_area :rules, rows: 3 %>
+    <%= f.label :setup_id, "Setup" %>
+    <%= f.collection_select :setup_id, setups, :id, :name, include_blank: "No setup" %>
+    <%= f.label :expected_mean_r, "Expected mean R per trade" %>
+    <%= f.text_field :expected_mean_r, inputmode: "decimal" %>
+    <%= f.label :min_sample, "Trades to judge it on (10 to 500)" %>
+    <%= f.text_field :min_sample, inputmode: "numeric" %>
+    <%= f.label :holdout_from, "Evidence from (today or later)" %>
+    <%= f.date_field :holdout_from %>
+    <%= f.label :parent_id, "A variant of" %>
+    <%= f.collection_select :parent_id, research.hypotheses, :id, ->(h) { "##{h.id} #{h.label}" }, include_blank: "None: a new idea" %>
+    <%= f.submit "Write it down" %>
+  <% end %>
+<% end %>

@@ -46,6 +46,37 @@ $$;
 
 
 --
+-- Name: hypotheses_frozen(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.hypotheses_frozen() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP IN ('DELETE', 'TRUNCATE') THEN
+    RAISE EXCEPTION 'hypotheses are never deleted';
+  END IF;
+  IF (to_jsonb(NEW) - ARRAY['status', 'evidence', 'decided_at', 'decided_by_id', 'decision_note', 'tested_at', 'tested_by_id', 'updated_at']) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['status', 'evidence', 'decided_at', 'decided_by_id', 'decision_note', 'tested_at', 'tested_by_id', 'updated_at']) THEN
+    RAISE EXCEPTION 'a hypothesis is never edited: write a variant';
+  END IF;
+  IF (OLD.evidence IS NOT NULL AND NEW.evidence IS DISTINCT FROM OLD.evidence)
+     OR (OLD.tested_at IS NOT NULL AND NEW.tested_at IS DISTINCT FROM OLD.tested_at)
+     OR (OLD.tested_by_id IS NOT NULL AND NEW.tested_by_id IS DISTINCT FROM OLD.tested_by_id)
+     OR (OLD.decided_at IS NOT NULL AND NEW.decided_at IS DISTINCT FROM OLD.decided_at)
+     OR (OLD.decided_by_id IS NOT NULL AND NEW.decided_by_id IS DISTINCT FROM OLD.decided_by_id)
+     OR (OLD.decision_note IS NOT NULL AND NEW.decision_note IS DISTINCT FROM OLD.decision_note) THEN
+    RAISE EXCEPTION 'a hypothesis''s testing, verdict, and decision are frozen once made';
+  END IF;
+  IF NEW.status IS DISTINCT FROM OLD.status AND (OLD.status, NEW.status) NOT IN
+     (('proposed', 'testing'), ('proposed', 'retired'), ('testing', 'accepted'), ('testing', 'rejected'), ('testing', 'retired'), ('accepted', 'retired'), ('rejected', 'retired')) THEN
+    RAISE EXCEPTION 'a hypothesis cannot go from % to %', OLD.status, NEW.status;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: order_proposals_measures_frozen(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -54,7 +85,7 @@ CREATE FUNCTION public.order_proposals_measures_frozen() RETURNS trigger
     AS $$
 BEGIN
 IF NEW.reference_close IS DISTINCT FROM OLD.reference_close OR NEW.reference_on IS DISTINCT FROM OLD.reference_on
-   OR NEW.reference_volatility IS DISTINCT FROM OLD.reference_volatility OR NEW.features IS DISTINCT FROM OLD.features THEN
+   OR NEW.reference_volatility IS DISTINCT FROM OLD.reference_volatility OR NEW.features IS DISTINCT FROM OLD.features OR NEW.hypothesis_id IS DISTINCT FROM OLD.hypothesis_id THEN
   RAISE EXCEPTION 'what a proposal saw when it was made is written with it, never after';
 END IF;
 IF OLD.quote_at_approval IS NOT NULL AND NEW.quote_at_approval IS DISTINCT FROM OLD.quote_at_approval THEN
@@ -725,6 +756,56 @@ ALTER SEQUENCE public.fund_flows_id_seq OWNED BY public.fund_flows.id;
 
 
 --
+-- Name: hypotheses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.hypotheses (
+    id bigint NOT NULL,
+    statement text NOT NULL,
+    setup_id bigint,
+    rules text NOT NULL,
+    min_sample integer NOT NULL,
+    holdout_from date NOT NULL,
+    expected_mean_r numeric(10,4) NOT NULL,
+    parent_id bigint,
+    created_by_id bigint NOT NULL,
+    status character varying DEFAULT 'proposed'::character varying NOT NULL,
+    tested_at timestamp with time zone,
+    tested_by_id bigint,
+    evidence jsonb,
+    decided_at timestamp with time zone,
+    decided_by_id bigint,
+    decision_note text,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT hypotheses_holdout_not_backdated CHECK ((holdout_from >= ((created_at AT TIME ZONE 'America/New_York'::text))::date)),
+    CONSTRAINT hypotheses_min_sample CHECK (((min_sample >= 10) AND (min_sample <= 500))),
+    CONSTRAINT hypotheses_status CHECK (((status)::text = ANY ((ARRAY['proposed'::character varying, 'testing'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'retired'::character varying])::text[]))),
+    CONSTRAINT hypotheses_tested_once_testing CHECK ((((status)::text = ANY ((ARRAY['proposed'::character varying, 'retired'::character varying])::text[])) OR (tested_at IS NOT NULL))),
+    CONSTRAINT hypotheses_untested_while_proposed CHECK ((((status)::text <> 'proposed'::text) OR (tested_at IS NULL)))
+);
+
+
+--
+-- Name: hypotheses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.hypotheses_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: hypotheses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.hypotheses_id_seq OWNED BY public.hypotheses.id;
+
+
+--
 -- Name: instrument_tags; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -887,7 +968,8 @@ CREATE TABLE public.order_proposals (
     reference_on date,
     quote_at_approval jsonb,
     reference_volatility numeric(9,6),
-    features jsonb
+    features jsonb,
+    hypothesis_id bigint
 );
 
 
@@ -2202,6 +2284,13 @@ ALTER TABLE ONLY public.fund_flows ALTER COLUMN id SET DEFAULT nextval('public.f
 
 
 --
+-- Name: hypotheses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hypotheses ALTER COLUMN id SET DEFAULT nextval('public.hypotheses_id_seq'::regclass);
+
+
+--
 -- Name: instrument_tags id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2580,6 +2669,14 @@ ALTER TABLE ONLY public.forecasts
 
 ALTER TABLE ONLY public.fund_flows
     ADD CONSTRAINT fund_flows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: hypotheses hypotheses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hypotheses
+    ADD CONSTRAINT hypotheses_pkey PRIMARY KEY (id);
 
 
 --
@@ -3165,6 +3262,41 @@ CREATE UNIQUE INDEX index_fund_flows_on_as_of ON public.fund_flows USING btree (
 
 
 --
+-- Name: index_hypotheses_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_hypotheses_on_created_by_id ON public.hypotheses USING btree (created_by_id);
+
+
+--
+-- Name: index_hypotheses_on_decided_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_hypotheses_on_decided_by_id ON public.hypotheses USING btree (decided_by_id);
+
+
+--
+-- Name: index_hypotheses_on_parent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_hypotheses_on_parent_id ON public.hypotheses USING btree (parent_id);
+
+
+--
+-- Name: index_hypotheses_on_setup_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_hypotheses_on_setup_id ON public.hypotheses USING btree (setup_id);
+
+
+--
+-- Name: index_hypotheses_on_tested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_hypotheses_on_tested_by_id ON public.hypotheses USING btree (tested_by_id);
+
+
+--
 -- Name: index_instrument_tags_on_instrument_id_and_tag; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3232,6 +3364,13 @@ CREATE UNIQUE INDEX index_order_proposals_on_broker_order_id ON public.order_pro
 --
 
 CREATE INDEX index_order_proposals_on_decided_by_id ON public.order_proposals USING btree (decided_by_id);
+
+
+--
+-- Name: index_order_proposals_on_hypothesis_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_proposals_on_hypothesis_id ON public.order_proposals USING btree (hypothesis_id);
 
 
 --
@@ -3921,6 +4060,20 @@ CREATE TRIGGER forecasts_no_truncate BEFORE TRUNCATE ON public.forecasts FOR EAC
 
 
 --
+-- Name: hypotheses hypotheses_frozen; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER hypotheses_frozen BEFORE DELETE OR UPDATE ON public.hypotheses FOR EACH ROW EXECUTE FUNCTION public.hypotheses_frozen();
+
+
+--
+-- Name: hypotheses hypotheses_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER hypotheses_no_truncate BEFORE TRUNCATE ON public.hypotheses FOR EACH STATEMENT EXECUTE FUNCTION public.hypotheses_frozen();
+
+
+--
 -- Name: order_proposals order_proposals_measures_frozen; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3960,6 +4113,14 @@ ALTER TABLE ONLY public.orders
 
 
 --
+-- Name: order_proposals fk_rails_0de0fb8821; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_proposals
+    ADD CONSTRAINT fk_rails_0de0fb8821 FOREIGN KEY (hypothesis_id) REFERENCES public.hypotheses(id);
+
+
+--
 -- Name: allocation_targets fk_rails_130b9bde61; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3981,6 +4142,14 @@ ALTER TABLE ONLY public.deployment_policies
 
 ALTER TABLE ONLY public.orders
     ADD CONSTRAINT fk_rails_144e25bef6 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: hypotheses fk_rails_29d77edc54; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hypotheses
+    ADD CONSTRAINT fk_rails_29d77edc54 FOREIGN KEY (tested_by_id) REFERENCES public.users(id);
 
 
 --
@@ -4192,6 +4361,14 @@ ALTER TABLE ONLY public.watchlist_items
 
 
 --
+-- Name: hypotheses fk_rails_86b6249e0b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hypotheses
+    ADD CONSTRAINT fk_rails_86b6249e0b FOREIGN KEY (decided_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: balances fk_rails_9452e1f8fd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4344,6 +4521,14 @@ ALTER TABLE ONLY public.order_proposals
 
 
 --
+-- Name: hypotheses fk_rails_cab91d8e3d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hypotheses
+    ADD CONSTRAINT fk_rails_cab91d8e3d FOREIGN KEY (created_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: tool_calls fk_rails_cc11d0226e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4373,6 +4558,14 @@ ALTER TABLE ONLY public.submission_attempts
 
 ALTER TABLE ONLY public.thesis_reviews
     ADD CONSTRAINT fk_rails_de1dd0eb5b FOREIGN KEY (cash_inflow_id) REFERENCES public.cash_inflows(id);
+
+
+--
+-- Name: hypotheses fk_rails_e124e4b65f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hypotheses
+    ADD CONSTRAINT fk_rails_e124e4b65f FOREIGN KEY (setup_id) REFERENCES public.setups(id);
 
 
 --
@@ -4448,6 +4641,14 @@ ALTER TABLE ONLY public.order_proposals
 
 
 --
+-- Name: hypotheses fk_rails_fdafe48b0f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hypotheses
+    ADD CONSTRAINT fk_rails_fdafe48b0f FOREIGN KEY (parent_id) REFERENCES public.hypotheses(id);
+
+
+--
 -- Name: allocation_drifts fk_rails_ffa84f9e42; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4462,6 +4663,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261017130001'),
 ('20261017120001'),
 ('20261017110002'),
 ('20261017110001'),

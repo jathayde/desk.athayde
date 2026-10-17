@@ -28,7 +28,11 @@ class Proposals::Create
       raise Refused, "#{proposal.instrument.symbol} has a submission pending reconciliation (##{unresolved.id}); nothing else on it until that resolves" if unresolved
       proposal.save!
       AuditEvent.log("proposal_created", actor: proposal.audit_actor, user: proposal.user, subject: proposal,
-                     data: { kind: proposal.kind, side: proposal.side, symbol: proposal.instrument.symbol, quantity: proposal.quantity, limit_price: proposal.limit_price, stop_price: proposal.stop_price })
+                     data: { kind: proposal.kind, side: proposal.side, symbol: proposal.instrument.symbol, quantity: proposal.quantity, limit_price: proposal.limit_price, stop_price: proposal.stop_price,
+                             hypothesis: proposal.hypothesis_id }.compact)
+      if proposal.hypothesis_note
+        AuditEvent.log("hypothesis_not_named", actor: proposal.audit_actor, user: proposal.user, subject: proposal, reason: proposal.hypothesis_note)
+      end
       record_forecast(proposal) if @forecast # before the evaluation, whose halts a refusal here must not roll back
       proposal.evaluate!(Guardrails::Evaluator.new(proposal).call)
     end

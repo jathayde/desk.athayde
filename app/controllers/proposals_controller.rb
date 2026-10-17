@@ -23,6 +23,7 @@ class ProposalsController < ApplicationController
 
   def new
     @setups = Setup.active.order(:name)
+    @hypotheses = Hypothesis.status_testing.includes(:setup).order(:id)
     @draft, @report = preview if params[:symbol].present?
   end
 
@@ -48,7 +49,7 @@ class ProposalsController < ApplicationController
       kind = params[:kind].presence_in(%w[ entry exit ]) || "entry" # a thesis review's deploy and exit arrive here too
       { account: Account.trading.order(:id).first, kind: kind, side: kind == "entry" ? :buy : :sell, symbol: params[:symbol].to_s,
         limit_price: decimal(params[:limit_price]), stop_price: decimal(params[:stop_price]),
-        target_price: kind == "entry" ? decimal(params[:target_price]) : nil, setup: Setup.find_by(id: params[:setup_id]),
+        target_price: kind == "entry" ? decimal(params[:target_price]) : nil, hypothesis: Hypothesis.find_by(id: params[:hypothesis_id]), setup: Setup.find_by(id: params[:setup_id]),
         thesis: params[:thesis].presence, quantity: params[:quantity].presence&.to_i, tax_lot_method: params[:tax_lot_method].presence }
     end
 

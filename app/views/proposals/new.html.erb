@@ -23,6 +23,10 @@
   <%= f.select :tax_lot_method, options_for_select(Schwab::Order::TAX_LOT_METHODS, params[:tax_lot_method] || Schwab::Order::DEFAULT_TAX_LOT_METHOD) %>
   <%= f.label :setup_id, "Setup" %>
   <%= f.select :setup_id, options_from_collection_for_select(@setups, :id, :name, params[:setup_id]), include_blank: "No setup" %>
+  <% if @hypotheses.any? %>
+    <%= f.label :hypothesis_id, "Evidence for a hypothesis under test (entries; its setup becomes the proposal's)" %>
+    <%= f.select :hypothesis_id, options_for_select(@hypotheses.map { [ "##{it.id} #{it.label}#{" (#{it.setup.name})" if it.setup}", it.id ] }, params[:hypothesis_id]), include_blank: "None" %>
+  <% end %>
   <%= f.label :thesis, "Thesis" %>
   <%= f.text_area :thesis, value: params[:thesis], rows: 3 %>
   <%= f.submit "Preview" %>

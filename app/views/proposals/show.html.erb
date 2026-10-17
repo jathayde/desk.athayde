@@ -1,7 +1,7 @@
 <% content_for :title, "Proposal #{@proposal.instrument.symbol}" %>
 <% proposal = @proposal %>
 <h1><%= proposal.priced_label %> <small><%= proposal.status_label %></small></h1>
-<p class="callout"><%= proposal.kind.humanize %> · <%= proposal.origin %><% if proposal.setup %> · <%= proposal.setup.name %><% end %><% if proposal.stop_price %> · stop <%= money(proposal.stop_price) %><% end %><% if proposal.target_price %> · target <%= money(proposal.target_price) %><% end %><% if proposal.shadow? %> · shadow<% end %></p>
+<p class="callout"><%= proposal.kind.humanize %> · <%= proposal.origin %><% if proposal.setup %> · <%= proposal.setup.name %><% end %><% if proposal.hypothesis %> · evidence for <%= link_to "hypothesis ##{proposal.hypothesis_id}", research_path(anchor: "hypothesis-#{proposal.hypothesis_id}") %><% end %><% if proposal.stop_price %> · stop <%= money(proposal.stop_price) %><% end %><% if proposal.target_price %> · target <%= money(proposal.target_price) %><% end %><% if proposal.shadow? %> · shadow<% end %></p>
 <% if proposal.thesis.present? %><p class="thesis"><%= proposal.thesis %></p><% end %>
 
 <%= render "shared/candles", chart: @chart %>

@@ -5,4 +5,5 @@
 </ul>
 <% if research.snapshots.any? %><p>Each author's own score picks its own cases; the paired lines are the fair comparison.</p><% end %>
 <% if research.snapshots.any? && (note = stale_calibration_note(research)) %><p><%= note %></p><% end %>
+<% if research.awaiting_decision.any? %><p>Hypotheses ready for your verdict: <%= awaiting_decision_summary(research) %></p><% end %>
 <p><%= link_to "Research", research_url %></p>

@@ -10,7 +10,7 @@ class AuditEvent < ApplicationRecord
     proposal_cancelled stop_adjusted trade_annotated watchlist_changed rule_changed rule_halt_tripped rule_halt_cleared unprotected_alert_sent agent_tool_used
     deployment_policy_changed allocation_target_changed instrument_classified instrument_tagged allocation_drift_recorded allocation_drift_checked
     thesis_review_created thesis_review_refreshed thesis_review_decided cash_inflow_detected cash_inflow_status_changed deployment_tranche_scheduled deployment_tranche_status_changed
-    cash_drag_checked correlation_checked fund_flow_changed forecast_recorded forecast_not_recorded forecast_resolved forecasts_checked agent_forecast_revealed calibration_computed
+    cash_drag_checked correlation_checked fund_flow_changed forecast_recorded forecast_not_recorded forecast_resolved forecasts_checked agent_forecast_revealed calibration_computed hypothesis_created hypothesis_status_changed hypothesis_not_named
   ].freeze
 
   belongs_to :user, optional: true

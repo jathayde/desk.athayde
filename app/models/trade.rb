@@ -86,6 +86,8 @@ class Trade < ApplicationRecord
   end
 
   def realized_r_available? = initial_risk.present? && initial_risk.positive?
+  # Its entry named a hypothesis: its stop, and so its R, are the proposal's (docs/phase-2.6-plan.md §0.5).
+  def hypothesis_evidence? = order_proposal&.hypothesis_id.present?
   def reviewed? = journal_completed_at.present? || excluded_from_stats?
 
   # A finished review is never undone by the journal; only a more serious reason can reopen it, and a lesser
@@ -164,8 +166,12 @@ class Trade < ApplicationRecord
   # rules are not met, so every caller (form or tool) gets the same answer.
   def review(setup:, planned_stop:, thesis:, user:)
     previous_setup = self.setup
+    if hypothesis_evidence? && planned_stop.present? && planned_stop.to_d != self.planned_stop
+      errors.add(:planned_stop, "is the proposal's #{self.planned_stop&.to_s("F")}, frozen while this trade is evidence for hypothesis ##{order_proposal.hypothesis_id}")
+      return false
+    end
     assign_attributes(setup: setup, thesis: thesis, needs_review: false, review_reason: nil, review_deferred_at: nil, journal_completed_at: Time.current)
-    self.planned_stop = planned_stop unless closed? && bootstrapped?
+    self.planned_stop = planned_stop unless (closed? && bootstrapped?) || hypothesis_evidence?
     return false unless save(context: :review)
     recompute!
     AuditEvent.log("trade_reviewed", actor: :human, user: user, subject: self, data: { setup: setup&.name, planned_stop: self.planned_stop&.to_s })

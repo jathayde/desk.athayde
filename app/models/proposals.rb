@@ -1,6 +1,6 @@
 # Drafting proposals, shared by the tool, the form, and the hypothetical evaluation.
 module Proposals
-  FORM_FIELDS = %i[ kind symbol limit_price stop_price target_price probability horizon_days quantity setup_id thesis tax_lot_method ].freeze
+  FORM_FIELDS = %i[ kind symbol limit_price stop_price target_price probability horizon_days quantity setup_id hypothesis_id thesis tax_lot_method ].freeze
 
   class Error < StandardError; end
   class UnknownSymbol < Error; end
@@ -10,11 +10,12 @@ module Proposals
   # The allocation jobs pass the target's instrument row, never a symbol to re-resolve (CUSIP identity), and an
   # expiry past the next session, since they propose after the close.
   def self.draft(account:, kind:, side:, limit_price:, symbol: nil, instrument: nil, stop_price: nil, target_price: nil, setup: nil, thesis: nil, origin:, user: nil, quantity: nil,
-                 tax_lot_method: nil, expires_at: nil, allocation_source: nil, context: {})
+                 tax_lot_method: nil, expires_at: nil, allocation_source: nil, context: {}, hypothesis: nil)
     instrument ||= Instrument.find_by(symbol: symbol.to_s.strip.upcase) or raise UnknownSymbol, "unknown symbol #{symbol}"
     proposal = OrderProposal.new(account: account, instrument: instrument, kind: kind, side: side, order_type: Schwab::Order::LIMIT, limit_price: limit_price, stop_price: stop_price,
                                  target_price: target_price, planned_stop: stop_price, setup: setup, thesis: thesis, origin: origin, user: user, quantity: quantity,
                                  expires_at: expires_at || MarketDay.today.in_time_zone(MarketDay::ZONE).end_of_day, allocation_source: allocation_source, context: context)
+    name_hypothesis(proposal, hypothesis) if hypothesis
     method = proposal.tax_lot_method = tax_lot_method.presence || Schwab::Order::DEFAULT_TAX_LOT_METHOD if proposal.reduces_position?
     raise Error, "unknown lot method #{method}" if method && !Schwab::Order::TAX_LOT_METHODS.include?(method)
     if proposal.kind_entry?
@@ -31,6 +32,20 @@ module Proposals
   end
 
   VOLATILITY_RETURNS = 20
+
+  # The hypothesis an entry is evidence for, named only when it can be (docs/phase-2.6-plan.md §0.5); otherwise the
+  # entry goes ahead unnamed with the reason, since research bookkeeping never decides what is proposed. A named
+  # entry takes the hypothesis's setup.
+  def self.name_hypothesis(proposal, hypothesis)
+    reason = if !proposal.kind_entry? then "a hypothesis is evidence for entries only"
+    elsif !hypothesis.status_testing? then "hypothesis ##{hypothesis.id} is #{hypothesis.status}, not being tested"
+    elsif MarketDay.today < hypothesis.holdout_from then "hypothesis ##{hypothesis.id} takes evidence from #{hypothesis.holdout_from.iso8601}"
+    elsif hypothesis.setup && proposal.setup && proposal.setup != hypothesis.setup then "the setup is #{proposal.setup.name}, not the hypothesis's #{hypothesis.setup.name}"
+    end
+    return proposal.hypothesis_note = reason if reason
+    proposal.hypothesis = hypothesis
+    proposal.setup ||= hypothesis.setup
+  end
 
   # The last final close, which every forecast on an entry is measured from (docs/phase-2.6-plan.md §0.1), and the
   # daily volatility up to it, the standard deviation of the last 20 daily log returns, which the calibration

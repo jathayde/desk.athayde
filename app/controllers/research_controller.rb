@@ -3,5 +3,7 @@
 class ResearchController < ApplicationController
   def show
     @research = Research::Digest.new
+    @setups = Setup.active.order(:name)
+    @new_hypothesis = Hypothesis.new(holdout_from: MarketDay.today, min_sample: 30)
   end
 end

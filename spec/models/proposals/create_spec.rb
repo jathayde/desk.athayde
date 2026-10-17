@@ -88,4 +88,22 @@ RSpec.describe Proposals::Create do
       expect(Agent::Tools.call("propose_order", { symbol: "xyz", side: "sell", limit_price: "55", thesis: "t" }, transport: :mcp).value).to include("forecast" => nil)
     end
   end
+
+  it "names a hypothesis under test from the tool, and leaves an entry unnamed, never refused, when it cannot be named" do
+    hypothesis = Hypothesis.write!({ statement: "s", rules: "r", min_sample: 10, holdout_from: MarketDay.today, expected_mean_r: 0.3 }, user: john)
+    args = { symbol: "xyz", side: "buy", limit_price: "50", stop_price: "47", target_price: "56", probability: 0.4, horizon_days: 10, thesis: "t", hypothesis_id: hypothesis.id }
+    unnamed = Agent::Tools.call("propose_order", args, transport: :mcp)
+    expect(unnamed.value["hypothesis"]).to eq("not named: hypothesis ##{hypothesis.id} is proposed, not being tested")
+    proposal = OrderProposal.find(unnamed.value["proposal_id"])
+    expect(proposal.hypothesis).to be_nil
+    expect(AuditEvent.where(kind: "hypothesis_not_named", subject: proposal).sole.reason).to include("not being tested")
+    proposal.reject!(user: john, reason: "again")
+    hypothesis.test!(user: john, reason: "go")
+    result = Agent::Tools.call("propose_order", args, transport: :mcp)
+    expect(result.value["hypothesis"]).to eq("named ##{hypothesis.id}")
+    named = OrderProposal.find(result.value["proposal_id"])
+    expect(named.hypothesis).to eq(hypothesis)
+    expect(AuditEvent.where(kind: "proposal_created", subject: named).sole.data).to include("hypothesis" => hypothesis.id)
+    expect { named.update_columns(hypothesis_id: nil) }.to raise_error(ActiveRecord::StatementInvalid, /never after/)
+  end
 end
