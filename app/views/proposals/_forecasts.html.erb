@@ -5,7 +5,7 @@
       <div class="kv"><dt>Agent</dt><dd>hidden until you add yours · <%= button_to "Show it first (recorded on yours)", proposal_forecast_reveal_path(proposal), class: "secondary", form: { class: "inline-form" } %></dd></div>
     <% else %>
       <div class="kv"><dt><%= forecast.author_agent? ? "Agent" : forecast.user&.name || "Operator" %></dt>
-        <dd><%= percent(forecast.probability) %> within <%= pluralize(forecast.horizon_days, "session") %> · <%= forecast.outcome_label %><% if forecast.author_human? && forecast.saw_agent_forecast %> · made after seeing the agent's<% end %></dd></div>
+        <dd><%= percent(forecast.probability) %> within <%= pluralize(forecast.horizon_days, "session") %> · expected <%= expected_r(forecast) %>R before costs (baseline <%= percent(forecast.baseline_probability) %>) · <%= forecast.outcome_label %><% if forecast.author_human? && forecast.saw_agent_forecast %> · made after seeing the agent's<% end %></dd></div>
     <% end %>
   <% end %>
   <% if forecasts.empty? %><div class="kv"><dt>Forecasts</dt><dd>none</dd></div><% end %>

@@ -24,11 +24,17 @@ class Setup < ApplicationRecord
   def expectancy = avg_r
 
   # Rolling stats over closed, reviewed, included trades with a positive initial risk. A win is R above zero.
+  # Realized R is net of what was paid; gross R adds back the measured, comparable costs, over the trades that
+  # have them, beside the realized average over those same trades, so the difference is the cost and nothing else
+  # (docs/phase-2.6-plan.md §0.8).
   def recompute_stats!
-    realized = trades.eligible_for_stats.pluck(:realized_r).compact
+    eligible = trades.eligible_for_stats
+    realized = eligible.pluck(:realized_r).compact
+    gross, costed = eligible.where.not(gross_r: nil).pluck(:gross_r, :realized_r).transpose.presence || [ [], [] ]
     average = realized.sum / realized.size if realized.any?
     update!(sample_size: realized.size, avg_r: average,
             win_rate: average && realized.count(&:positive?).to_d / realized.size,
+            gross_avg_r: gross.any? ? gross.sum / gross.size : nil, costed_avg_r: costed.any? ? costed.sum / costed.size : nil, cost_sample_size: gross.size,
             stats_computed_at: Time.current)
   end
 end

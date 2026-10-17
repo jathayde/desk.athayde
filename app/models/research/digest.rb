@@ -11,8 +11,11 @@ class Research::Digest
   def computed_on = snapshots.first&.as_of
   def current? = computed_on.present? && computed_on >= @as_of - FRESH
   def open_forecasts = Forecast.open.count
-  def hypotheses = @hypotheses ||= Hypothesis.includes(:setup, :parent).newest_first.to_a
+  def hypotheses = @hypotheses ||= Hypothesis.includes(:setup, :parent, :latest_decay_check).newest_first.to_a
   def tests = @tests ||= Hypothesis.ever_tested.count
   def bar = Hypothesis.bar(tests)
+  def latest_decay_checks = @latest_decay_checks ||= DecayCheck.where(id: DecayCheck.group(:hypothesis_id).select("MAX(id)")).joins(:hypothesis).merge(Hypothesis.status_accepted)
+                                                                .includes(hypothesis: :setup).order(:hypothesis_id).to_a
+  def flagged_decay = latest_decay_checks.select(&:flagged)
   def awaiting_decision = hypotheses.select { it.status_testing? && it.ready? }
 end

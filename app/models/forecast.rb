@@ -98,6 +98,8 @@ class Forecast < ApplicationRecord
   end
 
   def reward_to_risk = (target_price - entry_price) / (entry_price - stop_price)
+  # p × reward-to-risk − (1 − p), before costs: information beside the forecast, never a rule.
+  def expected_r = probability * reward_to_risk - (1 - probability)
   # The last session the claim can still be open on: the entry window and the horizon, counted in weekdays. A
   # holiday inside it only makes the true end later, so a forecast past this is never cut off early by more than
   # the holidays, and the calibration waits a further week before scoring it.

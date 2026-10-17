@@ -13,4 +13,7 @@ Research<%= research.computed_on ? ", calibration #{research.current? ? "as of" 
 <% if research.awaiting_decision.any? -%>
   Hypotheses ready for your verdict: <%= awaiting_decision_summary(research) %>
 <% end -%>
+<% research.flagged_decay.each do |check| -%>
+  Decaying: #<%= check.hypothesis_id %> <%= check.hypothesis.label %>. <%= decay_summary(check) %>
+<% end -%>
 Research: <%= research_url %>

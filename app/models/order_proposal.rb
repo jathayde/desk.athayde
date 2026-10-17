@@ -274,7 +274,7 @@ class OrderProposal < ApplicationRecord
 
     # Proposals.name_hypothesis says the same in words and drops the name; this keeps any other writer honest.
     def names_a_testing_hypothesis
-      errors.add(:hypothesis, "##{hypothesis.id} is #{hypothesis.status}; only one being tested can be named") unless hypothesis.status_testing?
+      errors.add(:hypothesis, "##{hypothesis.id} is #{hypothesis.status}; only one being tested or accepted can be named") unless hypothesis.collecting?
       errors.add(:hypothesis, "is evidence for entries only") unless kind_entry?
       errors.add(:setup, "must be the hypothesis's, #{hypothesis.setup.name}") if hypothesis.setup && setup != hypothesis.setup
     end

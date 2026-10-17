@@ -20,6 +20,8 @@ class Hypothesis < ApplicationRecord
   belongs_to :decided_by, class_name: "User", optional: true
   has_many :variants, class_name: "Hypothesis", foreign_key: :parent_id, dependent: :restrict_with_exception, inverse_of: :parent
   has_many :order_proposals, dependent: :restrict_with_exception
+  has_many :decay_checks, -> { order(:as_of, :id) }, dependent: :restrict_with_exception
+  has_one :latest_decay_check, -> { order(as_of: :desc, id: :desc) }, class_name: "DecayCheck"
 
   enum :status, STATUSES.index_by(&:itself), prefix: true, validate: true
 
@@ -64,6 +66,13 @@ class Hypothesis < ApplicationRecord
   end
 
   def label = statement.truncate(60)
+  # Entries may name it: while testing, for the verdict; once accepted, for the decay check.
+  def collecting? = status_testing? || status_accepted?
+
+  # The named trades after the frozen sample, closed with an R, in the order proposed: what the decay check reads.
+  # After the sample means proposed after its last trade's proposal, so nothing the verdict saw can leak in.
+  def since_sample = after_sample.select { it.closed? && it.realized_r }
+  def open_since_sample = after_sample.count(&:open?)
 
   # Every named entry that became a trade on or after the holdout, in the order proposed; the sample is the first
   # min_sample of them.
@@ -86,12 +95,23 @@ class Hypothesis < ApplicationRecord
   def unlinked_fills = order_proposals.filled.where.not(id: Trade.where.not(order_proposal_id: nil).select(:order_proposal_id)).count
 
   def decided? = evidence.present?
+  def reload(...)
+    @evidence_trades = @verdict = nil
+    super
+  end
 
   # The frozen verdict, else the one a decision now would freeze; nil until the sample is complete. A function of
   # rows alone, so what the page shows is what a decision writes.
   def verdict = @verdict ||= decided? ? evidence : (compute_verdict if ready?)
 
   private
+    def after_sample
+      return [] unless decided?
+      sampled = evidence["r"].keys.map(&:to_i)
+      last_proposed = evidence_trades.select { sampled.include?(it.id) }.map { it.order_proposal.created_at }.max
+      evidence_trades.reject { sampled.include?(it.id) || (last_proposed && it.order_proposal.created_at <= last_proposed) }
+    end
+
     # The verdict from the rows as they stand under the lock.
     def verdict!
       @evidence_trades = @verdict = nil

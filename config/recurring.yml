@@ -38,6 +38,9 @@ shared: &shared
   research_calibration:
     class: Research::CalibrationJob
     schedule: "15 8 * * 6 America/New_York" # Saturday, after the diagnostics, read by Sunday's review
+  research_decay:
+    class: Research::DecayJob
+    schedule: "20 8 * * 6 America/New_York" # Saturday, after the calibration, read by Sunday's review
   memory_check_repo:
     class: Memory::CheckRepoJob
     schedule: "*/30 * * * * America/New_York"

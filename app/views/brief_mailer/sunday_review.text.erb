@@ -15,7 +15,7 @@ Failed jobs, 7 days: <%= @status.failed_job_count %>
 
 Setups:
 <% @setups.each do |setup| -%>
-  <%= setup.name %><%= " (inactive)" unless setup.active? %>: n=<%= setup.sample_size %>, win rate <%= setup.win_rate ? percent(setup.win_rate) : "n/a" %>, avg R <%= setup.avg_r ? number_with_precision(setup.avg_r, precision: 2) : "n/a" %>, expectancy <%= setup.expectancy ? number_with_precision(setup.expectancy, precision: 2) : "n/a" %>
+  <%= setup.name %><%= " (inactive)" unless setup.active? %>: n=<%= setup.sample_size %>, win rate <%= setup.win_rate ? percent(setup.win_rate) : "n/a" %>, avg R <%= setup.avg_r ? number_with_precision(setup.avg_r, precision: 2) : "n/a" %>, expectancy <%= setup.expectancy ? number_with_precision(setup.expectancy, precision: 2) : "n/a" %><%= setup_costs(setup) %>
 <% end -%>
 <% if @setups.empty? -%>
   none defined yet

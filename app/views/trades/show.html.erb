@@ -9,6 +9,10 @@
   <div class="kv"><dt>Entry → exit</dt><dd><%= money(@trade.avg_entry) %> → <%= @trade.avg_exit ? money(@trade.avg_exit) : "open" %></dd></div>
   <div class="kv"><dt>Realized P&amp;L</dt><dd><%= signed_money(@trade.realized_pnl) %></dd></div>
   <div class="kv"><dt>Initial risk</dt><dd><%= money(@trade.initial_risk) %></dd></div>
+  <% Hash(@trade.slippage).each do |leg, cost| %>
+    <div class="kv"><dt><%= ResearchHelper::SLIPPAGE_LEGS.fetch(leg) %></dt><dd><%= slippage_summary(cost) %></dd></div>
+  <% end %>
+  <% if @trade.gross_r %><div class="kv"><dt>Gross R</dt><dd><%= number_with_precision(@trade.gross_r, precision: 2) %>R before the comparable slippage; realized R is net of it, and gross is still net of fees</dd></div><% end %>
 </dl>
 <% if @trade.thesis.present? %><p class="thesis"><%= @trade.thesis %></p><% end %>
 <%= render "shared/candles", chart: @chart %>

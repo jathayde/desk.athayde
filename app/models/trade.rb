@@ -157,6 +157,8 @@ class Trade < ApplicationRecord
       stopped_out: closed && ledger.closing_leg.activity&.order&.stop? == true
     )
     self.realized_r = closed && realized_r_available? ? realized_pnl / initial_risk : nil
+    costs = Trade::Costs.new(self, ledger) # after realized_r and initial_risk, which it reads
+    self.slippage, self.gross_r = costs.slippage, costs.gross_r
     clear_flag!(:position_missing) if closed && ledger.closing_leg.activity_id
     save!
   end
@@ -206,6 +208,7 @@ class Trade < ApplicationRecord
     end
 
     def avg_entry = @entry_qty.positive? ? @entry_cost / @entry_qty : nil
+    def exit_legs = @legs.select(&:kind_exit?)
     def avg_exit = @exit_qty.positive? ? @exit_proceeds / @exit_qty : nil
 
     # The initial entry: every fill from the first fill's order (a partial fill is one entry); without an order

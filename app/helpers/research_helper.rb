@@ -59,5 +59,37 @@ module ResearchHelper
       "#{"; #{pluralize(verdict["excluded_trade_ids"].size, "excluded trade")} counted" if verdict["excluded_trade_ids"].present?}"
   end
 
+  SLIPPAGE_TAGS = {
+    "comparable" => "comparable",
+    "shadow" => "placed by hand in shadow mode, so the operator's delay, not a cost",
+    "not_comparable" => "a resting limit, a stale quote, or a later session, so the market's drift, not a cost",
+    "unavailable" => "not measured"
+  }.freeze
+  SLIPPAGE_LEGS = { "entry" => "Entry cost (fill against the approval mid)", "stop" => "Stop cost (fills against the stop that triggered)" }.freeze
+
+  def slippage_summary(cost)
+    return "not measured: #{cost["reason"]}" if cost["tag"] == "unavailable"
+    r = cost["r"] ? " (#{signed_score(BigDecimal(cost["r"]))}R)" : ""
+    "#{signed_money(BigDecimal(cost["dollars"]))}#{r}, #{signed_money(BigDecimal(cost["per_share"]))} a share · #{SLIPPAGE_TAGS.fetch(cost["tag"])}"
+  end
+
+  # Realized R is net; the gross average covers only the trades with a measured, comparable cost.
+  def setup_costs(setup)
+    return "" unless setup.gross_avg_r
+    ", on the #{setup.cost_sample_size} with measured costs avg R #{number_with_precision(setup.costed_avg_r, precision: 2)} realized and #{number_with_precision(setup.gross_avg_r, precision: 2)} before slippage"
+  end
+
+  def expected_r(forecast) = signed_score(forecast.expected_r)
+
+  # The latest look, or that there has been none (counted on the Saturday, never on render).
+  def decay_summary(check)
+    return "Decay check: none yet; the first comes #{DecayCheck::MIN_TRADES} closed trades after the sample" unless check
+    line = "Decay check #{check.as_of.strftime("%b %-d")}: mean R #{number_with_precision(check.mean_r, precision: 2)} over #{check.n} since the sample" \
+           "#{" (#{check.open_count} still open, not counted)" if check.open_count.positive?} (interval #{number_with_precision(check.interval_low, precision: 2)} to " \
+           "#{number_with_precision(check.interval_high, precision: 2)}) against #{number_with_precision(check.expected_mean_r, precision: 2)} declared"
+    return "#{line}: below it on two looks. #{check.suggestion}" if check.flagged
+    check.below ? "#{line}: below it on this look; flagged if the next is too" : "#{line}: holding"
+  end
+
   def stale_calibration_note(research) = research.current? ? nil : "These are the last figures computed; no Saturday run has written any since."
 end

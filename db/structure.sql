@@ -551,6 +551,48 @@ ALTER SEQUENCE public.correlations_id_seq OWNED BY public.correlations.id;
 
 
 --
+-- Name: decay_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.decay_checks (
+    id bigint NOT NULL,
+    hypothesis_id bigint NOT NULL,
+    as_of date NOT NULL,
+    n integer NOT NULL,
+    mean_r numeric(10,4),
+    interval_low numeric(10,4),
+    interval_high numeric(10,4),
+    expected_mean_r numeric(10,4) NOT NULL,
+    below boolean DEFAULT false NOT NULL,
+    flagged boolean DEFAULT false NOT NULL,
+    suggestion character varying,
+    open_count integer DEFAULT 0 NOT NULL,
+    trade_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: decay_checks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.decay_checks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: decay_checks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.decay_checks_id_seq OWNED BY public.decay_checks.id;
+
+
+--
 -- Name: deployment_policies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1222,7 +1264,10 @@ CREATE TABLE public.setups (
     sample_size integer DEFAULT 0 NOT NULL,
     stats_computed_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone NOT NULL,
-    updated_at timestamp(6) with time zone NOT NULL
+    updated_at timestamp(6) with time zone NOT NULL,
+    gross_avg_r numeric(10,4),
+    costed_avg_r numeric(10,4),
+    cost_sample_size integer
 );
 
 
@@ -2075,7 +2120,9 @@ CREATE TABLE public.trades (
     total_risk numeric(18,4),
     quantity numeric(18,6) DEFAULT 0.0 NOT NULL,
     review_deferred_at timestamp(6) with time zone,
-    agent_notes text
+    agent_notes text,
+    slippage jsonb,
+    gross_r numeric(10,4)
 );
 
 
@@ -2246,6 +2293,13 @@ ALTER TABLE ONLY public.cash_inflows ALTER COLUMN id SET DEFAULT nextval('public
 --
 
 ALTER TABLE ONLY public.correlations ALTER COLUMN id SET DEFAULT nextval('public.correlations_id_seq'::regclass);
+
+
+--
+-- Name: decay_checks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.decay_checks ALTER COLUMN id SET DEFAULT nextval('public.decay_checks_id_seq'::regclass);
 
 
 --
@@ -2629,6 +2683,14 @@ ALTER TABLE ONLY public.cash_inflows
 
 ALTER TABLE ONLY public.correlations
     ADD CONSTRAINT correlations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: decay_checks decay_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.decay_checks
+    ADD CONSTRAINT decay_checks_pkey PRIMARY KEY (id);
 
 
 --
@@ -3182,6 +3244,20 @@ CREATE INDEX index_correlations_on_as_of ON public.correlations USING btree (as_
 --
 
 CREATE UNIQUE INDEX index_correlations_on_instrument_id_and_as_of_and_window_days ON public.correlations USING btree (instrument_id, as_of, window_days);
+
+
+--
+-- Name: index_decay_checks_on_hypothesis_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_decay_checks_on_hypothesis_id ON public.decay_checks USING btree (hypothesis_id);
+
+
+--
+-- Name: index_decay_checks_on_hypothesis_id_and_as_of; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_decay_checks_on_hypothesis_id_and_as_of ON public.decay_checks USING btree (hypothesis_id, as_of);
 
 
 --
@@ -4257,6 +4333,14 @@ ALTER TABLE ONLY public.cash_inflows
 
 
 --
+-- Name: decay_checks fk_rails_60a033e5c4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.decay_checks
+    ADD CONSTRAINT fk_rails_60a033e5c4 FOREIGN KEY (hypothesis_id) REFERENCES public.hypotheses(id);
+
+
+--
 -- Name: activities fk_rails_6886e9a52a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4663,6 +4747,7 @@ ALTER TABLE ONLY public.allocation_drifts
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261017140001'),
 ('20261017130001'),
 ('20261017120001'),
 ('20261017110002'),

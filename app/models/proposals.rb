@@ -38,7 +38,7 @@ module Proposals
   # entry takes the hypothesis's setup.
   def self.name_hypothesis(proposal, hypothesis)
     reason = if !proposal.kind_entry? then "a hypothesis is evidence for entries only"
-    elsif !hypothesis.status_testing? then "hypothesis ##{hypothesis.id} is #{hypothesis.status}, not being tested"
+    elsif !hypothesis.collecting? then "hypothesis ##{hypothesis.id} is #{hypothesis.status}, not being tested or watched for decay"
     elsif MarketDay.today < hypothesis.holdout_from then "hypothesis ##{hypothesis.id} takes evidence from #{hypothesis.holdout_from.iso8601}"
     elsif hypothesis.setup && proposal.setup && proposal.setup != hypothesis.setup then "the setup is #{proposal.setup.name}, not the hypothesis's #{hypothesis.setup.name}"
     end

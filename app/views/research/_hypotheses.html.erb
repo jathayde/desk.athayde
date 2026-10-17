@@ -10,6 +10,7 @@
           <br><small><%= hypothesis.rules %></small>
           <br><small class="muted">Expects mean R <%= number_with_precision(hypothesis.expected_mean_r, precision: 2) %> · judged on the first <%= hypothesis.min_sample %> trades from <%= hypothesis.holdout_from.strftime("%b %-d, %Y") %> · <%= hypothesis_progress(hypothesis) %></small>
           <% if (verdict = hypothesis.verdict) %><br><small><%= hypothesis.decided? ? "Verdict" : "Verdict if decided now" %>: <%= verdict_summary(verdict) %></small><% end %>
+          <% if hypothesis.status_accepted? %><br><small class="<%= hypothesis.latest_decay_check&.flagged ? "warn" : "muted" %>"><%= decay_summary(hypothesis.latest_decay_check) %></small><% end %>
           <% if hypothesis.decision_note.present? %><br><small class="muted">Decision: <%= hypothesis.decision_note %></small><% end %></span>
         <% if Current.user&.approver? %>
           <span class="choice">

@@ -12,7 +12,7 @@
 <p>Failed sync runs, 7 days: <%= @status.failed_run_count %> · Failed jobs, 7 days: <%= @status.failed_job_count %></p>
 <p><b>Setups</b></p>
 <ul>
-  <% @setups.each do |setup| %><li><%= setup.name %><%= " (inactive)" unless setup.active? %>: n=<%= setup.sample_size %>, win rate <%= setup.win_rate ? percent(setup.win_rate) : "n/a" %>, avg R <%= setup.avg_r ? number_with_precision(setup.avg_r, precision: 2) : "n/a" %>, expectancy <%= setup.expectancy ? number_with_precision(setup.expectancy, precision: 2) : "n/a" %></li><% end %>
+  <% @setups.each do |setup| %><li><%= setup.name %><%= " (inactive)" unless setup.active? %>: n=<%= setup.sample_size %>, win rate <%= setup.win_rate ? percent(setup.win_rate) : "n/a" %>, avg R <%= setup.avg_r ? number_with_precision(setup.avg_r, precision: 2) : "n/a" %>, expectancy <%= setup.expectancy ? number_with_precision(setup.expectancy, precision: 2) : "n/a" %><%= setup_costs(setup) %></li><% end %>
   <% if @setups.empty? %><li>none defined yet</li><% end %>
 </ul>
 <p>The numbers above are the stored stats.</p>
