@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe Schwab::TokenHealthJob do
   let(:mail) { ActionMailer::Base.deliveries }
-  let!(:user) { create(:user, email_address: "john@athayde.com") }
+  let!(:user) { create(:user, email_address: "john@athayde.com", approver: true) }
 
   def run(at)
     travel_to(Time.zone.parse(at)) { described_class.perform_now }
@@ -63,8 +63,8 @@ RSpec.describe Schwab::TokenHealthJob do
     expect(mail).to be_empty
   end
 
-  it "addresses only notified users with a re-auth link and never a token value" do
-    create(:user, email_address: "whitney@athayde.com", notify: false)
+  it "addresses only the approver, never another reader even with notify on, with a re-auth link and never a token value" do
+    create(:user, email_address: "whitney@athayde.com", notify: true)
     token = create(:schwab_token, :revoked)
     run("2026-09-09 08:00 EDT")
     expect(mail.last.to).to eq([ "john@athayde.com" ])

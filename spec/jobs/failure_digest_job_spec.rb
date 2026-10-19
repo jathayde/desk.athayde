@@ -1,7 +1,7 @@
 require "rails_helper"
 
 RSpec.describe FailureDigestJob do
-  let!(:user) { create(:user, email_address: "john@athayde.com") }
+  let!(:user) { create(:user, email_address: "john@athayde.com", approver: true) }
 
   it "sends nothing when the last 24 hours were clean, ignoring token-skipped runs, a closed-day skip, and older failures" do
     SyncRun.create!(feed: :positions, status: :skipped_token, started_at: 1.hour.ago, finished_at: 1.hour.ago)

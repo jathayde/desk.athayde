@@ -3,5 +3,7 @@ class ApplicationMailer < ActionMailer::Base
   layout "mailer"
 
   private
-    def recipients = User.notified.pluck(:email_address)
+    # Desk email reaches the approver and no one else, whatever notify says for another reader: a second reader is
+    # never mailed. The sign-in link is the exception, sent only to whoever asked for it.
+    def recipients = User.notified.where(approver: true).pluck(:email_address)
 end

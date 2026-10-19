@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe Agent::MorningBriefJob do
   let(:mail) { ActionMailer::Base.deliveries }
-  let!(:user) { create(:user, email_address: "john@athayde.com") }
+  let!(:user) { create(:user, email_address: "john@athayde.com", approver: true) }
   let(:date) { Date.new(2026, 9, 1) }
 
   it "records a skipped run and sends nothing on a closed day" do
@@ -73,7 +73,7 @@ end
 
 RSpec.describe Agent::EndOfDayJob do
   it "is the same job for the eod kind" do
-    create(:user, email_address: "john@athayde.com")
+    create(:user, email_address: "john@athayde.com", approver: true)
     described_class.perform_now(Date.new(2026, 9, 1))
     expect(AgentRun.last).to have_attributes(kind: "eod", status: "succeeded")
   end
@@ -81,7 +81,7 @@ end
 
 RSpec.describe Agent::SundayReviewJob do
   it "records a run without tokens and sends the Sunday email once" do
-    create(:user, email_address: "john@athayde.com")
+    create(:user, email_address: "john@athayde.com", approver: true)
     described_class.perform_now(Date.new(2026, 9, 6))
     described_class.perform_now(Date.new(2026, 9, 6))
     expect(AgentRun.sunday_review.count).to eq(1)

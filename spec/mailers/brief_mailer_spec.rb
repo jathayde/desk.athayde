@@ -1,8 +1,8 @@
 require "rails_helper"
 
 RSpec.describe BriefMailer do
-  let!(:john) { create(:user, email_address: "john@athayde.com") }
-  let!(:whitney) { create(:user, email_address: "whitney@athayde.com", notify: false) } # reads the desk, is not mailed yet
+  let!(:john) { create(:user, email_address: "john@athayde.com", approver: true) }
+  let!(:whitney) { create(:user, email_address: "whitney@athayde.com", notify: true) } # reads the desk, and is never mailed
 
   def run(kind: :morning_brief, **attributes)
     AgentRun.new({ kind: kind, market_date: Date.new(2026, 9, 1), status: :succeeded, started_at: Time.current, finished_at: Time.current,
@@ -10,12 +10,10 @@ RSpec.describe BriefMailer do
                        output_markdown: "All quiet.\n\nSuggested actions\n- none" }.merge(attributes))
   end
 
-  it "frames the model's text with the token line, as-of stamps, the fixed calendar sentence, links, and the footer, to both users" do
+  it "frames the model's text with the token line, as-of stamps, the fixed calendar sentence, links, and the footer, to the approver alone" do
     create(:schwab_token)
     mail = described_class.brief(run)
     expect(mail.to).to eq(%w[ john@athayde.com ])
-    whitney.update!(notify: true)
-    expect(described_class.brief(run).to).to match_array(%w[ john@athayde.com whitney@athayde.com ])
     expect(mail.subject).to eq("Athayde Desk: morning brief, Tue Sep 1")
     text = mail.text_part.body.to_s
     expect(text).to include("Schwab: healthy, token expires #{(Time.current + SchwabToken::REFRESH_LIFETIME).in_time_zone(MarketDay::ZONE).strftime('%a %b %-d')}",

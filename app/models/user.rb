@@ -4,7 +4,7 @@ class User < ApplicationRecord
   has_many :sessions, dependent: :destroy
   has_many :devices, dependent: :destroy
 
-  scope :notified, -> { where(notify: true) } # who hears from the desk: alerts, briefs, pushes; never the sign-in link
+  scope :notified, -> { where(notify: true) } # who gets pushes; email also needs the approver (ApplicationMailer#recipients)
 
   normalizes :email_address, with: ->(e) { e.strip.downcase }
   validates :email_address, :name, presence: true

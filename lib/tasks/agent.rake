@@ -11,6 +11,6 @@ namespace :agent do
     run = AgentRun.find(args[:id])
     abort "#{run.title} is #{run.status}; nothing to send" unless run.deliverable?
     run.deliver!
-    puts "sent #{run.title} to #{User.pluck(:email_address).join(', ')}"
+    puts "sent #{run.title} to #{User.notified.where(approver: true).pluck(:email_address).join(', ')}"
   end
 end

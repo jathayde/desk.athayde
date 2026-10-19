@@ -3,7 +3,7 @@ require "rails_helper"
 RSpec.describe Orders::ProtectionWatch do
   include ActiveJob::TestHelper
 
-  let!(:user) { create(:user, email_address: "john@athayde.com") }
+  let!(:user) { create(:user, email_address: "john@athayde.com", approver: true) }
   let(:account) { create(:account) }
   let(:xyz) { create(:instrument, symbol: "XYZ") }
 
