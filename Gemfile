@@ -63,6 +63,6 @@ group :development do
   gem "web-console"
 end
 
-gem "anthropic", "~> 1.68"
+gem "anthropic", "~> 2.3"
 
 gem "apnotic", "~> 1.8"
